@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/innogrid/ai-agent-proto/internal/llm"
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/llm"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // Grade is how much damage a tool can do.

@@ -10,14 +10,14 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	echoSwagger "github.com/swaggo/echo-swagger"
 
-	_ "github.com/innogrid/ai-agent-proto/api/docs"
+	_ "github.com/ish-hcc/ai-agent-proto/api/docs"
 
-	"github.com/innogrid/ai-agent-proto/internal/agent"
-	"github.com/innogrid/ai-agent-proto/internal/archive"
-	"github.com/innogrid/ai-agent-proto/internal/catalog"
-	"github.com/innogrid/ai-agent-proto/internal/config"
-	"github.com/innogrid/ai-agent-proto/internal/deploy"
-	"github.com/innogrid/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
+	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
 // BasePath is the mount point for every route of this service.

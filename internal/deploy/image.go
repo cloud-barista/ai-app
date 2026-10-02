@@ -7,8 +7,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
-	"github.com/innogrid/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // imageCandidates bounds an image search. A handful is enough to prefer an

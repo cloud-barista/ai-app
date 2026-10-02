@@ -14,11 +14,11 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/archive"
-	"github.com/innogrid/ai-agent-proto/internal/config"
-	"github.com/innogrid/ai-agent-proto/internal/llm"
-	"github.com/innogrid/ai-agent-proto/internal/model"
-	"github.com/innogrid/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
+	"github.com/ish-hcc/ai-agent-proto/internal/llm"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
 // kindIntent labels an archive record produced by a natural language run.

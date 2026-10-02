@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // notAvailable lists what a driver prints instead of a value it cannot report.

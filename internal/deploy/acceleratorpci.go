@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // Accelerator kinds. The kind is the class of AI semiconductor, which the vendor

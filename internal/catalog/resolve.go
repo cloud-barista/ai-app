@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // Match is one candidate application for a natural language query.

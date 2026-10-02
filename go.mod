@@ -1,4 +1,4 @@
-module github.com/innogrid/ai-agent-proto
+module github.com/ish-hcc/ai-agent-proto
 
 go 1.25.0
 

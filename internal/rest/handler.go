@@ -4,14 +4,14 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/innogrid/ai-agent-proto/internal/agent"
-	"github.com/innogrid/ai-agent-proto/internal/archive"
-	"github.com/innogrid/ai-agent-proto/internal/catalog"
-	"github.com/innogrid/ai-agent-proto/internal/deploy"
-	"github.com/innogrid/ai-agent-proto/internal/llm"
-	"github.com/innogrid/ai-agent-proto/internal/model"
-	"github.com/innogrid/ai-agent-proto/internal/tools"
-	"github.com/innogrid/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/llm"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // Handler serves every endpoint of this service.

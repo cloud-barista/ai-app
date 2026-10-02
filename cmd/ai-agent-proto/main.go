@@ -13,15 +13,15 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/agent"
-	"github.com/innogrid/ai-agent-proto/internal/archive"
-	"github.com/innogrid/ai-agent-proto/internal/catalog"
-	"github.com/innogrid/ai-agent-proto/internal/config"
-	"github.com/innogrid/ai-agent-proto/internal/deploy"
-	"github.com/innogrid/ai-agent-proto/internal/llm"
-	"github.com/innogrid/ai-agent-proto/internal/rest"
-	"github.com/innogrid/ai-agent-proto/internal/tools"
-	"github.com/innogrid/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
+	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/llm"
+	"github.com/ish-hcc/ai-agent-proto/internal/rest"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 const shutdownTimeout = 10 * time.Second

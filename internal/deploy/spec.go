@@ -8,8 +8,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
-	"github.com/innogrid/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // Spec filter metrics CB-Tumblebug accepts. The accelerator metrics are the AI

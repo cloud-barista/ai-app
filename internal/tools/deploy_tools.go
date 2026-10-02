@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/innogrid/ai-agent-proto/internal/catalog"
-	"github.com/innogrid/ai-agent-proto/internal/deploy"
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // Lifecycle actions this service forwards.

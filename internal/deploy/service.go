@@ -8,10 +8,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/catalog"
-	"github.com/innogrid/ai-agent-proto/internal/config"
-	"github.com/innogrid/ai-agent-proto/internal/model"
-	"github.com/innogrid/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // Provisioning defaults applied when a request leaves them unset.

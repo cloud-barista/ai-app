@@ -8,7 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 
-	"github.com/innogrid/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // malformedBody is the caller-facing text for an unreadable request body.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/innogrid/ai-agent-proto/web"
+	"github.com/ish-hcc/ai-agent-proto/web"
 )
 
 // RestGetConsole serves the operator console.
