@@ -871,15 +871,21 @@ async function runIntent() {
         <td>${i + 1}</td>
         <td class="mono" style="font-size:12px">${esc(s.name || s.tool || '')}</td>
         <td><span class="b b-${esc(s.grade || 'mut')}">${esc(s.grade || '?')}</span></td>
-        <td>${s.executed === false
-              ? '<span class="b b-on">막힘</span>'
-              : '<span class="b b-off">실행됨</span>'}</td>
-        <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre></td>
+        <td>${s.error
+              ? '<span class="b b-mut">실패</span>'
+              : s.executed === false
+                ? '<span class="b b-on">막힘</span>'
+                : '<span class="b b-off">실행됨</span>'}</td>
+        <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre>
+          ${s.error ? `<div class="err" style="font-size:12px">${esc(s.error)}</div>` : ''}</td>
       </tr>`).join('')}
     </table>` : '<div class="empty">도구 호출이 없었습니다.</div>'}
-    ${steps.some((s) => s.executed === false)
+    ${steps.some((s) => s.executed === false && !s.error)
       ? `<div class="note warn" style="margin-top:12px"><b>게이트가 막은 호출이 있습니다.</b>
-         무엇을 하려 했는지는 그대로 기록에 남습니다.</div>` : ''}`;
+         무엇을 하려 했는지는 그대로 기록에 남습니다.</div>` : ''}
+    ${steps.some((s) => s.error)
+      ? `<div class="note" style="margin-top:12px"><b>실패한 호출이 있습니다.</b>
+         게이트와 무관하게 도구가 오류를 냈고, 서버가 낸 메시지를 그대로 보여 줍니다.</div>` : ''}`;
 }
 
 /* ---------- 배포 ---------- */
