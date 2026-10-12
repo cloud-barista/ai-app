@@ -17,6 +17,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -76,6 +77,9 @@ func NewServer(cfg *config.Config, deps Dependencies) *Server {
 	// The automation agent and the tool surface it works through.
 	g.POST("/ns/:nsId/intents", handler.RestPostIntent)
 	g.GET("/tools", handler.RestGetTools)
+
+	// The same tools as an MCP server over Streamable HTTP.
+	g.Any("/mcp", echo.WrapHandler(mcpserver.NewHandler(deps.Tools)))
 
 	// Deploy and control archive.
 	g.GET("/archive", handler.RestGetArchive)
