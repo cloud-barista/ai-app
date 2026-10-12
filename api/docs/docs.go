@@ -775,8 +775,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
                     },
+                    "502": {
+                        "description": "Automation agent is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
                     "503": {
-                        "description": "Planning model is not configured",
+                        "description": "Planning model is not configured or the AI-App tool server is not reachable",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1805,8 +1811,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "",
 	BasePath:         "/aiapp",
 	Schemes:          []string{},
-	Title:            "AI-MCMP AI Application Automation Agent (Prototype)",
-	Description:      "Registers AI application metadata, turns an operator instruction into CB-Tumblebug calls through an LLM, deploys the application onto AI semiconductor nodes and archives every step.",
+	Title:            "AI-MCMP AI-App Service (Prototype)",
+	Description:      "Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Natural language intents are forwarded to the automation agent.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

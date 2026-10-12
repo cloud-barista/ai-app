@@ -1,7 +1,9 @@
-// Command ai-agent-proto serves the AI application deployment automation agent.
+// Command ai-app-server serves the AI-App service: the AI application catalog,
+// deployment and lifecycle through CB-Tumblebug, the tools as an MCP server, the
+// operator console and the deploy and control archive.
 //
-// It is the first-year prototype of two AI-MCMP work items owned by Innogrid:
-// "AI application deployment and operation" and "AI application automation agent".
+// The automation agent runs as cmd/ai-agent and reaches the tools over MCP. Its
+// routes are forwarded from here so that the console keeps one address.
 package main
 
 import (
@@ -13,12 +15,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/agent"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
-	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
@@ -26,9 +26,9 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-// @title AI-MCMP AI Application Automation Agent (Prototype)
+// @title AI-MCMP AI-App Service (Prototype)
 // @version 0.1.0
-// @description Registers AI application metadata, turns an operator instruction into CB-Tumblebug calls through an LLM, deploys the application onto AI semiconductor nodes and archives every step.
+// @description Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Natural language intents are forwarded to the automation agent.
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /aiapp
@@ -66,9 +66,6 @@ func main() {
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)
 
-	llmClient := llm.NewClient(cfg.LLM)
-	agentService := agent.NewService(llmClient, registry, archiveStore, cfg.Agent)
-
 	// Which CB-Tumblebug this talks to is worth one line at startup whatever the
 	// answer, because a service pointed at the wrong platform behaves normally
 	// until the first deployment and then fails somewhere far from the cause.
@@ -79,19 +76,13 @@ func main() {
 		log.Info().Str("url", cfg.Tumblebug.BaseURL).Str("source", "environment").
 			Msg("Using CB-Tumblebug")
 	}
-	if !llmClient.Enabled() {
-		// Everything except the natural language endpoint still works, so this is
-		// a warning rather than a startup failure.
-		log.Warn().Msg("Planning model is not configured: the intent endpoint will report 503")
-	}
 	if cfg.Tumblebug.DryRun {
 		log.Warn().Msg("Dry run is on: deploy, control and delete calls are planned and archived but never sent")
 	}
 
-	server := rest.NewServer(cfg, rest.Dependencies{
+	server := rest.NewAppServer(cfg, rest.AppDependencies{
 		Catalog: appCatalog,
 		Deploy:  deployService,
-		Agent:   agentService,
 		Archive: archiveStore,
 		Tools:   registry,
 	})
@@ -99,7 +90,7 @@ func main() {
 
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
-			Str("model", llmClient.Model()).Int("tools", len(registry.Names())).
+			Int("tools", len(registry.Names())).Str("agentUrl", cfg.Agent.URL).
 			Msg("Starting server")
 		if err := server.Start(); err != nil {
 			log.Error().Err(err).Msg("Server stopped unexpectedly")

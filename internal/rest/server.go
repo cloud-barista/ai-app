@@ -30,25 +30,31 @@ type Server struct {
 	port int
 }
 
-// Dependencies are the service layer objects the routes are built on.
-type Dependencies struct {
+// AppDependencies are the service layer objects the AI-App routes are built on.
+type AppDependencies struct {
 	Catalog *catalog.Store
 	Deploy  *deploy.Service
-	Agent   *agent.Service
 	Archive *archive.Store
 	Tools   *tools.Registry
 }
 
-// NewServer builds the Echo instance and registers all routes.
-func NewServer(cfg *config.Config, deps Dependencies) *Server {
-	handler := NewHandler(deps.Catalog, deps.Deploy, deps.Agent, deps.Archive, deps.Tools)
+// AgentDependencies are the service layer objects the agent routes are built on.
+type AgentDependencies struct {
+	Agent   *agent.Service
+	Archive *archive.Store
+}
 
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-	e.Use(middleware.Recover())
-	e.Use(middleware.RequestID())
+// NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
+// server, the console and a proxy to the automation agent.
+func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
+	handler := &Handler{
+		catalog: deps.Catalog,
+		deploy:  deps.Deploy,
+		archive: deps.Archive,
+		tools:   deps.Tools,
+	}
 
+	e := newEcho()
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/api/*", echoSwagger.WrapHandler)
@@ -74,18 +80,53 @@ func NewServer(cfg *config.Config, deps Dependencies) *Server {
 	g.POST("/ns/:nsId/deployments/:infraId/control", handler.RestPostDeploymentControl)
 	g.DELETE("/ns/:nsId/deployments/:infraId", handler.RestDeleteDeployment)
 
-	// The automation agent and the tool surface it works through.
-	g.POST("/ns/:nsId/intents", handler.RestPostIntent)
+	// The tool surface the agent works through.
 	g.GET("/tools", handler.RestGetTools)
 
 	// The same tools as an MCP server over Streamable HTTP.
 	g.Any("/mcp", echo.WrapHandler(mcpserver.NewHandler(deps.Tools)))
+
+	// The automation agent runs in its own process. The console and operators
+	// keep one address, so its routes are forwarded from here.
+	proxy := echo.WrapHandler(newAgentProxy(cfg.Agent.URL))
+	g.POST("/ns/:nsId/intents", proxy)
+	g.Any("/agent/*", proxy)
 
 	// Deploy and control archive.
 	g.GET("/archive", handler.RestGetArchive)
 	g.GET("/archive/:runId", handler.RestGetArchiveRun)
 
 	return &Server{echo: e, port: cfg.Server.Port}
+}
+
+// NewAgentServer builds the automation agent service: intents and the archive
+// of intent runs.
+func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
+	handler := &Handler{
+		agent:   deps.Agent,
+		archive: deps.Archive,
+	}
+
+	e := newEcho()
+	g := e.Group(BasePath)
+	g.GET("/readyz", RestGetReadyz)
+
+	g.POST("/ns/:nsId/intents", handler.RestPostIntent)
+
+	// Intent run archive.
+	g.GET("/archive", handler.RestGetArchive)
+	g.GET("/archive/:runId", handler.RestGetArchiveRun)
+
+	return &Server{echo: e, port: cfg.Agent.Port}
+}
+
+func newEcho() *echo.Echo {
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	e.Use(middleware.Recover())
+	e.Use(middleware.RequestID())
+	return e
 }
 
 // Start blocks serving HTTP until the server is shut down.

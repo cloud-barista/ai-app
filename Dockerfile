@@ -15,7 +15,9 @@ COPY . .
 
 # CGO is off so the binary runs on a base image with no libc, and the build is
 # stripped because the symbol table is only useful where the source is too.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-agent-proto ./cmd/ai-agent-proto
+# Both services come from one image; the compose file picks the command.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-app-server ./cmd/ai-app-server && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-agent ./cmd/ai-agent
 
 # Runtime stage.
 #
@@ -26,19 +28,21 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata
 
-# A non-root user owns the archive directory. The service only ever appends to
-# it, so nothing needs to write anywhere else in the image.
+# A non-root user owns the archive directories. Each service only ever appends
+# to its own, so nothing needs to write anywhere else in the image.
 RUN adduser -D -u 10001 aiapp
 WORKDIR /app
-RUN mkdir -p /app/data/archive && chown -R aiapp:aiapp /app
+RUN mkdir -p /app/data/archive /app/data/agent-archive && chown -R aiapp:aiapp /app
 
-COPY --from=build /out/ai-agent-proto /usr/local/bin/ai-agent-proto
+COPY --from=build /out/ai-app-server /usr/local/bin/ai-app-server
+COPY --from=build /out/ai-agent /usr/local/bin/ai-agent
 
 USER aiapp
-EXPOSE 8090
+EXPOSE 8090 8091
 
 # No settings file is baked in. Every setting has a default, so the container
 # starts and serves the catalog, the matcher, the tools and the archive with
 # nothing supplied; the deployment path needs AIAPP_TUMBLEBUG_BASE_URL and says
-# so at startup when it is missing.
-ENTRYPOINT ["/usr/local/bin/ai-agent-proto"]
+# so at startup when it is missing. The default command is the AI-App service;
+# run /usr/local/bin/ai-agent for the automation agent.
+CMD ["/usr/local/bin/ai-app-server"]

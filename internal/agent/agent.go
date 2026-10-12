@@ -24,17 +24,33 @@ import (
 // kindIntent labels an archive record produced by a natural language run.
 const kindIntent = "intent"
 
-// Service runs operator intents against the tool registry.
+// ToolSource is the tool surface a run works through. The in-process registry
+// and the MCP client of the AI-App service both satisfy it.
+type ToolSource interface {
+	Definitions() []llm.ToolDef
+	DryRun() bool
+	Grade(name string) tools.Grade
+	Call(ctx context.Context, nsID, name string, input json.RawMessage) (any, error)
+}
+
+// Preparer is implemented by a ToolSource that has to reach something before a
+// run can start. Run calls it first, so an unreachable source fails the run
+// instead of handing the model an empty tool list.
+type Preparer interface {
+	Prepare(ctx context.Context) error
+}
+
+// Service runs operator intents against a tool source.
 type Service struct {
 	llm      *llm.Client
-	tools    *tools.Registry
+	tools    ToolSource
 	archive  *archive.Store
 	maxSteps int
 }
 
 // NewService builds a Service.
-func NewService(client *llm.Client, registry *tools.Registry, store *archive.Store, cfg config.AgentConfig) *Service {
-	return &Service{llm: client, tools: registry, archive: store, maxSteps: cfg.MaxSteps}
+func NewService(client *llm.Client, source ToolSource, store *archive.Store, cfg config.AgentConfig) *Service {
+	return &Service{llm: client, tools: source, archive: store, maxSteps: cfg.MaxSteps}
 }
 
 // Enabled reports whether the planning model is reachable.
@@ -48,6 +64,11 @@ func (s *Service) Enabled() bool { return s.llm.Enabled() }
 func (s *Service) Run(ctx context.Context, nsID, intent string) (*model.IntentResp, error) {
 	if !s.llm.Enabled() {
 		return nil, llm.ErrDisabled
+	}
+	if preparer, ok := s.tools.(Preparer); ok {
+		if err := preparer.Prepare(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	runID := newRunID()

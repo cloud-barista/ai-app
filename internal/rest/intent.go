@@ -1,11 +1,13 @@
 package rest
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
@@ -20,7 +22,8 @@ import (
 // @Param intentReq body model.IntentReq true "Operator instruction"
 // @Success 200 {object} model.IntentResp "Agent run finished"
 // @Failure 400 {object} model.SimpleMsg "Malformed or empty instruction"
-// @Failure 503 {object} model.SimpleMsg "Planning model is not configured"
+// @Failure 503 {object} model.SimpleMsg "Planning model is not configured or the AI-App tool server is not reachable"
+// @Failure 502 {object} model.SimpleMsg "Automation agent is not reachable from the AI-App service"
 // @Failure 500 {object} model.SimpleMsg "Agent run failed"
 // @Router /ns/{nsId}/intents [post]
 func (h *Handler) RestPostIntent(c echo.Context) error {
@@ -62,6 +65,9 @@ func (h *Handler) RestGetTools(c echo.Context) error {
 
 // agentFailureMessage keeps model and driver wording out of the response body.
 func agentFailureMessage(err error) string {
+	if errors.Is(err, mcpclient.ErrUnavailable) {
+		return "AI-App tool server is not reachable"
+	}
 	if statusCodeFor(err) == http.StatusServiceUnavailable {
 		return "Planning model is not configured"
 	}

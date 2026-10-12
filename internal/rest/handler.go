@@ -9,35 +9,20 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/llm"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
-// Handler serves every endpoint of this service.
+// Handler serves the endpoints of both services. Each server fills only the
+// fields its routes use.
 type Handler struct {
 	catalog *catalog.Store
 	deploy  *deploy.Service
 	agent   *agent.Service
 	archive *archive.Store
 	tools   *tools.Registry
-}
-
-// NewHandler builds a Handler around the service layer.
-func NewHandler(
-	apps *catalog.Store,
-	deployer *deploy.Service,
-	agentService *agent.Service,
-	archiveStore *archive.Store,
-	registry *tools.Registry,
-) *Handler {
-	return &Handler{
-		catalog: apps,
-		deploy:  deployer,
-		agent:   agentService,
-		archive: archiveStore,
-		tools:   registry,
-	}
 }
 
 // statusCodeFor maps a failure to the status this API returns.
@@ -55,6 +40,8 @@ func statusCodeFor(err error) int {
 	case errors.Is(err, deploy.ErrNotViable):
 		return http.StatusBadRequest
 	case errors.Is(err, llm.ErrDisabled):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, mcpclient.ErrUnavailable):
 		return http.StatusServiceUnavailable
 	}
 

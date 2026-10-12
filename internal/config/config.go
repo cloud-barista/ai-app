@@ -31,10 +31,11 @@ type Config struct {
 	Tumblebug TumblebugConfig
 	LLM       LLMConfig
 	Agent     AgentConfig
+	App       AppConfig
 	Archive   ArchiveConfig
 }
 
-// ServerConfig holds HTTP server settings.
+// ServerConfig holds the HTTP settings of the AI-App service.
 type ServerConfig struct {
 	Port int
 }
@@ -77,10 +78,22 @@ type LLMConfig struct {
 	Timeout   time.Duration
 }
 
-// AgentConfig bounds a single agent run.
+// AgentConfig holds the automation agent settings.
 type AgentConfig struct {
 	// MaxSteps caps tool-use iterations so a looping model cannot run forever.
 	MaxSteps int
+	// Port is the HTTP port the agent process listens on.
+	Port int
+	// URL is where the AI-App service forwards intent and agent requests.
+	URL string
+	// ArchiveDir holds the intent run archive, apart from the AI-App archive.
+	ArchiveDir string
+}
+
+// AppConfig holds how the agent reaches the AI-App service.
+type AppConfig struct {
+	// MCPURL is the Streamable HTTP endpoint of the AI-App MCP server.
+	MCPURL string
 }
 
 // ArchiveConfig holds the deployment/control archive location.
@@ -108,6 +121,10 @@ func Load() (*Config, error) {
 	v.SetDefault("llm.max_tokens", 16000)
 	v.SetDefault("llm.timeout", 5*time.Minute)
 	v.SetDefault("agent.max_steps", 12)
+	v.SetDefault("agent.port", 8091)
+	v.SetDefault("agent.url", "http://127.0.0.1:8091")
+	v.SetDefault("agent.archive_dir", "./data/agent-archive")
+	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
 
 	// AutomaticEnv only resolves keys that viper already knows about.
@@ -128,6 +145,10 @@ func Load() (*Config, error) {
 		"llm.max_tokens",
 		"llm.timeout",
 		"agent.max_steps",
+		"agent.port",
+		"agent.url",
+		"agent.archive_dir",
+		"app.mcp_url",
 		"archive.dir",
 	} {
 		if err := v.BindEnv(key); err != nil {
@@ -161,7 +182,13 @@ func Load() (*Config, error) {
 			Timeout:   v.GetDuration("llm.timeout"),
 		},
 		Agent: AgentConfig{
-			MaxSteps: v.GetInt("agent.max_steps"),
+			MaxSteps:   v.GetInt("agent.max_steps"),
+			Port:       v.GetInt("agent.port"),
+			URL:        strings.TrimRight(v.GetString("agent.url"), "/"),
+			ArchiveDir: v.GetString("agent.archive_dir"),
+		},
+		App: AppConfig{
+			MCPURL: v.GetString("app.mcp_url"),
 		},
 		Archive: ArchiveConfig{
 			Dir: v.GetString("archive.dir"),
@@ -207,6 +234,18 @@ func (c *Config) validate() error {
 	}
 	if c.Agent.MaxSteps <= 0 {
 		return fmt.Errorf("invalid agent max steps: %d", c.Agent.MaxSteps)
+	}
+	if c.Agent.Port <= 0 || c.Agent.Port > 65535 {
+		return fmt.Errorf("invalid agent port: %d", c.Agent.Port)
+	}
+	if c.Agent.URL == "" {
+		return fmt.Errorf("%s_AGENT_URL is required", envPrefix)
+	}
+	if c.Agent.ArchiveDir == "" {
+		return fmt.Errorf("%s_AGENT_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.App.MCPURL == "" {
+		return fmt.Errorf("%s_APP_MCP_URL is required", envPrefix)
 	}
 	if c.Archive.Dir == "" {
 		return fmt.Errorf("%s_ARCHIVE_DIR is required", envPrefix)

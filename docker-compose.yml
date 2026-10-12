@@ -1,4 +1,9 @@
-# Runs the AI application automation agent on its own.
+# Runs the AI-App service and the AI application automation agent.
+#
+# Both services come from one image and differ only in the command. The agent
+# reaches the tools through the AI-App MCP server, and the AI-App service
+# forwards intent and agent routes to the agent, so the console needs only the
+# AI-App address.
 #
 # CB-Tumblebug is deliberately not a service here. It brings cb-spider and a
 # database with it, and including them would turn "bring this prototype up" into
@@ -9,12 +14,13 @@
 #   docker compose up -d        # starts with built-in defaults, no .env needed
 #   cp .env.example .env        # only to point at a real CB-Tumblebug
 services:
-  ai-agent-proto:
+  ai-app-server:
     build:
       context: .
       dockerfile: Dockerfile
     image: ai-agent-proto:local
-    container_name: ai-agent-proto
+    container_name: ai-app-server
+    command: ["/usr/local/bin/ai-app-server"]
     restart: unless-stopped
     ports:
       - "${AIAPP_SERVER_PORT:-8090}:8090"
@@ -36,10 +42,8 @@ services:
       # container started by accident cannot provision anything billable.
       AIAPP_TUMBLEBUG_DRY_RUN: "${AIAPP_TUMBLEBUG_DRY_RUN:-true}"
 
-      AIAPP_LLM_BASE_URL: "${AIAPP_LLM_BASE_URL:-https://api.anthropic.com}"
-      AIAPP_LLM_API_KEY: "${AIAPP_LLM_API_KEY:-}"
-      AIAPP_LLM_MODEL: "${AIAPP_LLM_MODEL:-claude-opus-5}"
-      AIAPP_AGENT_MAX_STEPS: "${AIAPP_AGENT_MAX_STEPS:-12}"
+      # Where intent and agent routes are forwarded.
+      AIAPP_AGENT_URL: "http://ai-agent:8091"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"
 
     # The archive is the first-year deliverable and the second-year input, so it
@@ -59,5 +63,38 @@ services:
       retries: 5
       start_period: 10s
 
+  ai-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: ai-agent
+    command: ["/usr/local/bin/ai-agent"]
+    restart: unless-stopped
+    ports:
+      - "${AIAPP_AGENT_PORT:-8091}:8091"
+    environment:
+      AIAPP_AGENT_PORT: "8091"
+
+      # The tools, their grades and the dry-run state all come from here.
+      AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
+
+      AIAPP_LLM_BASE_URL: "${AIAPP_LLM_BASE_URL:-https://api.anthropic.com}"
+      AIAPP_LLM_API_KEY: "${AIAPP_LLM_API_KEY:-}"
+      AIAPP_LLM_MODEL: "${AIAPP_LLM_MODEL:-claude-opus-5}"
+      AIAPP_AGENT_MAX_STEPS: "${AIAPP_AGENT_MAX_STEPS:-12}"
+      AIAPP_AGENT_ARCHIVE_DIR: "/app/data/agent-archive"
+
+    volumes:
+      - agent-archive:/app/data/agent-archive
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8091/aiapp/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   archive:
+  agent-archive:
