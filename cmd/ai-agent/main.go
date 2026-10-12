@@ -21,6 +21,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
+	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
 )
 
@@ -65,7 +66,8 @@ func main() {
 	// server is reported but does not stop startup. Each run connects again.
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), probeTimeout)
 	if err := toolSource.Prepare(probeCtx); err != nil {
-		log.Warn().Err(err).Str("url", toolSource.Endpoint()).
+		log.Warn().Str("error", redact.Error(err, toolSource.Endpoint())).
+			Str("url", redact.URL(toolSource.Endpoint())).
 			Msg("AI-App MCP server is not reachable yet: intents will report 503 until it is")
 	}
 	cancelProbe()

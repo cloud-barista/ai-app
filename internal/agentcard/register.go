@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 )
 
 // Registration states reported in the card.
@@ -35,13 +37,15 @@ const (
 	registerInterval = 5 * time.Second
 	// registerTimeout bounds one attempt.
 	registerTimeout = 10 * time.Second
-	// messageLimit caps how much of a registry reply is kept in the card.
-	messageLimit = 200
+	// replyLimit caps how much of a registry reply is read. The reply is never
+	// kept in the card or logged, only its length.
+	replyLimit = 4096
 )
 
 // Registrar posts the agent card to an agent registry and remembers the outcome.
 type Registrar struct {
 	url        string
+	display    string
 	token      string
 	httpClient *http.Client
 	connects   int
@@ -67,7 +71,8 @@ func NewRegistrar(registryURL, token string) *Registrar {
 	if r.url == "" {
 		r.state = disabledRegistration()
 	} else {
-		r.state = model.AgentRegistration{RegistryURL: r.url, Status: StatusPending}
+		r.display = redact.URL(r.url)
+		r.state = model.AgentRegistration{RegistryURL: r.display, Status: StatusPending}
 	}
 	return r
 }
@@ -117,14 +122,14 @@ func (r *Registrar) Register(ctx context.Context, c *Card) {
 		ok, msg := r.post(ctx, c.describe())
 		message = msg
 		if ok {
-			log.Info().Str("registry", r.url).Int("attempt", attempt).Msg("Registered the agent card")
+			log.Info().Str("registry", r.display).Int("attempt", attempt).Msg("Registered the agent card")
 			r.finish(StatusRegistered, msg)
 			return
 		}
-		log.Warn().Str("registry", r.url).Int("attempt", attempt).Int("attempts", r.attempts).
+		log.Warn().Str("registry", r.display).Int("attempt", attempt).Int("attempts", r.attempts).
 			Str("reason", msg).Msg("Failed to register the agent card")
 	}
-	log.Error().Str("registry", r.url).Str("reason", message).
+	log.Error().Str("registry", r.display).Str("reason", message).
 		Msg("Gave up registering the agent card; the agent keeps running unregistered")
 	r.finish(StatusFailed, message)
 }
@@ -155,7 +160,8 @@ func (r *Registrar) connect(ctx context.Context, c *Card) bool {
 			return true
 		}
 	}
-	log.Warn().Err(err).Str("url", c.tools.Endpoint()).Int("attempts", r.connects).
+	endpoint := c.tools.Endpoint()
+	log.Warn().Str("error", redact.Error(err, endpoint)).Str("url", redact.URL(endpoint)).Int("attempts", r.connects).
 		Msg("AI-App MCP server is still not reachable: registering the agent card without tools")
 	return true
 }
@@ -167,9 +173,13 @@ func (r *Registrar) post(ctx context.Context, card model.AgentCard) (bool, strin
 	if err != nil {
 		return false, fmt.Sprintf("encode card: %v", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url+"/agents", bytes.NewReader(body))
+	base, err := url.Parse(r.url)
 	if err != nil {
-		return false, fmt.Sprintf("build request: %v", err)
+		return false, "build request: invalid registry URL " + r.display
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base.JoinPath("agents").String(), bytes.NewReader(body))
+	if err != nil {
+		return false, "build request: " + redact.Error(err, r.url)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -179,15 +189,14 @@ func (r *Registrar) post(ctx context.Context, card model.AgentCard) (bool, strin
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return false, err.Error()
+		return false, redact.Error(err, r.url)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	reply, _ := io.ReadAll(io.LimitReader(resp.Body, messageLimit))
-	message := fmt.Sprintf("HTTP %d", resp.StatusCode)
-	if text := strings.TrimSpace(string(reply)); text != "" {
-		message += ": " + text
-	}
+	replyBytes, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, replyLimit))
+	log.Debug().Str("registry", r.display).Int("status", resp.StatusCode).Int64("replyBytes", replyBytes).
+		Msg("Agent registry replied")
+	message := strings.TrimSpace(fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 	return resp.StatusCode >= 200 && resp.StatusCode < 300, message
 }
 
@@ -195,7 +204,7 @@ func (r *Registrar) finish(status, message string) {
 	now := time.Now().UTC()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.state = model.AgentRegistration{RegistryURL: r.url, Status: status, At: &now, Message: message}
+	r.state = model.AgentRegistration{RegistryURL: r.display, Status: status, At: &now, Message: message}
 }
 
 func disabledRegistration() model.AgentRegistration {

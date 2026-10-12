@@ -204,8 +204,72 @@ func TestRegisterFailsAfterThreeAttempts(t *testing.T) {
 		t.Errorf("Authorization = %q without a token", fake.auths[0])
 	}
 	state := card.Build().Registration
-	if state.Status != StatusFailed || state.At == nil ||
-		!strings.Contains(state.Message, "503") || !strings.Contains(state.Message, "registry is down") {
+	if state.Status != StatusFailed || state.At == nil || state.Message != "HTTP 503 Service Unavailable" {
+		t.Errorf("registration = %+v", state)
+	}
+}
+
+// secretURL returns base with user information and a query token added, the
+// way a URL with credentials may be configured.
+func secretURL(t *testing.T, base, user, password, query string) string {
+	t.Helper()
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("parse %q: %v", base, err)
+	}
+	u.User = url.UserPassword(user, password)
+	u.RawQuery = query
+	u.Fragment = "frag"
+	return u.String()
+}
+
+func TestCardAndRegistrationCarryNoURLSecrets(t *testing.T) {
+	registry := newRegistry()
+	mcpSrv := httptest.NewServer(mcpserver.NewHandler(registry))
+	defer mcpSrv.Close()
+	mcpURL := secretURL(t, mcpSrv.URL+"/aiapp/mcp", "mu", "mpw", "token=mtok")
+	client := mcpclient.New(mcpURL, "")
+	defer func() { _ = client.Close() }()
+
+	fake := &fakeRegistry{
+		status: http.StatusUnauthorized,
+		reply:  `{"error":"bad token","echo":"Authorization: Bearer reg-token"}`,
+	}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	registryURL := secretURL(t, srv.URL+"/registry", "ru", "rpw", "key=rtok")
+
+	registrar := NewRegistrar(registryURL, "reg-token")
+	registrar.interval = time.Millisecond
+	card := New(client, testLLM, registrar)
+
+	registrar.Register(context.Background(), card)
+
+	if fake.calls() != registerAttempts || fake.paths[0] != "POST /registry/agents" {
+		t.Fatalf("registry saw %v", fake.paths)
+	}
+	secrets := []string{"mu:", "mpw", "mtok", "ru:", "rpw", "rtok", "frag", "reg-token", "bad token", "Bearer"}
+	for _, body := range fake.bodies {
+		for _, secret := range secrets {
+			if strings.Contains(string(body), secret) {
+				t.Errorf("registry received %q: %s", secret, body)
+			}
+		}
+	}
+
+	built := card.Build()
+	raw, _ := json.Marshal(built)
+	for _, secret := range secrets {
+		if strings.Contains(string(raw), secret) {
+			t.Errorf("card carries %q: %s", secret, raw)
+		}
+	}
+	if built.MCPServers[0].URL != mcpSrv.URL+"/aiapp/mcp" {
+		t.Errorf("mcpServers[0].url = %q", built.MCPServers[0].URL)
+	}
+	state := built.Registration
+	if state.RegistryURL != srv.URL+"/registry" || state.Status != StatusFailed ||
+		state.Message != "HTTP 401 Unauthorized" {
 		t.Errorf("registration = %+v", state)
 	}
 }

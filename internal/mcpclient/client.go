@@ -21,6 +21,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
+	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -70,6 +71,7 @@ func (t namespaceTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // Client is a ToolSource backed by the AI-App MCP server.
 type Client struct {
 	endpoint   string
+	display    string
 	httpClient *http.Client
 
 	mu          sync.Mutex
@@ -84,6 +86,7 @@ type Client struct {
 func New(endpoint, token string) *Client {
 	return &Client{
 		endpoint:   endpoint,
+		display:    redact.URL(endpoint),
 		httpClient: &http.Client{Transport: namespaceTransport{base: http.DefaultTransport, token: token}},
 	}
 }
@@ -101,7 +104,7 @@ func (c *Client) Prepare(ctx context.Context) error {
 		if err := c.session.Ping(ctx, nil); err == nil {
 			return nil
 		}
-		log.Warn().Str("endpoint", c.endpoint).Msg("AI-App MCP session stopped answering, reconnecting")
+		log.Warn().Str("endpoint", c.display).Msg("AI-App MCP session stopped answering, reconnecting")
 		c.dropLocked()
 	}
 	return c.connectLocked(ctx)
@@ -116,7 +119,7 @@ func (c *Client) Definitions() []llm.ToolDef {
 		ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 		defer cancel()
 		if err := c.connectLocked(ctx); err != nil {
-			log.Warn().Err(err).Str("endpoint", c.endpoint).Msg("Failed to read the AI-App tool list")
+			log.Warn().Err(err).Str("endpoint", c.display).Msg("Failed to read the AI-App tool list")
 			return nil
 		}
 	}
@@ -177,7 +180,7 @@ func (c *Client) Call(ctx context.Context, nsID, name string, input json.RawMess
 			c.dropLocked()
 		}
 		c.mu.Unlock()
-		return nil, fmt.Errorf("%w: tools/call %s: %v", ErrUnavailable, name, err)
+		return nil, fmt.Errorf("%w: tools/call %s: %s", ErrUnavailable, name, redact.Error(err, c.endpoint))
 	}
 
 	text := textOf(result)
@@ -209,7 +212,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	client := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: clientVersion}, nil)
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return fmt.Errorf("%w: connect %s: %v", ErrUnavailable, c.endpoint, err)
+		return fmt.Errorf("%w: connect %s: %s", ErrUnavailable, c.display, redact.Error(err, c.endpoint))
 	}
 
 	definitions := []llm.ToolDef{}
@@ -217,7 +220,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			_ = session.Close()
-			return fmt.Errorf("%w: tools/list: %v", ErrUnavailable, err)
+			return fmt.Errorf("%w: tools/list: %s", ErrUnavailable, redact.Error(err, c.endpoint))
 		}
 		definitions = append(definitions, llm.ToolDef{
 			Name:        tool.Name,
@@ -238,7 +241,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	c.grades = grades
 	c.dryRun = dryRun
 
-	log.Info().Str("endpoint", c.endpoint).Int("tools", len(definitions)).Bool("dryRun", dryRun).
+	log.Info().Str("endpoint", c.display).Int("tools", len(definitions)).Bool("dryRun", dryRun).
 		Msg("Connected to the AI-App MCP server")
 	return nil
 }

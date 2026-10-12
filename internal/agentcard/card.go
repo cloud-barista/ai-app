@@ -12,6 +12,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -93,7 +94,7 @@ func (c *Card) describe() model.AgentCard {
 		Description:     Description,
 		IntentEndpoint:  IntentEndpoint,
 		MCPServers: []model.AgentMCPServer{{
-			URL:       c.tools.Endpoint(),
+			URL:       redact.URL(c.tools.Endpoint()),
 			Connected: connected,
 			ToolCount: len(cardTools),
 		}},
