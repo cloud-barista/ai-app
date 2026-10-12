@@ -61,8 +61,19 @@ type DeploymentPlan struct {
 	AcceleratorSummary string `json:"acceleratorSummary,omitempty"`
 	// EstimatedCost is the CB-Tumblebug review estimate, when a review ran.
 	EstimatedCost string `json:"estimatedCost,omitempty"`
+	// Requirements are the model services an application was wired to.
+	Requirements []ResolvedRequirement `json:"requirements,omitempty"`
 	// Request is the dynamic Infra request body, including the install commands.
 	Request any `json:"request"`
+}
+
+// ResolvedRequirement is a required model service matched to a running deployment.
+type ResolvedRequirement struct {
+	AppID   string `json:"appId" example:"vllm-llama31-8b"`
+	Env     string `json:"env" example:"OPENAI_API_BASE_URL"`
+	InfraID string `json:"infraId" example:"vllm-lab-01"`
+	// Endpoint is the value exported under Env before the install commands run.
+	Endpoint string `json:"endpoint" example:"http://203.0.113.10:8000/v1"`
 }
 
 // ServingAccess reports whether the application's serving port can be reached.

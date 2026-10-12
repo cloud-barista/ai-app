@@ -85,6 +85,8 @@
   .b-gpu { background: var(--ok-soft); color: var(--ok); }
   .b-npu { background: var(--info-soft); color: var(--info); }
   .b-tpu { background: var(--accent-soft); color: var(--accent); }
+  .b-model-service { background: var(--info-soft); color: var(--info); }
+  .b-application { background: var(--accent-soft); color: var(--accent); }
   .b-on { background: var(--bad-soft); color: var(--bad); }
   .b-off { background: var(--ok-soft); color: var(--ok); }
   .b-mut { background: #F0F0EC; color: var(--ink-3); }
@@ -763,15 +765,20 @@ async function loadCatalog() {
   $('cat-list').innerHTML = APPS.map((a) => {
     const acc = a.accelerator || {};
     const kind = (acc.type || '').toLowerCase();
+    const appKind = a.kind === 'application' ? 'application' : 'model-service';
+    const requires = a.requires || [];
     return `<div class="card">
       <h4>${esc(a.name)}</h4>
       <div class="id">${esc(a.id)} · v${esc(a.version)}</div>
       <div class="meta">
-        <span class="b b-${esc(kind) || 'mut'}">${esc((acc.type || '?').toUpperCase())}</span>
+        <span class="b b-${appKind}">${appKind === 'application' ? 'AI 응용' : '모델 서비스'}</span>
+        <span class="b b-${esc(kind) || 'mut'}">${esc((acc.type || (appKind === 'application' ? 'cpu' : '?')).toUpperCase())}</span>
         <span class="b b-mut">runtime ${esc(a.runtime || '?')}</span>
         ${acc.minCount ? `<span class="b b-mut">x${esc(acc.minCount)}</span>` : ''}
         ${acc.minMemoryGiB ? `<span class="b b-mut">${esc(acc.minMemoryGiB)} GiB 이상</span>` : ''}
       </div>
+      ${requires.length ? `<div class="meta">먼저 배포할 모델 서비스 ${requires.map((q) =>
+        `<span class="mono">${esc(q.appId)}</span> → <span class="mono">${esc(q.env)}</span>`).join(', ')}</div>` : ''}
       <div class="meta">${esc(a.description || '')}</div>
       <div class="acts">
         <button class="ghost" onclick="showApp('${esc(a.id)}')">상세</button>

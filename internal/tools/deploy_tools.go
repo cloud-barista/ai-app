@@ -22,6 +22,11 @@ var allowedActions = map[string]bool{
 	"terminate": true,
 }
 
+// requiresNote tells a planning model what an application needs before it can
+// be planned, so the refusal it may get reads as an instruction, not a failure.
+const requiresNote = "An application (kind application) needs every model service in its requires deployed " +
+	"in this namespace first; deploy those model services before the application."
+
 // Register adds every deployment tool to the registry.
 func Register(registry *Registry, apps *catalog.Store, service *deploy.Service) {
 	registry.Add(listAppsTool(apps))
@@ -44,8 +49,8 @@ func listAppsTool(apps *catalog.Store) Tool {
 	return Tool{
 		Name:  "list_ai_apps",
 		Grade: GradeRead,
-		Description: "List every registered AI application in short form: id, runtime, model, accelerator " +
-			"requirement and serving port. Use it to see what the catalog holds. " +
+		Description: "List every registered AI application in short form: id, kind, required model services, " +
+			"runtime, model, accelerator requirement and serving port. Use it to see what the catalog holds. " +
 			"When the operator described an application in words, call find_ai_apps instead.",
 		InputSchema: object(map[string]any{}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
@@ -59,8 +64,9 @@ func findAppsTool(apps *catalog.Store) Tool {
 		Name:  "find_ai_apps",
 		Grade: GradeRead,
 		Description: "Rank registered AI applications against the operator's own words and return the best " +
-			"candidates with the signals that matched. An empty result means the catalog holds nothing " +
-			"that fits, which is an answer: say so rather than deploying the closest entry.",
+			"candidates with the signals that matched, each with its kind (model-service or application) " +
+			"and, for an application, the model services it requires. An empty result means the catalog " +
+			"holds nothing that fits, which is an answer: say so rather than deploying the closest entry.",
 		InputSchema: object(map[string]any{
 			"query": stringProp("The operator's instruction, in their own words"),
 			"limit": integerProp("How many candidates to return. Defaults to 5"),
@@ -83,9 +89,10 @@ func findAppsTool(apps *catalog.Store) Tool {
 
 func getAppTool(apps *catalog.Store) Tool {
 	return Tool{
-		Name:        "get_ai_app",
-		Grade:       GradeRead,
-		Description: "Read one registered AI application, including its install commands and serving port.",
+		Name:  "get_ai_app",
+		Grade: GradeRead,
+		Description: "Read one registered AI application, including its kind, the model services it " +
+			"requires, its install commands and serving port.",
 		InputSchema: object(map[string]any{
 			"appId": stringProp("Identifier of the registered AI application"),
 		}, "appId"),
@@ -234,7 +241,8 @@ func planDeploymentTool(service *deploy.Service) Tool {
 		Name:  "plan_deployment",
 		Grade: GradeRead,
 		Description: "Build the provisioning request for an AI application without contacting any cloud. " +
-			"Leave specId empty to let the accelerator requirement pick the cheapest matching spec.",
+			"Leave specId empty to let the accelerator requirement pick the cheapest matching spec. " +
+			requiresNote,
 		InputSchema: deployInputSchema(),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			req, err := decodeDeployReq(input)
@@ -277,7 +285,8 @@ func deployTool(service *deploy.Service) Tool {
 		Grade: GradeWrite,
 		Description: "Provision nodes and install the AI application on them in one call. " +
 			"This creates billable resources and blocks for several minutes. " +
-			"The request is reviewed first and refused if a deployment of the same name already exists.",
+			"The request is reviewed first and refused if a deployment of the same name already exists. " +
+			requiresNote,
 		InputSchema: deployInputSchema(),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			req, err := decodeDeployReq(input)

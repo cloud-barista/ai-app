@@ -101,6 +101,12 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 	if err != nil {
 		return nil, err
 	}
+	// Checked before any spec is recommended: an application whose model
+	// service is missing cannot run wherever it is placed.
+	requirements, err := s.resolveRequirements(ctx, nsID, app)
+	if err != nil {
+		return nil, err
+	}
 
 	specID := req.SpecID
 	specSource := "requested"
@@ -158,7 +164,7 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 		// The install commands ride along with provisioning, so there is no second
 		// channel to secure and no window where a node is up but unconfigured.
 		PostCommands: []tumblebug.PostCommandReq{{
-			Command:        app.Install.Commands,
+			Command:        requirementCommands(app.Install.Commands, requirements),
 			UserName:       app.Install.UserName,
 			TimeoutMinutes: app.Install.TimeoutMinutes,
 		}},
@@ -178,6 +184,7 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 		ImageSource:        imageSource,
 		ImageReason:        imageReason,
 		AcceleratorSummary: acceleratorSummary,
+		Requirements:       requirements,
 		Request:            infraReq,
 	}, nil
 }
@@ -374,11 +381,18 @@ func (s *Service) ensureAbsent(ctx context.Context, nsID, infraName string) erro
 }
 
 func deploymentLabels(app *model.AppSpec) map[string]string {
+	// An application without an accelerator still gets a value, so the label
+	// never goes out empty and a filter on it can tell CPU nodes apart.
+	accelerator := app.Accelerator.Type
+	if accelerator == "" {
+		accelerator = "none"
+	}
 	labels := map[string]string{
 		labelAppID:            app.ID,
 		"ai-mcmp.app-version": app.Version,
 		"ai-mcmp.runtime":     string(app.Runtime),
-		"ai-mcmp.accelerator": app.Accelerator.Type,
+		"ai-mcmp.accelerator": accelerator,
+		"ai-mcmp.kind":        string(app.EffectiveKind()),
 	}
 	for key, value := range app.Labels {
 		labels[key] = value
@@ -387,6 +401,9 @@ func deploymentLabels(app *model.AppSpec) map[string]string {
 }
 
 func summarizeAccelerator(candidate model.SpecCandidate) string {
+	if candidate.AcceleratorType == "" && candidate.AcceleratorCount == 0 {
+		return ""
+	}
 	if candidate.AcceleratorModel == "" {
 		return fmt.Sprintf("%s x%d", candidate.AcceleratorType, candidate.AcceleratorCount)
 	}

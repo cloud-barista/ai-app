@@ -41,18 +41,44 @@ func (s *Store) Register(ctx context.Context, spec model.AppSpec) (*model.AppSpe
 	if len(spec.DeployTarget) == 0 {
 		spec.DeployTarget = []model.DeployTarget{model.DeployTargetVM}
 	}
+	spec.Kind = spec.EffectiveKind()
 
 	s.mu.Lock()
+	if err := s.checkRequires(&spec); err != nil {
+		s.mu.Unlock()
+		return nil, err
+	}
 	_, replaced := s.apps[spec.ID]
 	s.apps[spec.ID] = spec
 	s.mu.Unlock()
 
 	log.Info().Str("appId", spec.ID).Str("version", spec.Version).
-		Str("runtime", string(spec.Runtime)).Str("acceleratorType", spec.Accelerator.Type).
+		Str("kind", string(spec.Kind)).Str("runtime", string(spec.Runtime)).
+		Str("acceleratorType", spec.Accelerator.Type).
 		Bool("replaced", replaced).Msg("Registered AI application")
 
 	stored := spec
 	return &stored, nil
+}
+
+// checkRequires refuses an application whose requirements are not registered
+// model services. The caller holds the lock.
+//
+// Checking at registration rather than at deployment means a typo in an appId
+// is caught by whoever wrote it, not by an agent minutes into a deployment.
+func (s *Store) checkRequires(spec *model.AppSpec) error {
+	for i, req := range spec.Requires {
+		required, ok := s.apps[req.AppID]
+		if !ok {
+			return &model.ValidationError{Message: fmt.Sprintf(
+				"requires[%d].appId %q is not a registered application", i, req.AppID)}
+		}
+		if required.EffectiveKind() != model.KindModelService {
+			return &model.ValidationError{Message: fmt.Sprintf(
+				"requires[%d].appId %q is not a model service", i, req.AppID)}
+		}
+	}
+	return nil
 }
 
 // Get reads one application spec.

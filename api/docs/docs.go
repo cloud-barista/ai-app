@@ -512,7 +512,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Deployment name already in use",
+                        "description": "Deployment name already in use, or a model service the application requires is not deployed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -585,6 +585,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "A model service the application requires is not deployed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -913,7 +919,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Deployment was not deployed with this application",
+                        "description": "Deployment was not deployed with this application, or a model service it requires is not deployed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1087,6 +1093,9 @@ const docTemplate = `{
                 "appId": {
                     "type": "string"
                 },
+                "kind": {
+                    "$ref": "#/definitions/model.AppKind"
+                },
                 "modelId": {
                     "type": "string"
                 },
@@ -1098,6 +1107,13 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "requires": {
+                    "description": "Requires names the model services an application needs deployed first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppRequirement"
                     }
                 },
                 "runtime": {
@@ -1390,13 +1406,39 @@ const docTemplate = `{
                 }
             }
         },
+        "model.AppKind": {
+            "type": "string",
+            "enum": [
+                "model-service",
+                "application"
+            ],
+            "x-enum-varnames": [
+                "KindModelService",
+                "KindApplication"
+            ]
+        },
+        "model.AppRequirement": {
+            "type": "object",
+            "required": [
+                "appId",
+                "env"
+            ],
+            "properties": {
+                "appId": {
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "env": {
+                    "type": "string",
+                    "example": "OPENAI_API_BASE_URL"
+                }
+            }
+        },
         "model.AppSpec": {
             "type": "object",
             "required": [
-                "accelerator",
                 "id",
                 "install",
-                "model",
                 "name",
                 "runtime",
                 "serving",
@@ -1404,7 +1446,12 @@ const docTemplate = `{
             ],
             "properties": {
                 "accelerator": {
-                    "$ref": "#/definitions/model.AcceleratorRequirement"
+                    "description": "Accelerator is required for a model service. An application that leaves\nthe type empty is placed on a CPU node.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AcceleratorRequirement"
+                        }
+                    ]
                 },
                 "aliases": {
                     "description": "Aliases are the other names an operator uses for this application, in any\nlanguage. They exist because an instruction arrives as \"라마 추론서버\", not\nas the registered id, and nothing else in the record carries that word.",
@@ -1433,6 +1480,18 @@ const docTemplate = `{
                 "install": {
                     "$ref": "#/definitions/model.InstallSpec"
                 },
+                "kind": {
+                    "enum": [
+                        "model-service",
+                        "application"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AppKind"
+                        }
+                    ],
+                    "example": "model-service"
+                },
                 "labels": {
                     "type": "object",
                     "additionalProperties": {
@@ -1440,11 +1499,22 @@ const docTemplate = `{
                     }
                 },
                 "model": {
-                    "$ref": "#/definitions/model.ModelRef"
+                    "description": "Model is required for a model service and optional for an application.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ModelRef"
+                        }
+                    ]
                 },
                 "name": {
                     "type": "string",
                     "example": "vLLM Llama 3.1 8B Instruct"
+                },
+                "requires": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppRequirement"
+                    }
                 },
                 "resources": {
                     "$ref": "#/definitions/model.ResourceRequirement"
@@ -1663,6 +1733,13 @@ const docTemplate = `{
                 "request": {
                     "description": "Request is the dynamic Infra request body, including the install commands."
                 },
+                "requirements": {
+                    "description": "Requirements are the model services an application was wired to.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ResolvedRequirement"
+                    }
+                },
                 "sgTemplateId": {
                     "type": "string"
                 },
@@ -1866,6 +1943,28 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ResolvedRequirement": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "endpoint": {
+                    "description": "Endpoint is the value exported under Env before the install commands run.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/v1"
+                },
+                "env": {
+                    "type": "string",
+                    "example": "OPENAI_API_BASE_URL"
+                },
+                "infraId": {
+                    "type": "string",
+                    "example": "vllm-lab-01"
+                }
+            }
+        },
         "model.ResourceRequirement": {
             "type": "object",
             "properties": {
@@ -1915,13 +2014,15 @@ const docTemplate = `{
                 "vllm",
                 "triton",
                 "tgi",
-                "ollama"
+                "ollama",
+                "app"
             ],
             "x-enum-varnames": [
                 "RuntimeVLLM",
                 "RuntimeTriton",
                 "RuntimeTGI",
-                "RuntimeOllama"
+                "RuntimeOllama",
+                "RuntimeOther"
             ]
         },
         "model.ServingAccess": {
@@ -1965,6 +2066,11 @@ const docTemplate = `{
                 "port"
             ],
             "properties": {
+                "apiBasePath": {
+                    "description": "APIBasePath is appended to the endpoint handed to an application that\nrequires this service, for example \"/v1\" for an OpenAI compatible API.",
+                    "type": "string",
+                    "example": "/v1"
+                },
                 "healthPath": {
                     "type": "string",
                     "example": "/health"

@@ -4,6 +4,8 @@ definitions:
     properties:
       appId:
         type: string
+      kind:
+        $ref: '#/definitions/model.AppKind'
       modelId:
         type: string
       name:
@@ -14,6 +16,12 @@ definitions:
           candidate came up rather than being handed an unexplained ranking.
         items:
           type: string
+        type: array
+      requires:
+        description: Requires names the model services an application needs deployed
+          first.
+        items:
+          $ref: '#/definitions/model.AppRequirement'
         type: array
       runtime:
         type: string
@@ -250,10 +258,34 @@ definitions:
         example: registered
         type: string
     type: object
+  model.AppKind:
+    enum:
+    - model-service
+    - application
+    type: string
+    x-enum-varnames:
+    - KindModelService
+    - KindApplication
+  model.AppRequirement:
+    properties:
+      appId:
+        example: vllm-llama31-8b
+        type: string
+      env:
+        example: OPENAI_API_BASE_URL
+        type: string
+    required:
+    - appId
+    - env
+    type: object
   model.AppSpec:
     properties:
       accelerator:
-        $ref: '#/definitions/model.AcceleratorRequirement'
+        allOf:
+        - $ref: '#/definitions/model.AcceleratorRequirement'
+        description: |-
+          Accelerator is required for a model service. An application that leaves
+          the type empty is placed on a CPU node.
       aliases:
         description: |-
           Aliases are the other names an operator uses for this application, in any
@@ -276,15 +308,28 @@ definitions:
         type: string
       install:
         $ref: '#/definitions/model.InstallSpec'
+      kind:
+        allOf:
+        - $ref: '#/definitions/model.AppKind'
+        enum:
+        - model-service
+        - application
+        example: model-service
       labels:
         additionalProperties:
           type: string
         type: object
       model:
-        $ref: '#/definitions/model.ModelRef'
+        allOf:
+        - $ref: '#/definitions/model.ModelRef'
+        description: Model is required for a model service and optional for an application.
       name:
         example: vLLM Llama 3.1 8B Instruct
         type: string
+      requires:
+        items:
+          $ref: '#/definitions/model.AppRequirement'
+        type: array
       resources:
         $ref: '#/definitions/model.ResourceRequirement'
       runtime:
@@ -300,10 +345,8 @@ definitions:
         example: 0.1.0
         type: string
     required:
-    - accelerator
     - id
     - install
-    - model
     - name
     - runtime
     - serving
@@ -452,6 +495,12 @@ definitions:
       request:
         description: Request is the dynamic Infra request body, including the install
           commands.
+      requirements:
+        description: Requirements are the model services an application was wired
+          to.
+        items:
+          $ref: '#/definitions/model.ResolvedRequirement'
+        type: array
       sgTemplateId:
         type: string
       specId:
@@ -596,6 +645,23 @@ definitions:
           $ref: '#/definitions/model.NodeUpdate'
         type: array
     type: object
+  model.ResolvedRequirement:
+    properties:
+      appId:
+        example: vllm-llama31-8b
+        type: string
+      endpoint:
+        description: Endpoint is the value exported under Env before the install commands
+          run.
+        example: http://203.0.113.10:8000/v1
+        type: string
+      env:
+        example: OPENAI_API_BASE_URL
+        type: string
+      infraId:
+        example: vllm-lab-01
+        type: string
+    type: object
   model.ResourceRequirement:
     properties:
       minMemoryGiB:
@@ -631,12 +697,14 @@ definitions:
     - triton
     - tgi
     - ollama
+    - app
     type: string
     x-enum-varnames:
     - RuntimeVLLM
     - RuntimeTriton
     - RuntimeTGI
     - RuntimeOllama
+    - RuntimeOther
   model.ServingAccess:
     properties:
       endpoints:
@@ -665,6 +733,12 @@ definitions:
     type: object
   model.ServingSpec:
     properties:
+      apiBasePath:
+        description: |-
+          APIBasePath is appended to the endpoint handed to an application that
+          requires this service, for example "/v1" for an OpenAI compatible API.
+        example: /v1
+        type: string
       healthPath:
         example: /health
         type: string
@@ -1190,7 +1264,8 @@ paths:
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "409":
-          description: Deployment name already in use
+          description: Deployment name already in use, or a model service the application
+            requires is not deployed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
@@ -1414,7 +1489,8 @@ paths:
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "409":
-          description: Deployment was not deployed with this application
+          description: Deployment was not deployed with this application, or a model
+            service it requires is not deployed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
@@ -1464,6 +1540,10 @@ paths:
             $ref: '#/definitions/model.SimpleMsg'
         "404":
           description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "409":
+          description: A model service the application requires is not deployed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":

@@ -202,6 +202,15 @@ func (s *Service) Update(ctx context.Context, nsID, infraID, appID string) (*mod
 	if err := s.ensureDeployedApp(ctx, nsID, infraID, app.ID); err != nil {
 		return nil, err
 	}
+	requirements, err := s.resolveRequirements(ctx, nsID, app)
+	if err != nil {
+		return nil, err
+	}
+	if len(requirements) > 0 {
+		wired := *app
+		wired.Install.Commands = requirementCommands(app.Install.Commands, requirements)
+		app = &wired
+	}
 
 	result, err := s.provisioner.Update(ctx, nsID, infraID, app)
 	if err != nil {

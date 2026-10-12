@@ -13,7 +13,9 @@ import (
 // They exist so the agent has something to reason about on a fresh start, and so
 // the metadata specification has worked examples rather than only a struct.
 // Each entry keeps runtime and accelerator as independent axes: swapping a GPU
-// requirement for an NPU one does not change the runtime field.
+// requirement for an NPU one does not change the runtime field. An application
+// is listed after the model services it requires, since registering it checks
+// that they are already there.
 func Seed(ctx context.Context, store *Store) error {
 	for _, spec := range builtinApps() {
 		if _, err := store.Register(ctx, spec); err != nil {
@@ -31,6 +33,7 @@ func builtinApps() []model.AppSpec {
 			Name:        "vLLM Llama 3.1 8B Instruct",
 			Version:     "0.1.0",
 			Description: "OpenAI compatible chat completion endpoint served by vLLM",
+			Kind:        model.KindModelService,
 			Runtime:     model.RuntimeVLLM,
 			RuntimeVer:  "0.6.3",
 			Model: model.ModelRef{
@@ -48,7 +51,7 @@ func builtinApps() []model.AppSpec {
 				MinMemoryGiB: 32,
 				RootDiskGiB:  120,
 			},
-			Serving: model.ServingSpec{Port: 8000, HealthPath: "/health", Protocol: "http"},
+			Serving: model.ServingSpec{Port: 8000, HealthPath: "/health", Protocol: "http", APIBasePath: "/v1"},
 			Install: model.InstallSpec{
 				UserName:       "cb-user",
 				TimeoutMinutes: 45,
@@ -69,6 +72,7 @@ func builtinApps() []model.AppSpec {
 			Name:        "Ollama Qwen2.5 7B",
 			Version:     "0.1.0",
 			Description: "Small footprint serving endpoint for smoke testing a new accelerator",
+			Kind:        model.KindModelService,
 			Runtime:     model.RuntimeOllama,
 			RuntimeVer:  "0.5.4",
 			Model: model.ModelRef{
@@ -86,7 +90,7 @@ func builtinApps() []model.AppSpec {
 				MinMemoryGiB: 16,
 				RootDiskGiB:  60,
 			},
-			Serving: model.ServingSpec{Port: 11434, HealthPath: "/", Protocol: "http"},
+			Serving: model.ServingSpec{Port: 11434, HealthPath: "/", Protocol: "http", APIBasePath: "/v1"},
 			Install: model.InstallSpec{
 				UserName:       "cb-user",
 				TimeoutMinutes: 30,
@@ -105,6 +109,7 @@ func builtinApps() []model.AppSpec {
 			Name:        "Triton ResNet-50",
 			Version:     "0.1.0",
 			Description: "Vision inference endpoint used to exercise a non LLM workload path",
+			Kind:        model.KindModelService,
 			Runtime:     model.RuntimeTriton,
 			RuntimeVer:  "24.09",
 			Model: model.ModelRef{
@@ -134,6 +139,35 @@ func builtinApps() []model.AppSpec {
 			},
 			DeployTarget: []model.DeployTarget{model.DeployTargetVM},
 			Aliases:      []string{"resnet", "resnet50", "triton", "트리톤", "레스넷", "vision", "비전", "이미지 분류", "분류"},
+			Labels:       map[string]string{"framework": "ai-mcmp", "kind": "ai-app"},
+		},
+		{
+			ID:          "open-webui-llama31",
+			Name:        "Open WebUI (Llama 3.1 8B)",
+			Version:     "0.1.0",
+			Description: "Chat web UI for operators, backed by the Llama 3.1 8B model service",
+			Kind:        model.KindApplication,
+			Requires: []model.AppRequirement{
+				{AppID: "vllm-llama31-8b", Env: "OPENAI_API_BASE_URL"},
+			},
+			Runtime: model.RuntimeOther,
+			Resources: model.ResourceRequirement{
+				MinVCPU:      2,
+				MinMemoryGiB: 4,
+				RootDiskGiB:  30,
+			},
+			Serving: model.ServingSpec{Port: 8080, HealthPath: "/health", Protocol: "http"},
+			Install: model.InstallSpec{
+				UserName:       "cb-user",
+				TimeoutMinutes: 20,
+				Commands: []string{
+					"sudo apt-get update -y",
+					"sudo apt-get install -y docker.io",
+					`sudo docker run -d -p 8080:8080 -e OPENAI_API_BASE_URL="$OPENAI_API_BASE_URL" -e OPENAI_API_KEY=none --name open-webui --restart always ghcr.io/open-webui/open-webui:main`,
+				},
+			},
+			DeployTarget: []model.DeployTarget{model.DeployTargetVM},
+			Aliases:      []string{"open webui", "웹ui", "챗봇", "chat ui"},
 			Labels:       map[string]string{"framework": "ai-mcmp", "kind": "ai-app"},
 		},
 	}

@@ -37,6 +37,7 @@ var allowedActions = map[string]bool{
 // @Success 200 {object} model.DeploymentPlan "Deployment plan"
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete request"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
+// @Failure 409 {object} model.SimpleMsg "A model service the application requires is not deployed"
 // @Failure 500 {object} model.SimpleMsg "Deployment planning failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth
@@ -70,7 +71,7 @@ func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 // @Success 200 {object} model.DeploymentResult "Deployment planned or provisioned"
 // @Failure 400 {object} model.SimpleMsg "Malformed request or request not viable"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
-// @Failure 409 {object} model.SimpleMsg "Deployment name already in use"
+// @Failure 409 {object} model.SimpleMsg "Deployment name already in use, or a model service the application requires is not deployed"
 // @Failure 500 {object} model.SimpleMsg "Deployment failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth
@@ -194,7 +195,7 @@ func (h *Handler) RestGetDeploymentAccelerator(c echo.Context) error {
 // @Success 200 {object} model.ProvisionResult "Update applied or planned"
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete request"
 // @Failure 404 {object} model.SimpleMsg "Deployment or application not found"
-// @Failure 409 {object} model.SimpleMsg "Deployment was not deployed with this application"
+// @Failure 409 {object} model.SimpleMsg "Deployment was not deployed with this application, or a model service it requires is not deployed"
 // @Failure 500 {object} model.SimpleMsg "Deployment update failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth

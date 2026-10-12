@@ -24,3 +24,14 @@ func TestStatusCodeForAppMismatchIsConflict(t *testing.T) {
 		t.Errorf("app mismatch mapped to %d, want 409", got)
 	}
 }
+
+func TestRequirementNotDeployedIsConflictWithItsOwnMessage(t *testing.T) {
+	err := &deploy.RequirementError{AppID: "open-webui-llama31", RequiredAppID: "vllm-llama31-8b", Namespace: "default"}
+	if got := statusCodeFor(err); got != http.StatusConflict {
+		t.Errorf("requirement not deployed mapped to %d, want 409", got)
+	}
+	want := "application open-webui-llama31 needs model service vllm-llama31-8b deployed in namespace default first"
+	if got := messageFor(err, "Deployment planning failed"); got != want {
+		t.Errorf("message = %q, want %q", got, want)
+	}
+}

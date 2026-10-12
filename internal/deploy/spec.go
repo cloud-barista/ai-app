@@ -67,15 +67,19 @@ func (r *localRecommender) RecommendSpecs(ctx context.Context, app *model.AppSpe
 
 // buildSpecRequest converts an application requirement into a spec filter.
 func buildSpecRequest(app *model.AppSpec, limit int) *tumblebug.RecommendSpecReq {
-	policy := []tumblebug.FilterCondition{
-		condition(metricAcceleratorType, "=", app.Accelerator.Type),
-		condition(metricAcceleratorCount, ">=", strconv.Itoa(app.Accelerator.MinCount)),
-	}
-	if app.Accelerator.Model != "" {
-		policy = append(policy, condition(metricAcceleratorModel, "=", app.Accelerator.Model))
-	}
-	if app.Accelerator.MinMemoryGiB > 0 {
-		policy = append(policy, condition(metricAcceleratorMemory, ">=", formatFloat(app.Accelerator.MinMemoryGiB)))
+	policy := make([]tumblebug.FilterCondition, 0, 6)
+	// An application with no accelerator type runs on a CPU node, so only the
+	// vCPU and memory floor narrow the search.
+	if app.Accelerator.Type != "" {
+		policy = append(policy,
+			condition(metricAcceleratorType, "=", app.Accelerator.Type),
+			condition(metricAcceleratorCount, ">=", strconv.Itoa(app.Accelerator.MinCount)))
+		if app.Accelerator.Model != "" {
+			policy = append(policy, condition(metricAcceleratorModel, "=", app.Accelerator.Model))
+		}
+		if app.Accelerator.MinMemoryGiB > 0 {
+			policy = append(policy, condition(metricAcceleratorMemory, ">=", formatFloat(app.Accelerator.MinMemoryGiB)))
+		}
 	}
 	if app.Resources.MinVCPU > 0 {
 		policy = append(policy, condition(metricVCPU, ">=", strconv.Itoa(app.Resources.MinVCPU)))

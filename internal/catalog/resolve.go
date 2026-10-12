@@ -18,9 +18,12 @@ type Match struct {
 	Score int `json:"score"`
 	// Reasons names the signals that matched, so an operator can see why a
 	// candidate came up rather than being handed an unexplained ranking.
-	Reasons []string `json:"reasons"`
-	Runtime string   `json:"runtime"`
-	ModelID string   `json:"modelId"`
+	Reasons []string      `json:"reasons"`
+	Kind    model.AppKind `json:"kind"`
+	// Requires names the model services an application needs deployed first.
+	Requires []model.AppRequirement `json:"requires,omitempty"`
+	Runtime  string                 `json:"runtime"`
+	ModelID  string                 `json:"modelId"`
 }
 
 // Signal weights. They are ordered by how specific the signal is: an exact
@@ -92,11 +95,13 @@ func (s *Store) Resolve(ctx context.Context, query string, limit int) []Match {
 // one.
 func scoreSpec(spec *model.AppSpec, lowered string, queryTokens map[string]bool) (Match, bool) {
 	m := Match{
-		AppID:   spec.ID,
-		Name:    spec.Name,
-		Runtime: string(spec.Runtime),
-		ModelID: spec.Model.ID,
-		Reasons: []string{},
+		AppID:    spec.ID,
+		Name:     spec.Name,
+		Kind:     spec.EffectiveKind(),
+		Requires: spec.Requires,
+		Runtime:  string(spec.Runtime),
+		ModelID:  spec.Model.ID,
+		Reasons:  []string{},
 	}
 	structured := false
 	add := func(points int, reason string) {
