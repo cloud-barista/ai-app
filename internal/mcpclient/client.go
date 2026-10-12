@@ -130,6 +130,23 @@ func (c *Client) DryRun() bool {
 	return c.dryRun
 }
 
+// Cached reports the tool grades and the dry-run state of the current session
+// without connecting. connected is false, and grades empty, when there is no
+// session.
+func (c *Client) Cached() (grades map[string]tools.Grade, dryRun, connected bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	grades = make(map[string]tools.Grade, len(c.grades))
+	if c.session == nil {
+		return grades, false, false
+	}
+	for name, grade := range c.grades {
+		grades[name] = grade
+	}
+	return grades, c.dryRun, true
+}
+
 // Grade reports the risk grade the AI-App service announced for a tool.
 func (c *Client) Grade(name string) tools.Grade {
 	c.mu.Lock()

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
@@ -23,6 +24,7 @@ type Handler struct {
 	agent   *agent.Service
 	archive *archive.Store
 	tools   *tools.Registry
+	card    *agentcard.Card
 }
 
 // statusCodeFor maps a failure to the status this API returns.

@@ -19,6 +19,38 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/agent/card": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report the agent card an agent registry reads: identity, the framework it serves, the MCP server it takes tools from and whether it is connected, the tools and their grades, what it needs of a planning model, and how registration went. Served by the automation agent and forwarded by the AI-App service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Agent] AI Application Automation Agent"
+                ],
+                "summary": "Describe the automation agent",
+                "operationId": "GetAgentCard",
+                "responses": {
+                    "200": {
+                        "description": "Agent card",
+                        "schema": {
+                            "$ref": "#/definitions/model.AgentCard"
+                        }
+                    },
+                    "502": {
+                        "description": "Automation agent is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
         "/apps": {
             "get": {
                 "security": [
@@ -1218,6 +1250,143 @@ const docTemplate = `{
                     "description": "Type is the accelerator class, matched against the spec acceleratorType.",
                     "type": "string",
                     "example": "gpu"
+                }
+            }
+        },
+        "model.AgentCard": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string",
+                    "example": "AI 응용 관리 자동화 에이전트"
+                },
+                "dryRun": {
+                    "type": "boolean"
+                },
+                "framework": {
+                    "type": "string",
+                    "example": "AI-Ops"
+                },
+                "intentEndpoint": {
+                    "description": "IntentEndpoint is where an instruction is handed to the agent.",
+                    "type": "string",
+                    "example": "/aiapp/ns/{nsId}/intents"
+                },
+                "llm": {
+                    "$ref": "#/definitions/model.AgentCardLLM"
+                },
+                "mcpServers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentMCPServer"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "ai-mcmp-app-automation-agent"
+                },
+                "owner": {
+                    "type": "string",
+                    "example": "innogrid"
+                },
+                "registration": {
+                    "description": "Registration is how the last registry registration went. It is left out\nof the card sent to the registry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AgentRegistration"
+                        }
+                    ]
+                },
+                "servesFramework": {
+                    "type": "string",
+                    "example": "AI-App"
+                },
+                "tools": {
+                    "description": "Tools is what the agent can call, as of its current MCP session. Empty\nwhen it is not connected.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentCardTool"
+                    }
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0.1.0"
+                }
+            }
+        },
+        "model.AgentCardLLM": {
+            "type": "object",
+            "properties": {
+                "baseUrl": {
+                    "description": "BaseURL is the scheme and host of the model API, without path or credentials.",
+                    "type": "string",
+                    "example": "https://api.anthropic.com"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "claude-opus-5"
+                },
+                "requires": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tool_use",
+                        "anthropic-messages"
+                    ]
+                }
+            }
+        },
+        "model.AgentCardTool": {
+            "type": "object",
+            "properties": {
+                "grade": {
+                    "description": "Grade is one of read, review, write, destructive.",
+                    "type": "string"
+                },
+                "guardedByDryRun": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.AgentMCPServer": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "toolCount": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "http://127.0.0.1:8090/aiapp/mcp"
+                }
+            }
+        },
+        "model.AgentRegistration": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "registryUrl": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is disabled, pending, registered or failed.",
+                    "type": "string",
+                    "example": "registered"
                 }
             }
         },

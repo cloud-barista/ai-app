@@ -647,9 +647,9 @@ function show(name) {
 
 /* ---------- 개요 ---------- */
 async function loadOverview() {
-  const [ready, tools, agent] = await Promise.all([
-    api('GET', '/readyz'), api('GET', '/tools'), api('GET', '/agent/readyz')]);
-  wire($('ov-wire'), tools, 'GET /readyz, GET /tools, GET /agent/readyz 를 불렀습니다 (아래는 tools)');
+  const [ready, tools, agent, card] = await Promise.all([
+    api('GET', '/readyz'), api('GET', '/tools'), api('GET', '/agent/readyz'), api('GET', '/agent/card')]);
+  wire($('ov-wire'), tools, 'GET /readyz, GET /tools, GET /agent/readyz, GET /agent/card 를 불렀습니다 (아래는 tools)');
 
   const t = tools.data || {};
   const list = t.tools || [];
@@ -665,10 +665,15 @@ async function loadOverview() {
     : agent.ok ? '<span class="b b-off">연결됨</span>'
     : `<span class="b b-on">끊김 · HTTP ${esc(agent.status)}</span>`;
 
+  /* The card is a summary only; a missing or failed card leaves the rest of
+     the overview as it is. */
+  const cardLabel = cardSummary(card);
+
   const dry = t.dryRun;
   $('ov-stats').innerHTML = `
     <div class="stat"><div class="k">서비스</div><div class="v sm">${esc(readyLabel)}</div></div>
     <div class="stat"><div class="k">에이전트 연결 상태</div><div class="v sm">${agentLabel}</div></div>
+    <div class="stat"><div class="k">에이전트 카드</div><div class="v sm">${cardLabel}</div></div>
     <div class="stat"><div class="k">쓰기 게이트 (dry-run)</div><div class="v">
       ${dry === undefined ? '<span class="b b-mut">모름</span>'
         : dry ? '<span class="b b-off">켜짐 · 안전</span>'
@@ -696,6 +701,28 @@ async function loadOverview() {
       이것은 요청 파라미터가 아니라 <b>서비스 설정</b>이라, 모델이 "확실하니 실행하자" 고 해도 바뀌지 않습니다.</div>`;
   }
   $('ov-notes').innerHTML = notes;
+}
+
+/* cardSummary renders GET /agent/card as a few lines: name, model, MCP
+   connection, tool count and registration. Any failure becomes one line. */
+function cardSummary(r) {
+  const c = r.data;
+  if (!r.ok || !c || typeof c !== 'object') {
+    return r.status === 0 ? '<span class="b b-mut">불러오지 못함</span>'
+      : `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
+  }
+  const mcp = (c.mcpServers || [])[0] || {};
+  const reg = c.registration || {};
+  const regBadge = reg.status === 'registered' ? '<span class="b b-off">등록됨</span>'
+    : reg.status === 'failed' ? '<span class="b b-on">등록 실패</span>'
+    : reg.status === 'pending' ? '<span class="b b-mut">등록 중</span>'
+    : reg.status === 'disabled' ? '<span class="b b-mut">등록 안 함</span>'
+    : '<span class="b b-mut">모름</span>';
+  return `<div class="mono">${esc(c.name || '-')}</div>
+    <div>모델 <span class="mono">${esc((c.llm && c.llm.model) || '-')}</span></div>
+    <div>MCP ${mcp.connected ? '<span class="b b-off">연결됨</span>' : '<span class="b b-on">끊김</span>'}
+      · 도구 ${esc((c.tools || []).length)}</div>
+    <div title="${esc(reg.message || '')}">등록 ${regBadge}</div>`;
 }
 
 /* ---------- 카탈로그 ---------- */

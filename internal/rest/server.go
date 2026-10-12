@@ -13,6 +13,7 @@ import (
 	_ "github.com/ish-hcc/ai-agent-proto/api/docs"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
@@ -42,6 +43,7 @@ type AppDependencies struct {
 type AgentDependencies struct {
 	Agent   *agent.Service
 	Archive *archive.Store
+	Card    *agentcard.Card
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -103,12 +105,13 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	return &Server{echo: e, port: cfg.Server.Port}
 }
 
-// NewAgentServer builds the automation agent service: intents and the archive
-// of intent runs.
+// NewAgentServer builds the automation agent service: intents, the archive of
+// intent runs and the agent card.
 func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
 	handler := &Handler{
 		agent:   deps.Agent,
 		archive: deps.Archive,
+		card:    deps.Card,
 	}
 
 	e := newEcho(cfg.Auth.Token)
@@ -120,6 +123,10 @@ func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
 	// Intent run archive.
 	g.GET("/archive", handler.RestGetArchive)
 	g.GET("/archive/:runId", handler.RestGetArchiveRun)
+
+	// The agent card, read by an agent registry. The AI-App service forwards
+	// /aiapp/agent/card here unchanged.
+	g.GET("/agent/card", handler.RestGetAgentCard)
 
 	return &Server{echo: e, port: cfg.Agent.Port}
 }

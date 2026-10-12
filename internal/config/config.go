@@ -119,6 +119,11 @@ type AgentConfig struct {
 	URL string
 	// ArchiveDir holds the intent run archive, apart from the AI-App archive.
 	ArchiveDir string
+	// RegistryURL is the agent registry the agent card is posted to at startup.
+	// Empty leaves registration off.
+	RegistryURL string
+	// RegistryToken is sent to the registry as a bearer token when set.
+	RegistryToken string
 }
 
 // AppConfig holds how the agent reaches the AI-App service.
@@ -190,6 +195,8 @@ func Load() (*Config, error) {
 		"agent.port",
 		"agent.url",
 		"agent.archive_dir",
+		"agent.registry_url",
+		"agent.registry_token",
 		"app.mcp_url",
 		"app.token",
 		"archive.dir",
@@ -241,10 +248,12 @@ func Load() (*Config, error) {
 			Timeout:   v.GetDuration("llm.timeout"),
 		},
 		Agent: AgentConfig{
-			MaxSteps:   v.GetInt("agent.max_steps"),
-			Port:       v.GetInt("agent.port"),
-			URL:        strings.TrimRight(v.GetString("agent.url"), "/"),
-			ArchiveDir: v.GetString("agent.archive_dir"),
+			MaxSteps:      v.GetInt("agent.max_steps"),
+			Port:          v.GetInt("agent.port"),
+			URL:           strings.TrimRight(v.GetString("agent.url"), "/"),
+			ArchiveDir:    v.GetString("agent.archive_dir"),
+			RegistryURL:   strings.TrimRight(v.GetString("agent.registry_url"), "/"),
+			RegistryToken: v.GetString("agent.registry_token"),
 		},
 		App: AppConfig{
 			MCPURL: v.GetString("app.mcp_url"),

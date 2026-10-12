@@ -91,3 +91,16 @@ func TestAuthTokensReadFromEnv(t *testing.T) {
 		t.Errorf("tokens = %q, %q, want served, sent", cfg.Auth.Token, cfg.App.Token)
 	}
 }
+
+func TestAgentRegistryReadsURLAndToken(t *testing.T) {
+	t.Setenv("AIAPP_AGENT_REGISTRY_URL", "http://registry.example/api/")
+	t.Setenv("AIAPP_AGENT_REGISTRY_TOKEN", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Agent.RegistryURL != "http://registry.example/api" || cfg.Agent.RegistryToken != "secret" {
+		t.Errorf("agent = %+v", cfg.Agent)
+	}
+}

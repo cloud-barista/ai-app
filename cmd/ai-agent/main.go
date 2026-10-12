@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/agent"
+	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/llm"
@@ -50,6 +51,8 @@ func main() {
 	llmClient := llm.NewClient(cfg.LLM)
 	toolSource := mcpclient.New(cfg.App.MCPURL, cfg.App.Token)
 	agentService := agent.NewService(llmClient, toolSource, archiveStore, cfg.Agent)
+	registrar := agentcard.NewRegistrar(cfg.Agent.RegistryURL, cfg.Agent.RegistryToken)
+	card := agentcard.New(toolSource, cfg.LLM, registrar)
 
 	if !llmClient.Enabled() {
 		log.Warn().Msg("Planning model is not configured: the intent endpoint will report 503")
@@ -70,8 +73,20 @@ func main() {
 	server := rest.NewAgentServer(cfg, rest.AgentDependencies{
 		Agent:   agentService,
 		Archive: archiveStore,
+		Card:    card,
 	})
 	rest.MarkReady()
+
+	// Registration connects to the AI-App MCP server first, retrying, so the
+	// card it sends lists the tools even when that service came up late. It
+	// retries on its own and never stops the agent.
+	registerCtx, cancelRegister := context.WithCancel(context.Background())
+	defer cancelRegister()
+	if registrar.Enabled() {
+		go registrar.Register(registerCtx, card)
+	} else {
+		log.Info().Msg("AIAPP_AGENT_REGISTRY_URL is not set: the agent card is not registered anywhere")
+	}
 
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
@@ -86,6 +101,7 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
+	cancelRegister()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

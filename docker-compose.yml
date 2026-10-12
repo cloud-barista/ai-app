@@ -84,6 +84,11 @@ services:
     container_name: ai-agent
     command: ["/usr/local/bin/ai-agent"]
     restart: unless-stopped
+    # The agent reads its tools from the AI-App MCP server at startup and
+    # registers a card listing them, so it starts once that server answers.
+    depends_on:
+      ai-app-server:
+        condition: service_healthy
     ports:
       - "${AIAPP_AGENT_PORT:-8091}:8091"
     environment:
@@ -101,6 +106,10 @@ services:
       AIAPP_LLM_MODEL: "${AIAPP_LLM_MODEL:-claude-opus-5}"
       AIAPP_AGENT_MAX_STEPS: "${AIAPP_AGENT_MAX_STEPS:-12}"
       AIAPP_AGENT_ARCHIVE_DIR: "/app/data/agent-archive"
+
+      # Agent registry the card is posted to at startup. Empty leaves it off.
+      AIAPP_AGENT_REGISTRY_URL: "${AIAPP_AGENT_REGISTRY_URL:-}"
+      AIAPP_AGENT_REGISTRY_TOKEN: "${AIAPP_AGENT_REGISTRY_TOKEN:-}"
 
     volumes:
       - agent-archive:/app/data/agent-archive

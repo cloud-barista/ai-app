@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
@@ -29,7 +31,8 @@ func newTestServers(t *testing.T, token string) *Server {
 		t.Fatalf("agent archive: %v", err)
 	}
 	agentCfg := &config.Config{Auth: config.AuthConfig{Token: token}}
-	agentSrv := httptest.NewServer(NewAgentServer(agentCfg, AgentDependencies{Archive: agentArchive}).echo)
+	card := agentcard.New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), agentCfg.LLM, nil)
+	agentSrv := httptest.NewServer(NewAgentServer(agentCfg, AgentDependencies{Archive: agentArchive, Card: card}).echo)
 	t.Cleanup(agentSrv.Close)
 
 	appArchive, err := archive.NewStore(t.TempDir())
@@ -80,6 +83,7 @@ func TestProtectedRoutesNeedToken(t *testing.T) {
 		{http.MethodGet, "/aiapp/archive"},
 		{http.MethodPost, "/aiapp/mcp"},
 		{http.MethodGet, "/aiapp/agent/archive"},
+		{http.MethodGet, "/aiapp/agent/card"},
 		{http.MethodPost, "/aiapp/ns/default/intents"},
 	} {
 		for _, auth := range []string{"", "Bearer wrong", "Basic " + testToken, testToken} {
@@ -98,7 +102,7 @@ func TestProtectedRoutesNeedToken(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/agent/archive"} {
+	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/agent/archive", "/aiapp/agent/card"} {
 		if rec := do(s, http.MethodGet, path, "Bearer "+testToken); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with the token = %d, want 200: %s", path, rec.Code, rec.Body.String())
 		}
