@@ -7,6 +7,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/viper v1.21.0
 	github.com/swaggo/echo-swagger v1.5.2
+	github.com/swaggo/swag v1.16.6
 )
 
 require (
@@ -32,7 +33,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/sv-tools/openapi v0.2.1 // indirect
 	github.com/swaggo/files/v2 v2.0.0 // indirect
-	github.com/swaggo/swag v1.16.6 // indirect
 	github.com/swaggo/swag/v2 v2.0.0-rc4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
