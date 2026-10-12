@@ -16,6 +16,7 @@ import (
 // @Tags [App] AI Application Catalog
 // @Produce json
 // @Success 200 {object} model.AppSpecListResp "AI application list"
+// @Security BearerAuth
 // @Router /apps [get]
 func (h *Handler) RestGetAllApps(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -32,6 +33,7 @@ func (h *Handler) RestGetAllApps(c echo.Context) error {
 // @Param appSpec body model.AppSpec true "AI application metadata"
 // @Success 200 {object} model.AppSpec "AI application registered"
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete metadata"
+// @Security BearerAuth
 // @Router /apps [post]
 func (h *Handler) RestPostApp(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -59,6 +61,7 @@ func (h *Handler) RestPostApp(c echo.Context) error {
 // @Param limit query int false "How many candidates to return" default(5)
 // @Success 200 {array} catalog.Match "Ranked candidates"
 // @Failure 400 {object} model.SimpleMsg "Query required"
+// @Security BearerAuth
 // @Router /apps/search [get]
 func (h *Handler) RestGetAppMatches(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -83,6 +86,7 @@ func (h *Handler) RestGetAppMatches(c echo.Context) error {
 // @Param appId path string true "AI application ID" default(vllm-llama31-8b)
 // @Success 200 {object} model.AppSpec "AI application metadata"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
+// @Security BearerAuth
 // @Router /apps/{appId} [get]
 func (h *Handler) RestGetApp(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -105,6 +109,7 @@ func (h *Handler) RestGetApp(c echo.Context) error {
 // @Param appId path string true "AI application ID"
 // @Success 200 {object} model.SimpleMsg "AI application deleted"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
+// @Security BearerAuth
 // @Router /apps/{appId} [delete]
 func (h *Handler) RestDeleteApp(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -129,6 +134,7 @@ func (h *Handler) RestDeleteApp(c echo.Context) error {
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 500 {object} model.SimpleMsg "Spec recommendation failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
+// @Security BearerAuth
 // @Router /apps/{appId}/specs [get]
 func (h *Handler) RestGetAppSpecs(c echo.Context) error {
 	ctx := c.Request().Context()

@@ -776,6 +776,8 @@ paths:
           description: AI application list
           schema:
             $ref: '#/definitions/model.AppSpecListResp'
+      security:
+      - BearerAuth: []
       summary: List registered AI applications
       tags:
       - '[App] AI Application Catalog'
@@ -803,6 +805,8 @@ paths:
           description: Malformed or incomplete metadata
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Register an AI application
       tags:
       - '[App] AI Application Catalog'
@@ -828,6 +832,8 @@ paths:
           description: AI application not found
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Delete an AI application
       tags:
       - '[App] AI Application Catalog'
@@ -853,6 +859,8 @@ paths:
           description: AI application not found
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Get an AI application
       tags:
       - '[App] AI Application Catalog'
@@ -894,6 +902,8 @@ paths:
           description: Remote placement service failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Recommend accelerator specs for an AI application
       tags:
       - '[App] AI Application Catalog'
@@ -927,6 +937,8 @@ paths:
           description: Query required
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Find AI applications matching a description
       tags:
       - '[App] AI Application Catalog'
@@ -956,6 +968,8 @@ paths:
           description: Archive lookup failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: List archived runs
       tags:
       - '[Archive] Deploy and Control Archive'
@@ -984,6 +998,8 @@ paths:
           description: Archive lookup failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Get one archived run
       tags:
       - '[Archive] Deploy and Control Archive'
@@ -1011,6 +1027,8 @@ paths:
           description: Deployment lookup failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: List deployments
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1061,6 +1079,8 @@ paths:
           description: Remote placement service failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Deploy an AI application
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1096,6 +1116,8 @@ paths:
           description: Deployment deletion failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Delete a deployment
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1137,6 +1159,8 @@ paths:
           description: Accelerator probe failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Read the accelerator on a deployment
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1184,6 +1208,8 @@ paths:
           description: Deployment control failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Control a deployment
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1219,6 +1245,8 @@ paths:
           description: Deployment status lookup failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Get deployment status
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1275,6 +1303,8 @@ paths:
           description: Remote placement service failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Update a deployment
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1322,6 +1352,8 @@ paths:
           description: Remote placement service failed
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Plan a deployment
       tags:
       - '[Deploy] AI Application Deployment'
@@ -1370,6 +1402,8 @@ paths:
             is not reachable
           schema:
             $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
       summary: Run a natural language deployment intent
       tags:
       - '[Agent] AI Application Automation Agent'
@@ -1405,6 +1439,8 @@ paths:
           description: Tool catalog
           schema:
             $ref: '#/definitions/model.ToolListResp'
+      security:
+      - BearerAuth: []
       summary: List agent tools
       tags:
       - '[Agent] AI Application Automation Agent'
@@ -1422,4 +1458,11 @@ paths:
       summary: Open the operator console
       tags:
       - '[Console] Operator Console'
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <token>". Required on every route but readiness, the console
+      and this documentation when AIAPP_AUTH_TOKEN is set.'
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

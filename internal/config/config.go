@@ -45,6 +45,7 @@ type Config struct {
 	Agent     AgentConfig
 	App       AppConfig
 	Archive   ArchiveConfig
+	Auth      AuthConfig
 	// Recommender selects who picks the spec and image of a plan.
 	Recommender BackendConfig
 	// Provisioner selects who reviews, creates and updates Infras.
@@ -124,6 +125,15 @@ type AgentConfig struct {
 type AppConfig struct {
 	// MCPURL is the Streamable HTTP endpoint of the AI-App MCP server.
 	MCPURL string
+	// Token is sent as a bearer token to the AI-App MCP server when set.
+	Token string
+}
+
+// AuthConfig holds the bearer token this process requires of its callers.
+type AuthConfig struct {
+	// Token is required on every route but readiness, the console and the API
+	// documentation. Empty turns authentication off.
+	Token string
 }
 
 // ArchiveConfig holds the deployment/control archive location.
@@ -181,7 +191,9 @@ func Load() (*Config, error) {
 		"agent.url",
 		"agent.archive_dir",
 		"app.mcp_url",
+		"app.token",
 		"archive.dir",
+		"auth.token",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -236,9 +248,13 @@ func Load() (*Config, error) {
 		},
 		App: AppConfig{
 			MCPURL: v.GetString("app.mcp_url"),
+			Token:  v.GetString("app.token"),
 		},
 		Archive: ArchiveConfig{
 			Dir: v.GetString("archive.dir"),
+		},
+		Auth: AuthConfig{
+			Token: v.GetString("auth.token"),
 		},
 		Recommender: BackendConfig{
 			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.recommender"))),

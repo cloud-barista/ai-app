@@ -53,6 +53,10 @@ services:
 
       # Where intent and agent routes are forwarded.
       AIAPP_AGENT_URL: "http://ai-agent:8091"
+
+      # Empty leaves authentication off. The agent gets the same token because
+      # forwarded routes carry the caller's Authorization header unchanged.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"
 
     # The archive is the first-year deliverable and the second-year input, so it
@@ -87,6 +91,10 @@ services:
 
       # The tools, their grades and the dry-run state all come from here.
       AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
+
+      # The same token as the AI-App service, both to accept and to send.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
 
       AIAPP_LLM_BASE_URL: "${AIAPP_LLM_BASE_URL:-https://api.anthropic.com}"
       AIAPP_LLM_API_KEY: "${AIAPP_LLM_API_KEY:-}"

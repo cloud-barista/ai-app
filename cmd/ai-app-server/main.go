@@ -32,6 +32,10 @@ const shutdownTimeout = 10 * time.Second
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /aiapp
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description "Bearer <token>". Required on every route but readiness, the console and this documentation when AIAPP_AUTH_TOKEN is set.
 func main() {
 	ctx := context.Background()
 
@@ -82,6 +86,9 @@ func main() {
 		Msg("Placement backends")
 	if cfg.Tumblebug.DryRun {
 		log.Warn().Msg("Dry run is on: deploy, control and delete calls are planned and archived but never sent")
+	}
+	if cfg.Auth.Token == "" {
+		log.Warn().Msg("AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open")
 	}
 
 	server := rest.NewAppServer(cfg, rest.AppDependencies{

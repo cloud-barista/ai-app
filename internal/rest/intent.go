@@ -25,6 +25,7 @@ import (
 // @Failure 503 {object} model.SimpleMsg "Planning model is not configured or the AI-App tool server is not reachable"
 // @Failure 502 {object} model.SimpleMsg "Automation agent is not reachable from the AI-App service"
 // @Failure 500 {object} model.SimpleMsg "Agent run failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/intents [post]
 func (h *Handler) RestPostIntent(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -55,6 +56,7 @@ func (h *Handler) RestPostIntent(c echo.Context) error {
 // @Tags [Agent] AI Application Automation Agent
 // @Produce json
 // @Success 200 {object} model.ToolListResp "Tool catalog"
+// @Security BearerAuth
 // @Router /tools [get]
 func (h *Handler) RestGetTools(c echo.Context) error {
 	return c.JSON(http.StatusOK, model.ToolListResp{

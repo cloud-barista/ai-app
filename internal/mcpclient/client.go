@@ -45,18 +45,25 @@ func WithNamespace(ctx context.Context, nsID string) context.Context {
 }
 
 // namespaceTransport sets the namespace header from the request context, so a
-// single session serves calls for any namespace.
+// single session serves calls for any namespace. It also sets the bearer token,
+// when there is one, on every request.
 type namespaceTransport struct {
-	base http.RoundTripper
+	base  http.RoundTripper
+	token string
 }
 
 func (t namespaceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	nsID, _ := req.Context().Value(namespaceKey{}).(string)
-	if nsID == "" {
+	if nsID == "" && t.token == "" {
 		return t.base.RoundTrip(req)
 	}
 	req = req.Clone(req.Context())
-	req.Header.Set(mcpserver.NamespaceHeader, nsID)
+	if nsID != "" {
+		req.Header.Set(mcpserver.NamespaceHeader, nsID)
+	}
+	if t.token != "" {
+		req.Header.Set("Authorization", "Bearer "+t.token)
+	}
 	return t.base.RoundTrip(req)
 }
 
@@ -73,10 +80,11 @@ type Client struct {
 }
 
 // New builds a Client for the Streamable HTTP endpoint. It does not connect.
-func New(endpoint string) *Client {
+// A non-empty token is sent as a bearer token.
+func New(endpoint, token string) *Client {
 	return &Client{
 		endpoint:   endpoint,
-		httpClient: &http.Client{Transport: namespaceTransport{base: http.DefaultTransport}},
+		httpClient: &http.Client{Transport: namespaceTransport{base: http.DefaultTransport, token: token}},
 	}
 }
 

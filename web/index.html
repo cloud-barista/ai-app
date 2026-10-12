@@ -40,6 +40,15 @@
   nav .sect { font-size: 10px; color: #6B7280; margin: 18px 20px 6px; letter-spacing: 1.2px; }
   nav .foot { margin: 22px 20px 0; font-size: 11px; color: #6B7280; line-height: 1.7; }
   nav .foot a { display: inline; padding: 0; border: 0; color: #9AA3AF; text-decoration: underline; }
+  nav .auth { margin: 22px 20px 0; padding-top: 14px; border-top: 1px solid #374151; }
+  nav .auth label { color: #9AA3AF; font-size: 11px; }
+  nav .auth input {
+    width: 100%; padding: 7px 9px; border: 1px solid #4B5563; border-radius: 6px;
+    background: #111827; color: #F3F4F6; font: 12px var(--mono);
+  }
+  nav .auth .row { margin-top: 6px; }
+  nav .auth button { padding: 6px 12px; font-size: 12px; }
+  nav .auth .state { font-size: 11px; color: #9AA3AF; margin-top: 6px; line-height: 1.5; }
 
   main { padding: 28px 32px 64px; max-width: 1180px; }
   .page { display: none; }
@@ -186,6 +195,16 @@
   <div class="sect">기록</div>
   <a data-page="archive">아카이브</a>
 
+  <div class="auth">
+    <label for="auth-token">API 토큰</label>
+    <input type="password" id="auth-token" autocomplete="off" placeholder="인증이 꺼져 있으면 비워 둡니다">
+    <div class="row">
+      <button class="ghost" onclick="saveToken()">저장</button>
+      <button class="ghost" onclick="clearToken()">지우기</button>
+    </div>
+    <div class="state" id="auth-state"></div>
+  </div>
+
   <p class="foot">
     이 화면은 오른쪽 API 를 <b>실제로 호출</b>합니다.<br>
     응답은 손대지 않고 그대로 보여 줍니다.<br><br>
@@ -194,6 +213,10 @@
 </nav>
 
 <main>
+
+<div class="note bad" id="auth-note" style="display:none">
+  <b>토큰이 필요하거나 틀렸습니다.</b> 왼쪽 아래 "API 토큰" 칸에 서버의 <code>AIAPP_AUTH_TOKEN</code> 값을 넣고 저장해 주세요.
+</div>
 
 <!-- ============ 개요 ============ -->
 <section class="page on" id="p-overview">
@@ -501,6 +524,34 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
+/* ---------- token ----------
+   The token lives in sessionStorage only, so it leaves with the tab. Storage can
+   be refused (private modes, blocked cookies); the page then keeps the token in
+   memory for as long as it stays open. */
+const TOKEN_KEY = 'aiapp.authToken';
+let authToken = '';
+try { authToken = sessionStorage.getItem(TOKEN_KEY) || ''; } catch (_) { /* storage refused */ }
+
+function renderToken() {
+  $('auth-token').value = authToken;
+  $('auth-state').textContent = authToken ? '이 탭의 요청에 토큰을 붙입니다.' : '토큰 없이 요청합니다.';
+}
+
+function setToken(value) {
+  authToken = value;
+  try {
+    if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY);
+  } catch (_) { /* storage refused */ }
+  renderToken();
+  $('auth-note').style.display = 'none';
+  for (const k of Object.keys(loaded)) delete loaded[k];
+  const current = (location.hash || '#overview').slice(1);
+  show(loaders.hasOwnProperty(current) ? current : 'overview');
+}
+
+function saveToken() { setToken($('auth-token').value.trim()); }
+function clearToken() { setToken(''); }
+
 /* ---------- API ----------
    Every response is kept whole, including failures: the page shows what the
    server actually said rather than a message of its own, because a console that
@@ -509,6 +560,7 @@ async function api(method, path, body) {
   const url = BASE + path;
   const started = performance.now();
   const init = { method, headers: { 'Accept': 'application/json' } };
+  if (authToken) init.headers['Authorization'] = 'Bearer ' + authToken;
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -529,6 +581,8 @@ async function api(method, path, body) {
 
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (_) { /* not json */ }
+
+  if (res.status === 401) $('auth-note').style.display = '';
 
   return {
     ok: res.ok, status: res.status, method, url, body,
@@ -1106,6 +1160,7 @@ async function showRun(src, id) {
 }
 
 /* ---------- boot ---------- */
+renderToken();
 resetNewApp();
 const start = (location.hash || '#overview').slice(1);
 show(loaders.hasOwnProperty(start) ? start : 'overview');

@@ -54,13 +54,16 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		tools:   deps.Tools,
 	}
 
-	e := newEcho()
+	// The agent readiness is open here as the agent's own is there: the
+	// console overview asks for it before anyone has entered a token.
+	e := newEcho(cfg.Auth.Token, agentPrefix+"/readyz")
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/api/*", echoSwagger.WrapHandler)
 
 	// The operator console, served from this origin so that it can call the
-	// routes below without a CORS policy on an API that has no authentication.
+	// routes below without a CORS policy. The page itself is open and sends the
+	// bearer token the operator enters on every call it makes.
 	g.GET("/ui", RestGetConsole)
 
 	// AI application catalog: the metadata specification, as a live surface.
@@ -108,7 +111,7 @@ func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
 		archive: deps.Archive,
 	}
 
-	e := newEcho()
+	e := newEcho(cfg.Auth.Token)
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 
@@ -121,12 +124,15 @@ func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
 	return &Server{echo: e, port: cfg.Agent.Port}
 }
 
-func newEcho() *echo.Echo {
+// newEcho builds an Echo instance that requires token on every route but the
+// open ones; see RequireBearer.
+func newEcho(token string, extraOpen ...string) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
+	e.Use(RequireBearer(token, extraOpen...))
 	return e
 }
 

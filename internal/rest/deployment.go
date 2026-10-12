@@ -39,6 +39,7 @@ var allowedActions = map[string]bool{
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 500 {object} model.SimpleMsg "Deployment planning failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/plan [post]
 func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -72,6 +73,7 @@ func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 // @Failure 409 {object} model.SimpleMsg "Deployment name already in use"
 // @Failure 500 {object} model.SimpleMsg "Deployment failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments [post]
 func (h *Handler) RestPostDeployment(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -102,6 +104,7 @@ func (h *Handler) RestPostDeployment(c echo.Context) error {
 // @Param nsId path string true "Namespace ID" default(default)
 // @Success 200 {array} tumblebug.InfraInfo "Deployment list"
 // @Failure 500 {object} model.SimpleMsg "Deployment lookup failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments [get]
 func (h *Handler) RestGetAllDeployments(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -126,6 +129,7 @@ func (h *Handler) RestGetAllDeployments(c echo.Context) error {
 // @Success 200 {object} tumblebug.InfraStatusView "Deployment status"
 // @Failure 404 {object} model.SimpleMsg "Deployment not found"
 // @Failure 500 {object} model.SimpleMsg "Deployment status lookup failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/{infraId}/status [get]
 func (h *Handler) RestGetDeploymentStatus(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -152,6 +156,7 @@ func (h *Handler) RestGetDeploymentStatus(c echo.Context) error {
 // @Success 200 {object} model.AcceleratorReport "Accelerator report"
 // @Failure 404 {object} model.SimpleMsg "Deployment or application not found"
 // @Failure 500 {object} model.SimpleMsg "Accelerator probe failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/{infraId}/accelerator [get]
 func (h *Handler) RestGetDeploymentAccelerator(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -192,6 +197,7 @@ func (h *Handler) RestGetDeploymentAccelerator(c echo.Context) error {
 // @Failure 409 {object} model.SimpleMsg "Deployment was not deployed with this application"
 // @Failure 500 {object} model.SimpleMsg "Deployment update failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/{infraId}/update [post]
 func (h *Handler) RestPostDeploymentUpdate(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -232,6 +238,7 @@ func (h *Handler) RestPostDeploymentUpdate(c echo.Context) error {
 // @Failure 400 {object} model.SimpleMsg "Unsupported action"
 // @Failure 404 {object} model.SimpleMsg "Deployment not found"
 // @Failure 500 {object} model.SimpleMsg "Deployment control failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/{infraId}/control [post]
 func (h *Handler) RestPostDeploymentControl(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -269,6 +276,7 @@ func (h *Handler) RestPostDeploymentControl(c echo.Context) error {
 // @Success 200 {object} model.ControlResult "Deployment deleted or planned"
 // @Failure 404 {object} model.SimpleMsg "Deployment not found"
 // @Failure 500 {object} model.SimpleMsg "Deployment deletion failed"
+// @Security BearerAuth
 // @Router /ns/{nsId}/deployments/{infraId} [delete]
 func (h *Handler) RestDeleteDeployment(c echo.Context) error {
 	ctx := c.Request().Context()

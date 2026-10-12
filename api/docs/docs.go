@@ -21,6 +21,11 @@ const docTemplate = `{
     "paths": {
         "/apps": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "List every AI application in the catalog with its runtime, model and accelerator requirement",
                 "produces": [
                     "application/json"
@@ -40,6 +45,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Register or replace an AI application metadata record. Replacing an existing id publishes a new version",
                 "consumes": [
                     "application/json"
@@ -81,6 +91,11 @@ const docTemplate = `{
         },
         "/apps/search": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Rank registered AI applications against an operator's own words and report the signals that matched. An empty list means the catalog holds nothing that fits",
                 "produces": [
                     "application/json"
@@ -127,6 +142,11 @@ const docTemplate = `{
         },
         "/apps/{appId}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Read one registered AI application, including its install commands and serving port",
                 "produces": [
                     "application/json"
@@ -162,6 +182,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Remove an AI application from the catalog. Deployments already running are untouched",
                 "produces": [
                     "application/json"
@@ -198,6 +223,11 @@ const docTemplate = `{
         },
         "/apps/{appId}/specs": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Find node specs across every connected cloud that satisfy the accelerator requirement, cheapest first",
                 "produces": [
                     "application/json"
@@ -257,6 +287,11 @@ const docTemplate = `{
         },
         "/archive": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "List archived deployment and control runs, newest first. A record holds the instruction, every tool call with its arguments and the guard verdict",
                 "produces": [
                     "application/json"
@@ -299,6 +334,11 @@ const docTemplate = `{
         },
         "/archive/{runId}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Read one archived run by its identifier",
                 "produces": [
                     "application/json"
@@ -341,6 +381,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "List every deployment of the namespace with its node status",
                 "produces": [
                     "application/json"
@@ -379,6 +424,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off",
                 "consumes": [
                     "application/json"
@@ -452,6 +502,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/plan": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Build the provisioning request for an AI application without contacting any cloud. Leave specId empty to select the cheapest spec matching the accelerator requirement",
                 "consumes": [
                     "application/json"
@@ -519,6 +574,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/{infraId}": {
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Terminate every node of the deployment and remove its records. Shared resources of the namespace are kept",
                 "produces": [
                     "application/json"
@@ -569,6 +629,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/{infraId}/accelerator": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Ask the deployed nodes what accelerator they carry and compare it against what the application asked for. Values the driver cannot report are left unknown rather than zero, and MIG state is reported because it decides what is observable at all",
                 "produces": [
                     "application/json"
@@ -625,6 +690,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/{infraId}/control": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Apply suspend, resume, reboot or terminate to every node. terminate stops the nodes but keeps the records, so delete afterwards to stop billing",
                 "consumes": [
                     "application/json"
@@ -693,6 +763,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/{infraId}/status": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Report the node status summary, suitable for polling while a deployment comes up",
                 "produces": [
                     "application/json"
@@ -743,6 +818,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/deployments/{infraId}/update": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Apply the current version of a registered AI application to a running deployment by running its install commands on every node again. The nodes are kept, and nothing is sent while the dry-run guard is on",
                 "consumes": [
                     "application/json"
@@ -823,6 +903,11 @@ const docTemplate = `{
         },
         "/ns/{nsId}/intents": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Hand an operator instruction to the deployment agent. The agent resolves the application, recommends an accelerator spec, reviews the request and, when the dry-run guard is off, provisions. Every step is archived",
                 "consumes": [
                     "application/json"
@@ -917,6 +1002,11 @@ const docTemplate = `{
         },
         "/tools": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "List every tool the agent may call, with its risk grade and whether the dry-run guard applies. Exposed so another agent framework can adopt the same tool surface",
                 "produces": [
                     "application/json"
@@ -1971,6 +2061,14 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "\"Bearer \u003ctoken\u003e\". Required on every route but readiness, the console and this documentation when AIAPP_AUTH_TOKEN is set.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`

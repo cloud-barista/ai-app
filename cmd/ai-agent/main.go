@@ -48,11 +48,14 @@ func main() {
 	}
 
 	llmClient := llm.NewClient(cfg.LLM)
-	toolSource := mcpclient.New(cfg.App.MCPURL)
+	toolSource := mcpclient.New(cfg.App.MCPURL, cfg.App.Token)
 	agentService := agent.NewService(llmClient, toolSource, archiveStore, cfg.Agent)
 
 	if !llmClient.Enabled() {
 		log.Warn().Msg("Planning model is not configured: the intent endpoint will report 503")
+	}
+	if cfg.Auth.Token == "" {
+		log.Warn().Msg("AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open")
 	}
 
 	// The AI-App service may come up after this one, so an unreachable tool

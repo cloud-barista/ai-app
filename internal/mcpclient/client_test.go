@@ -27,7 +27,7 @@ func serve(t *testing.T, registry *tools.Registry) *Client {
 	srv := httptest.NewServer(mcpserver.NewHandler(registry))
 	t.Cleanup(srv.Close)
 
-	client := New(srv.URL)
+	client := New(srv.URL, "")
 	t.Cleanup(func() { _ = client.Close() })
 	return client
 }
@@ -139,7 +139,7 @@ func TestPrepareUnreachable(t *testing.T) {
 	endpoint := srv.URL
 	srv.Close()
 
-	client := New(endpoint)
+	client := New(endpoint, "")
 	if err := client.Prepare(context.Background()); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -158,7 +158,7 @@ func TestPrepareReconnectsAfterRestart(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	client := New(srv.URL)
+	client := New(srv.URL, "")
 	t.Cleanup(func() { _ = client.Close() })
 	if err := client.Prepare(context.Background()); err != nil {
 		t.Fatalf("prepare: %v", err)

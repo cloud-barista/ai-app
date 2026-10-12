@@ -22,6 +22,7 @@ const defaultArchiveLimit = 20
 // @Success 200 {object} model.ArchiveListResp "Archived runs"
 // @Failure 400 {object} model.SimpleMsg "Malformed limit"
 // @Failure 500 {object} model.SimpleMsg "Archive lookup failed"
+// @Security BearerAuth
 // @Router /archive [get]
 func (h *Handler) RestGetArchive(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -52,6 +53,7 @@ func (h *Handler) RestGetArchive(c echo.Context) error {
 // @Success 200 {object} model.ArchiveRecord "Archived run"
 // @Failure 404 {object} model.SimpleMsg "Run not found"
 // @Failure 500 {object} model.SimpleMsg "Archive lookup failed"
+// @Security BearerAuth
 // @Router /archive/{runId} [get]
 func (h *Handler) RestGetArchiveRun(c echo.Context) error {
 	ctx := c.Request().Context()

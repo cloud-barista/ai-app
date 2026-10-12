@@ -13,8 +13,9 @@ import (
 // It is served from this service rather than from somewhere of its own so that
 // the page and the API share an origin: the console calls the same endpoints an
 // operator would call by hand, and a separate origin would have meant either a
-// CORS policy on an API that has no authentication yet, or a second thing to
-// deploy next to the first.
+// CORS policy on the API or a second thing to deploy next to the first. The page
+// is reachable without a token; the token the operator enters stays in the
+// browser session and goes out with every call the page makes.
 //
 // The page is documented as not cacheable because it is the one file that
 // changes whenever the API it draws does, and a stale console showing fields

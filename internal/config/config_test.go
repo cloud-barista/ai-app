@@ -68,3 +68,26 @@ func TestUnknownBackendFails(t *testing.T) {
 		t.Error("Load accepted an unknown provisioner kind")
 	}
 }
+
+func TestAuthTokensReadFromEnv(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_AUTH_TOKEN", "")
+	t.Setenv("AIAPP_APP_TOKEN", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.Token != "" || cfg.App.Token != "" {
+		t.Errorf("tokens = %q, %q, want empty by default", cfg.Auth.Token, cfg.App.Token)
+	}
+
+	t.Setenv("AIAPP_AUTH_TOKEN", "served")
+	t.Setenv("AIAPP_APP_TOKEN", "sent")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.Token != "served" || cfg.App.Token != "sent" {
+		t.Errorf("tokens = %q, %q, want served, sent", cfg.Auth.Token, cfg.App.Token)
+	}
+}
