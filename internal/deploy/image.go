@@ -54,6 +54,9 @@ type ImageChoice struct {
 	GPUImage bool   `json:"gpuImage"`
 	// Vendor is the accelerator vendor the image was matched against, when known.
 	Vendor string `json:"vendor,omitempty"`
+	// Source is where a remote recommender says the image came from. The local
+	// recommender leaves it empty.
+	Source string `json:"source,omitempty"`
 	// Reason explains the pick so an agent can report it and an operator can argue with it.
 	Reason string `json:"reason"`
 }
@@ -66,10 +69,10 @@ type ImageChoice struct {
 // actually carries; a mismatch is worse than a plain image, since the node comes
 // up looking ready while the driver never binds. Falling back is not silent:
 // the reason says which case applied.
-func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID string) (*ImageChoice, error) {
+func (r *localRecommender) ResolveImage(ctx context.Context, app *model.AppSpec, specID string) (*ImageChoice, error) {
 	osType := app.Install.OSType
 	if osType == "" {
-		osType = s.defaultOSType
+		osType = r.defaultOSType
 	}
 
 	req := &tumblebug.SearchImageReq{
@@ -77,7 +80,7 @@ func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID s
 		OSType:        osType,
 		MaxResults:    imageCandidates,
 	}
-	result, err := s.tumblebug.SearchImage(ctx, s.imageNamespace, req)
+	result, err := r.tumblebug.SearchImage(ctx, r.imageNamespace, req)
 	if err != nil {
 		return nil, err
 	}
@@ -87,17 +90,17 @@ func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID s
 
 	if app.Accelerator.Type == "" {
 		chosen := result.ImageList[0]
-		return s.chose(app, specID, chosen, "first matching image for the spec"), nil
+		return r.chose(app, specID, chosen, "first matching image for the spec"), nil
 	}
 
-	vendor := s.acceleratorVendor(ctx, app, specID)
+	vendor := r.acceleratorVendor(ctx, app, specID)
 	for _, image := range result.ImageList {
 		if !image.IsGPUImage {
 			continue
 		}
 		imageVendor := vendorOf(image.OSDistribution, image.Name, image.ID)
 		if imageVendor == vendor {
-			choice := s.chose(app, specID, image, "accelerator image: ships the vendor driver")
+			choice := r.chose(app, specID, image, "accelerator image: ships the vendor driver")
 			choice.Vendor = string(vendor)
 			return choice, nil
 		}
@@ -107,7 +110,7 @@ func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID s
 			// name, and no rule can recover the vendor from it. Taking the image
 			// is still the better bet than a plain one, but the pick was not
 			// checked and the reason says so instead of implying it was.
-			choice := s.chose(app, specID, image, "accelerator image, but the spec names no accelerator vendor "+
+			choice := r.chose(app, specID, image, "accelerator image, but the spec names no accelerator vendor "+
 				"so the image vendor was not checked; confirm the driver bound before serving")
 			choice.Vendor = string(imageVendor)
 			return choice, nil
@@ -117,7 +120,7 @@ func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID s
 	// Every accelerator image on offer is for another vendor. A plain image at
 	// least does not pretend the driver is there.
 	chosen := result.ImageList[0]
-	choice := s.chose(app, specID, chosen, fmt.Sprintf(
+	choice := r.chose(app, specID, chosen, fmt.Sprintf(
 		"no %s accelerator image is registered for this spec, so the driver must be installed by the application commands",
 		vendorLabel(vendor)))
 	choice.Vendor = string(vendor)
@@ -129,12 +132,12 @@ func (s *Service) ResolveImage(ctx context.Context, app *model.AppSpec, specID s
 // The application requirement is the first source because it is what the author
 // asked for; the spec is consulted when the requirement names no model, which is
 // the common case for a requirement written as "any GPU".
-func (s *Service) acceleratorVendor(ctx context.Context, app *model.AppSpec, specID string) acceleratorVendor {
+func (r *localRecommender) acceleratorVendor(ctx context.Context, app *model.AppSpec, specID string) acceleratorVendor {
 	if vendor := vendorOf(app.Accelerator.Model); vendor != vendorUnknown {
 		return vendor
 	}
 
-	spec, err := s.tumblebug.GetSpec(ctx, s.specNamespace, specID)
+	spec, err := r.tumblebug.GetSpec(ctx, r.specNamespace, specID)
 	if err != nil {
 		// Not knowing the vendor is not a reason to fail the deployment: it only
 		// costs the vendor check, and the caller is told which case applied.
@@ -146,7 +149,7 @@ func (s *Service) acceleratorVendor(ctx context.Context, app *model.AppSpec, spe
 }
 
 // chose builds an ImageChoice and logs the pick.
-func (s *Service) chose(app *model.AppSpec, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
+func (r *localRecommender) chose(app *model.AppSpec, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
 	log.Info().Str("appId", app.ID).Str("specId", specID).Str("imageId", image.ID).
 		Bool("gpuImage", image.IsGPUImage).Msg("Resolved node image")
 

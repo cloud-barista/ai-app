@@ -128,6 +128,7 @@ func (h *Handler) RestDeleteApp(c echo.Context) error {
 // @Success 200 {array} model.SpecCandidate "Matching node specs"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 500 {object} model.SimpleMsg "Spec recommendation failed"
+// @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Router /apps/{appId}/specs [get]
 func (h *Handler) RestGetAppSpecs(c echo.Context) error {
 	ctx := c.Request().Context()

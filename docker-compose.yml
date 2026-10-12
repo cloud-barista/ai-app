@@ -42,6 +42,15 @@ services:
       # container started by accident cannot provision anything billable.
       AIAPP_TUMBLEBUG_DRY_RUN: "${AIAPP_TUMBLEBUG_DRY_RUN:-true}"
 
+      # Recommendation and provisioning stay on CB-Tumblebug unless pointed at
+      # an external service.
+      AIAPP_RECOMMENDER: "${AIAPP_RECOMMENDER:-local}"
+      AIAPP_RECOMMENDER_URL: "${AIAPP_RECOMMENDER_URL:-}"
+      AIAPP_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+      AIAPP_PROVISIONER: "${AIAPP_PROVISIONER:-local}"
+      AIAPP_PROVISIONER_URL: "${AIAPP_PROVISIONER_URL:-}"
+      AIAPP_PROVISIONER_TOKEN: "${AIAPP_PROVISIONER_TOKEN:-}"
+
       # Where intent and agent routes are forwarded.
       AIAPP_AGENT_URL: "http://ai-agent:8091"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"

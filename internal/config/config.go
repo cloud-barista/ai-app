@@ -25,6 +25,18 @@ const envPrefix = "AIAPP"
 // instead of at the first deployment.
 const DefaultTumblebugBaseURL = "http://localhost:1323/tumblebug"
 
+// Backend kinds of the recommender and the provisioner.
+const (
+	// BackendLocal works against CB-Tumblebug directly.
+	BackendLocal = "local"
+	// BackendRemote calls an external placement service over HTTP.
+	BackendRemote = "remote"
+)
+
+// recommenderTimeout bounds a remote recommendation. A recommendation reads
+// catalogs and creates nothing, so it has no reason to take minutes.
+const recommenderTimeout = time.Minute
+
 // Config holds all runtime configuration for the service.
 type Config struct {
 	Server    ServerConfig
@@ -33,6 +45,24 @@ type Config struct {
 	Agent     AgentConfig
 	App       AppConfig
 	Archive   ArchiveConfig
+	// Recommender selects who picks the spec and image of a plan.
+	Recommender BackendConfig
+	// Provisioner selects who reviews, creates and updates Infras.
+	Provisioner BackendConfig
+}
+
+// BackendConfig selects the local or a remote implementation of one AI-App
+// placement step.
+type BackendConfig struct {
+	// Kind is BackendLocal or BackendRemote.
+	Kind string
+	// URL is the base URL of the remote service. Unused when Kind is local.
+	URL string
+	// Token is sent as a bearer token when set.
+	Token string
+	// Timeout bounds one remote call. The provisioner shares the CB-Tumblebug
+	// timeout because a remote create blocks for as long as a local one does.
+	Timeout time.Duration
 }
 
 // ServerConfig holds the HTTP settings of the AI-App service.
@@ -126,6 +156,8 @@ func Load() (*Config, error) {
 	v.SetDefault("agent.archive_dir", "./data/agent-archive")
 	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
+	v.SetDefault("placement.recommender", BackendLocal)
+	v.SetDefault("placement.provisioner", BackendLocal)
 
 	// AutomaticEnv only resolves keys that viper already knows about.
 	for _, key := range []string{
@@ -152,6 +184,21 @@ func Load() (*Config, error) {
 		"archive.dir",
 	} {
 		if err := v.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
+		}
+	}
+	// The backend variables are bound by name. Nesting them under a
+	// "recommender" key would not work: a set AIAPP_RECOMMENDER shadows every
+	// key below "recommender" and they all read empty.
+	for key, env := range map[string]string{
+		"placement.recommender":       envPrefix + "_RECOMMENDER",
+		"placement.recommender_url":   envPrefix + "_RECOMMENDER_URL",
+		"placement.recommender_token": envPrefix + "_RECOMMENDER_TOKEN",
+		"placement.provisioner":       envPrefix + "_PROVISIONER",
+		"placement.provisioner_url":   envPrefix + "_PROVISIONER_URL",
+		"placement.provisioner_token": envPrefix + "_PROVISIONER_TOKEN",
+	} {
+		if err := v.BindEnv(key, env); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
 		}
 	}
@@ -192,6 +239,18 @@ func Load() (*Config, error) {
 		},
 		Archive: ArchiveConfig{
 			Dir: v.GetString("archive.dir"),
+		},
+		Recommender: BackendConfig{
+			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.recommender"))),
+			URL:     strings.TrimRight(v.GetString("placement.recommender_url"), "/"),
+			Token:   v.GetString("placement.recommender_token"),
+			Timeout: recommenderTimeout,
+		},
+		Provisioner: BackendConfig{
+			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.provisioner"))),
+			URL:     strings.TrimRight(v.GetString("placement.provisioner_url"), "/"),
+			Token:   v.GetString("placement.provisioner_token"),
+			Timeout: v.GetDuration("tumblebug.timeout"),
 		},
 	}
 
@@ -250,5 +309,25 @@ func (c *Config) validate() error {
 	if c.Archive.Dir == "" {
 		return fmt.Errorf("%s_ARCHIVE_DIR is required", envPrefix)
 	}
+	if err := c.Recommender.validate(envPrefix + "_RECOMMENDER"); err != nil {
+		return err
+	}
+	if err := c.Provisioner.validate(envPrefix + "_PROVISIONER"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (b BackendConfig) validate(env string) error {
+	switch b.Kind {
+	case BackendLocal:
+		return nil
+	case BackendRemote:
+		if b.URL == "" {
+			return fmt.Errorf("%s_URL is required when %s=%s", env, env, BackendRemote)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s must be %s or %s, got %q", env, BackendLocal, BackendRemote, b.Kind)
+	}
 }

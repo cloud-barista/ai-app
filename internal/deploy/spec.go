@@ -32,13 +32,13 @@ const defaultSpecCandidates = 5
 //
 // The accelerator requirement maps field for field onto the spec filter, so a
 // new accelerator vendor needs a catalog entry rather than code here.
-func (s *Service) RecommendSpecs(ctx context.Context, app *model.AppSpec, limit int) ([]model.SpecCandidate, error) {
+func (r *localRecommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, limit int) ([]model.SpecCandidate, error) {
 	if limit <= 0 {
 		limit = defaultSpecCandidates
 	}
 
 	req := buildSpecRequest(app, limit)
-	specs, err := s.tumblebug.RecommendSpec(ctx, req)
+	specs, err := r.tumblebug.RecommendSpec(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to recommend specs for %q: %w", app.ID, err)
 	}

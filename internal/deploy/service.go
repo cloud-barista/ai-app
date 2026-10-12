@@ -21,11 +21,21 @@ const (
 	installMonAgent      = "no"
 )
 
+// labelAppID is the Infra label naming the deployed application.
+const labelAppID = "ai-mcmp.app-id"
+
 // ErrAlreadyExists reports that the target Infra name is taken.
 //
 // The Infra name is the idempotency key: an agent that retries, or an operator
 // who resubmits, must not end up paying for a second copy.
 var ErrAlreadyExists = errors.New("infra already exists")
+
+// ErrAppMismatch reports that an update names an application other than the
+// one the Infra was deployed with, or an Infra that carries no application label.
+//
+// Running another application's install commands on a serving node replaces
+// what it serves without anyone having asked for a different application.
+var ErrAppMismatch = errors.New("infra does not carry the requested application")
 
 // ErrNotViable reports that CB-Tumblebug rejected the request during review.
 var ErrNotViable = errors.New("provisioning request is not viable")
@@ -34,28 +44,48 @@ var ErrNotViable = errors.New("provisioning request is not viable")
 type Service struct {
 	tumblebug *tumblebug.Client
 	catalog   *catalog.Store
-	// imageNamespace holds the shared image catalog images are searched in.
-	imageNamespace string
-	// specNamespace holds the shared spec catalog specs are read from.
-	specNamespace string
-	// defaultOSType is the image family used when an application does not name one.
-	defaultOSType string
+	// recommender picks the spec and image of a plan.
+	recommender Recommender
+	// provisioner reviews, creates and updates Infras.
+	provisioner Provisioner
 	// dryRun blocks every call that would change infrastructure. It is a service
 	// level setting rather than a per-request flag so that a planning model
 	// cannot talk its way past the guard.
 	dryRun bool
 }
 
-// NewService builds a Service.
-func NewService(client *tumblebug.Client, store *catalog.Store, cfg config.TumblebugConfig) *Service {
-	return &Service{
-		tumblebug:      client,
-		catalog:        store,
-		imageNamespace: cfg.ImageNamespace,
-		specNamespace:  cfg.SpecNamespace,
-		defaultOSType:  cfg.DefaultOSType,
-		dryRun:         cfg.DryRun,
+// Option replaces a default of a Service.
+type Option func(*Service)
+
+// WithRecommender replaces the local CB-Tumblebug recommender.
+func WithRecommender(recommender Recommender) Option {
+	return func(s *Service) { s.recommender = recommender }
+}
+
+// WithProvisioner replaces the local CB-Tumblebug provisioner.
+func WithProvisioner(provisioner Provisioner) Option {
+	return func(s *Service) { s.provisioner = provisioner }
+}
+
+// NewService builds a Service. Without options it recommends and provisions
+// through CB-Tumblebug directly.
+func NewService(client *tumblebug.Client, store *catalog.Store, cfg config.TumblebugConfig, opts ...Option) *Service {
+	s := &Service{
+		tumblebug: client,
+		catalog:   store,
+		recommender: &localRecommender{
+			tumblebug:      client,
+			imageNamespace: cfg.ImageNamespace,
+			specNamespace:  cfg.SpecNamespace,
+			defaultOSType:  cfg.DefaultOSType,
+		},
+		provisioner: &localProvisioner{tumblebug: client},
+		dryRun:      cfg.DryRun,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // DryRun reports whether infrastructure changing calls are blocked.
@@ -85,7 +115,7 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 		}
 		// RecommendSpecs orders by cost, so the first candidate is the cheapest match.
 		specID = candidates[0].ID
-		specSource = "recommended"
+		specSource = sourceOf("recommended", s.recommender)
 		acceleratorSummary = summarizeAccelerator(candidates[0])
 	}
 
@@ -102,7 +132,7 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 			return nil, err
 		}
 		imageID = image.ID
-		imageSource = "resolved"
+		imageSource = sourceOf("resolved", s.recommender)
 		imageReason = image.Reason
 	}
 	// RootDiskGiB is a floor the application asks for, not a size to invent. When
@@ -152,30 +182,18 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 	}, nil
 }
 
-// Review asks CB-Tumblebug to validate a plan without creating anything.
+// Review asks the provisioner to validate a plan without creating anything.
 func (s *Service) Review(ctx context.Context, plan *model.DeploymentPlan) (*model.ReviewSummary, error) {
-	infraReq, ok := plan.Request.(*tumblebug.InfraDynamicReq)
-	if !ok {
-		return nil, fmt.Errorf("deployment plan for %q carries no provisioning request", plan.InfraName)
-	}
-
-	result, err := s.tumblebug.ReviewInfraDynamic(ctx, plan.Namespace, infraReq)
+	review, err := s.provisioner.Review(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
 
 	log.Info().Str("nsId", plan.Namespace).Str("infraName", plan.InfraName).
-		Bool("creationViable", result.CreationViable).Str("overallStatus", result.OverallStatus).
-		Str("estimatedCost", result.EstimatedCost).Msg("Reviewed deployment plan")
+		Bool("creationViable", review.CreationViable).Str("overallStatus", review.OverallStatus).
+		Str("estimatedCost", review.EstimatedCost).Msg("Reviewed deployment plan")
 
-	return &model.ReviewSummary{
-		CreationViable:  result.CreationViable,
-		OverallStatus:   result.OverallStatus,
-		OverallMessage:  result.OverallMessage,
-		EstimatedCost:   result.EstimatedCost,
-		TotalNodeCount:  result.TotalNodeCount,
-		Recommendations: result.Recommendations,
-	}, nil
+	return review, nil
 }
 
 // Deploy plans, reviews and, when the guard allows it, provisions.
@@ -214,15 +232,14 @@ func (s *Service) Deploy(ctx context.Context, nsID string, req *model.DeployAppR
 		}, nil
 	}
 
-	infraReq, ok := plan.Request.(*tumblebug.InfraDynamicReq)
-	if !ok {
-		return nil, fmt.Errorf("deployment plan for %q carries no provisioning request", plan.InfraName)
-	}
-
 	started := time.Now()
-	created, err := s.tumblebug.CreateInfraDynamic(ctx, nsID, infraReq)
+	provisioned, err := s.provisioner.Create(ctx, nsID, plan)
 	if err != nil {
 		return nil, err
+	}
+	created := provisioned.Infra
+	if created == nil {
+		return nil, fmt.Errorf("provisioner created %q but reported no infra", req.InfraName)
 	}
 	elapsed := time.Since(started).Round(time.Second)
 
@@ -358,7 +375,7 @@ func (s *Service) ensureAbsent(ctx context.Context, nsID, infraName string) erro
 
 func deploymentLabels(app *model.AppSpec) map[string]string {
 	labels := map[string]string{
-		"ai-mcmp.app-id":      app.ID,
+		labelAppID:            app.ID,
 		"ai-mcmp.app-version": app.Version,
 		"ai-mcmp.runtime":     string(app.Runtime),
 		"ai-mcmp.accelerator": app.Accelerator.Type,

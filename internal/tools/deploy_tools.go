@@ -35,6 +35,7 @@ func Register(registry *Registry, apps *catalog.Store, service *deploy.Service) 
 	registry.Add(planDeploymentTool(service))
 	registry.Add(reviewDeploymentTool(service))
 	registry.Add(deployTool(service))
+	registry.Add(updateTool(service))
 	registry.Add(controlTool(service))
 	registry.Add(deleteTool(service))
 }
@@ -284,6 +285,34 @@ func deployTool(service *deploy.Service) Tool {
 				return nil, err
 			}
 			return service.Deploy(ctx, nsID, req)
+		},
+	}
+}
+
+func updateTool(service *deploy.Service) Tool {
+	return Tool{
+		Name:  "update_deployment",
+		Grade: GradeWrite,
+		Description: "Apply the current version of a registered AI application to a running deployment by " +
+			"running its install commands on every node again. The nodes are kept; nothing is reprovisioned. " +
+			"Use it after the application entry was changed, not to deploy a different application: " +
+			"it is refused when the deployment was not created with this application.",
+		InputSchema: object(map[string]any{
+			"infraId": stringProp("Identifier of the deployment"),
+			"appId":   stringProp("Registered application whose install commands are applied"),
+		}, "infraId", "appId"),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			var args struct {
+				InfraID string `json:"infraId"`
+				AppID   string `json:"appId"`
+			}
+			if err := decode(input, &args); err != nil {
+				return nil, err
+			}
+			if args.InfraID == "" || args.AppID == "" {
+				return nil, fmt.Errorf("infraId and appId required")
+			}
+			return service.Update(ctx, nsID, args.InfraID, args.AppID)
 		},
 	}
 }

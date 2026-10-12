@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"time"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // DeployAppReq asks for an AI application to be placed on an AI semiconductor node.
@@ -201,6 +203,48 @@ type ControlResult struct {
 	DryRun   bool     `json:"dryRun"`
 	Affected []string `json:"affected,omitempty"`
 	Message  string   `json:"message"`
+}
+
+// UpdateDeploymentReq asks for a running deployment to take a new application version.
+type UpdateDeploymentReq struct {
+	// AppID selects the registered application whose install commands are applied.
+	AppID string `json:"appId" validate:"required" example:"vllm-llama31-8b"`
+}
+
+// Validate reports why an update request cannot be applied.
+func (r *UpdateDeploymentReq) Validate() error {
+	if r.AppID == "" {
+		return errRequired("appId")
+	}
+	return nil
+}
+
+// ProvisionResult is what a provisioner reports after creating or updating an Infra.
+type ProvisionResult struct {
+	InfraID string `json:"infraId"`
+	// Infra is the Infra as the provisioner left it, when it reports one. A
+	// create must carry it: opening the serving port and probing the
+	// accelerator both read the nodes from it.
+	Infra *tumblebug.InfraInfo `json:"infra,omitempty"`
+	// AppID and AppVersion name what an update applied.
+	AppID      string `json:"appId,omitempty"`
+	AppVersion string `json:"appVersion,omitempty"`
+	// DryRun is true when the update was prepared but never sent.
+	DryRun bool `json:"dryRun"`
+	// Nodes is the per-node outcome of an update.
+	Nodes   []NodeUpdate `json:"nodes,omitempty"`
+	Message string       `json:"message"`
+}
+
+// NodeUpdate is the outcome of an update on one node.
+type NodeUpdate struct {
+	NodeID string `json:"nodeId"`
+	NodeIP string `json:"nodeIp,omitempty"`
+	// Succeeded is false when the node reported an error for the command set.
+	Succeeded bool   `json:"succeeded"`
+	Error     string `json:"error,omitempty"`
+	// Stderr is the tail of what the commands wrote to standard error.
+	Stderr string `json:"stderr,omitempty"`
 }
 
 // SpecCandidate is one node spec that satisfies an accelerator requirement.

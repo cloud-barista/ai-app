@@ -61,7 +61,8 @@ func main() {
 	}
 
 	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
-	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug)
+	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug,
+		deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner)...)
 
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)
@@ -76,6 +77,9 @@ func main() {
 		log.Info().Str("url", cfg.Tumblebug.BaseURL).Str("source", "environment").
 			Msg("Using CB-Tumblebug")
 	}
+	log.Info().Str("recommender", cfg.Recommender.Kind).Str("recommenderUrl", cfg.Recommender.URL).
+		Str("provisioner", cfg.Provisioner.Kind).Str("provisionerUrl", cfg.Provisioner.URL).
+		Msg("Placement backends")
 	if cfg.Tumblebug.DryRun {
 		log.Warn().Msg("Dry run is on: deploy, control and delete calls are planned and archived but never sent")
 	}

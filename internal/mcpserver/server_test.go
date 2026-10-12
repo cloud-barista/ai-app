@@ -66,8 +66,8 @@ func TestListRegisteredTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(res.Tools) != 13 {
-		t.Fatalf("tools/list returned %d tools, want 13", len(res.Tools))
+	if len(res.Tools) != 14 {
+		t.Fatalf("tools/list returned %d tools, want 14", len(res.Tools))
 	}
 	for _, tool := range res.Tools {
 		grade := registry.Grade(tool.Name)

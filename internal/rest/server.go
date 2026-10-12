@@ -77,6 +77,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/ns/:nsId/deployments", handler.RestGetAllDeployments)
 	g.GET("/ns/:nsId/deployments/:infraId/status", handler.RestGetDeploymentStatus)
 	g.GET("/ns/:nsId/deployments/:infraId/accelerator", handler.RestGetDeploymentAccelerator)
+	g.POST("/ns/:nsId/deployments/:infraId/update", handler.RestPostDeploymentUpdate)
 	g.POST("/ns/:nsId/deployments/:infraId/control", handler.RestPostDeploymentControl)
 	g.DELETE("/ns/:nsId/deployments/:infraId", handler.RestDeleteDeployment)
 

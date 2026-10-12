@@ -245,6 +245,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
                     }
                 }
             }
@@ -434,6 +440,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
                     }
                 }
             }
@@ -492,6 +504,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Deployment planning failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -716,6 +734,86 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Deployment status lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/update": {
+            "post": {
+                "description": "Apply the current version of a registered AI application to a running deployment by running its install commands on every node again. The nodes are kept, and nothing is sent while the dry-run guard is on",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Update a deployment",
+                "operationId": "PostDeploymentUpdate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Application to apply",
+                        "name": "updateReq",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateDeploymentReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Update applied or planned",
+                        "schema": {
+                            "$ref": "#/definitions/model.ProvisionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete request",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "Deployment was not deployed with this application",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment update failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1450,6 +1548,65 @@ const docTemplate = `{
                 }
             }
         },
+        "model.NodeUpdate": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "nodeIp": {
+                    "type": "string"
+                },
+                "stderr": {
+                    "description": "Stderr is the tail of what the commands wrote to standard error.",
+                    "type": "string"
+                },
+                "succeeded": {
+                    "description": "Succeeded is false when the node reported an error for the command set.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.ProvisionResult": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "description": "AppID and AppVersion name what an update applied.",
+                    "type": "string"
+                },
+                "appVersion": {
+                    "type": "string"
+                },
+                "dryRun": {
+                    "description": "DryRun is true when the update was prepared but never sent.",
+                    "type": "boolean"
+                },
+                "infra": {
+                    "description": "Infra is the Infra as the provisioner left it, when it reports one. A\ncreate must carry it: opening the serving port and probing the\naccelerator both read the nodes from it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/tumblebug.InfraInfo"
+                        }
+                    ]
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "description": "Nodes is the per-node outcome of an update.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeUpdate"
+                    }
+                }
+            }
+        },
         "model.ResourceRequirement": {
             "type": "object",
             "properties": {
@@ -1679,6 +1836,19 @@ const docTemplate = `{
                 "output": {},
                 "tool": {
                     "type": "string"
+                }
+            }
+        },
+        "model.UpdateDeploymentReq": {
+            "type": "object",
+            "required": [
+                "appId"
+            ],
+            "properties": {
+                "appId": {
+                    "description": "AppID selects the registered application whose install commands are applied.",
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
                 }
             }
         },

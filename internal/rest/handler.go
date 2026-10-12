@@ -39,10 +39,19 @@ func statusCodeFor(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, deploy.ErrNotViable):
 		return http.StatusBadRequest
+	case errors.Is(err, deploy.ErrAppMismatch):
+		return http.StatusConflict
 	case errors.Is(err, llm.ErrDisabled):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, mcpclient.ErrUnavailable):
 		return http.StatusServiceUnavailable
+	}
+
+	// A remote placement service failing, whether it rejected the call or broke,
+	// is an upstream failure from the caller's point of view.
+	var remoteErr *deploy.RemoteError
+	if errors.As(err, &remoteErr) {
+		return http.StatusBadGateway
 	}
 
 	switch tumblebug.StatusCode(err) {

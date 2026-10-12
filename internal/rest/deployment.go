@@ -38,6 +38,7 @@ var allowedActions = map[string]bool{
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete request"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 500 {object} model.SimpleMsg "Deployment planning failed"
+// @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Router /ns/{nsId}/deployments/plan [post]
 func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -70,6 +71,7 @@ func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 409 {object} model.SimpleMsg "Deployment name already in use"
 // @Failure 500 {object} model.SimpleMsg "Deployment failed"
+// @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Router /ns/{nsId}/deployments [post]
 func (h *Handler) RestPostDeployment(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -172,6 +174,48 @@ func (h *Handler) RestGetDeploymentAccelerator(c echo.Context) error {
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: "Accelerator probe failed"})
 	}
 	return c.JSON(http.StatusOK, report)
+}
+
+// RestPostDeploymentUpdate godoc
+// @ID PostDeploymentUpdate
+// @Summary Update a deployment
+// @Description Apply the current version of a registered AI application to a running deployment by running its install commands on every node again. The nodes are kept, and nothing is sent while the dry-run guard is on
+// @Tags [Deploy] AI Application Deployment
+// @Accept json
+// @Produce json
+// @Param nsId path string true "Namespace ID" default(default)
+// @Param infraId path string true "Deployment ID"
+// @Param updateReq body model.UpdateDeploymentReq true "Application to apply"
+// @Success 200 {object} model.ProvisionResult "Update applied or planned"
+// @Failure 400 {object} model.SimpleMsg "Malformed or incomplete request"
+// @Failure 404 {object} model.SimpleMsg "Deployment or application not found"
+// @Failure 409 {object} model.SimpleMsg "Deployment was not deployed with this application"
+// @Failure 500 {object} model.SimpleMsg "Deployment update failed"
+// @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
+// @Router /ns/{nsId}/deployments/{infraId}/update [post]
+func (h *Handler) RestPostDeploymentUpdate(c echo.Context) error {
+	ctx := c.Request().Context()
+	nsID := c.Param("nsId")
+	infraID := c.Param("infraId")
+
+	var req model.UpdateDeploymentReq
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: malformedBody})
+	}
+	if err := req.Validate(); err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: messageFor(err, malformedBody)})
+	}
+
+	started := time.Now()
+	result, err := h.deploy.Update(ctx, nsID, infraID, req.AppID)
+	h.archiveDirect(ctx, nsID, kindDeployment, "update_deployment", started,
+		map[string]any{"infraId": infraID, "appId": req.AppID}, result, h.deploy.DryRun(), err)
+	if err != nil {
+		log.Error().Err(err).Str("nsId", nsID).Str("infraId", infraID).Str("appId", req.AppID).
+			Msg("Failed to update deployment")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment update failed")})
+	}
+	return c.JSON(http.StatusOK, result)
 }
 
 // RestPostDeploymentControl godoc
