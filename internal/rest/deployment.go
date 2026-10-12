@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
@@ -62,11 +65,12 @@ func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 // RestPostDeployment godoc
 // @ID PostDeployment
 // @Summary Deploy an AI application
-// @Description Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off
+// @Description Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off. After provisioning the serving port is checked on every node once; with waitHealthy=true the call keeps checking until every node answers or AIAPP_HEALTH_TIMEOUT passes. Either way a node that does not answer is reported under health and does not fail the deployment
 // @Tags [Deploy] AI Application Deployment
 // @Accept json
 // @Produce json
 // @Param nsId path string true "Namespace ID" default(default)
+// @Param waitHealthy query bool false "Wait until the application answers on every node, up to AIAPP_HEALTH_TIMEOUT"
 // @Param deployReq body model.DeployAppReq true "Deployment request"
 // @Success 200 {object} model.DeploymentResult "Deployment planned or provisioned"
 // @Failure 400 {object} model.SimpleMsg "Malformed request or request not viable"
@@ -85,8 +89,13 @@ func (h *Handler) RestPostDeployment(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: messageFor(err, malformedBody)})
 	}
 
+	deployFn := h.deploy.Deploy
+	if c.QueryParam("waitHealthy") == "true" {
+		deployFn = h.deploy.DeployAndWait
+	}
+
 	started := time.Now()
-	result, err := h.deploy.Deploy(ctx, nsID, req)
+	result, err := deployFn(ctx, nsID, req)
 	h.archiveDirect(ctx, nsID, kindDeployment, "deploy_ai_app", started, req, result, h.deploy.DryRun(), err)
 	if err != nil {
 		log.Error().Err(err).Str("nsId", nsID).Str("appId", req.AppID).
@@ -180,6 +189,48 @@ func (h *Handler) RestGetDeploymentAccelerator(c echo.Context) error {
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: "Accelerator probe failed"})
 	}
 	return c.JSON(http.StatusOK, report)
+}
+
+// RestGetDeploymentHealth godoc
+// @ID GetDeploymentHealth
+// @Summary Check whether a deployment serves
+// @Description Run a read-only curl against 127.0.0.1 on the serving port and health path on every node of the deployment, through the CB-Tumblebug remote command channel. A node is ready on a 2xx or 3xx answer, and the deployment is ready when every node is. Without appId the application is read from the ai-mcmp.app-id label of the deployment
+// @Tags [Deploy] AI Application Deployment
+// @Produce json
+// @Param nsId path string true "Namespace ID" default(default)
+// @Param infraId path string true "Deployment ID"
+// @Param appId query string false "Registered application whose serving port is checked. Defaults to the deployment label"
+// @Success 200 {object} model.ServingHealth "Serving health"
+// @Failure 400 {object} model.SimpleMsg "No appId given and the deployment carries no application label"
+// @Failure 404 {object} model.SimpleMsg "Deployment or application not found"
+// @Failure 500 {object} model.SimpleMsg "Serving health check failed"
+// @Security BearerAuth
+// @Router /ns/{nsId}/deployments/{infraId}/health [get]
+func (h *Handler) RestGetDeploymentHealth(c echo.Context) error {
+	ctx := c.Request().Context()
+	nsID := c.Param("nsId")
+	infraID := c.Param("infraId")
+
+	var (
+		app *model.AppSpec
+		err error
+	)
+	if appID := c.QueryParam("appId"); appID != "" {
+		app, err = h.catalog.Get(ctx, appID)
+	} else {
+		app, err = h.deploy.DeployedApp(ctx, nsID, infraID)
+	}
+	if err != nil {
+		log.Warn().Err(err).Str("nsId", nsID).Str("infraId", infraID).Msg("Failed to find the deployed application")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: deployedAppMessage(err)})
+	}
+
+	health, err := h.deploy.CheckServingHealth(ctx, nsID, infraID, app)
+	if err != nil {
+		log.Error().Err(err).Str("nsId", nsID).Str("infraId", infraID).Msg("Failed to check serving health")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: "Serving health check failed"})
+	}
+	return c.JSON(http.StatusOK, health)
 }
 
 // RestPostDeploymentUpdate godoc
@@ -293,6 +344,18 @@ func (h *Handler) RestDeleteDeployment(c echo.Context) error {
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: "Deployment deletion failed"})
 	}
 	return c.JSON(http.StatusOK, result)
+}
+
+// deployedAppMessage says why the application of a deployment is not known.
+func deployedAppMessage(err error) string {
+	switch {
+	case errors.Is(err, deploy.ErrNoAppLabel):
+		return "Deployment carries no ai-mcmp.app-id label; pass appId"
+	case errors.Is(err, catalog.ErrNotFound):
+		return "AI application not found"
+	default:
+		return "Deployment lookup failed"
+	}
 }
 
 // bindDeployReq reads and validates a deployment request.

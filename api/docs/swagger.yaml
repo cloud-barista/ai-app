@@ -519,6 +519,12 @@ definitions:
       dryRun:
         description: DryRun is true when the plan was archived but never sent.
         type: boolean
+      health:
+        allOf:
+        - $ref: '#/definitions/model.ServingHealth'
+        description: |-
+          Health reports whether the application answered on its serving port,
+          on a real run. A dry run leaves it out because nothing was started.
       infra:
         description: Infra is the provisioned Infra, present only on a real run.
       message:
@@ -601,6 +607,22 @@ definitions:
         type: number
     required:
     - id
+    type: object
+  model.NodeHealth:
+    properties:
+      error:
+        type: string
+      httpCode:
+        description: |-
+          HTTPCode is the status the application answered with. Zero means
+          nothing answered, or the check could not run; Error says which.
+        type: integer
+      nodeId:
+        type: string
+      publicIp:
+        type: string
+      ready:
+        type: boolean
     type: object
   model.NodeUpdate:
     properties:
@@ -730,6 +752,31 @@ definitions:
       sourceIp:
         description: SourceIP is the range the port was opened to.
         type: string
+    type: object
+  model.ServingHealth:
+    properties:
+      appId:
+        type: string
+      attempts:
+        description: Attempts is how many times the nodes were asked before this result.
+        type: integer
+      checkedAt:
+        type: string
+      healthPath:
+        type: string
+      infraId:
+        type: string
+      message:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/model.NodeHealth'
+        type: array
+      port:
+        type: integer
+      ready:
+        description: Ready is true when every node answered with a 2xx or 3xx status.
+        type: boolean
     type: object
   model.ServingSpec:
     properties:
@@ -1233,7 +1280,10 @@ paths:
       - application/json
       description: Provision nodes and install the AI application on them. The request
         is reviewed first, refused if the name is taken, and only sent to the cloud
-        when the dry-run guard is off
+        when the dry-run guard is off. After provisioning the serving port is checked
+        on every node once; with waitHealthy=true the call keeps checking until every
+        node answers or AIAPP_HEALTH_TIMEOUT passes. Either way a node that does not
+        answer is reported under health and does not fail the deployment
       operationId: PostDeployment
       parameters:
       - default: default
@@ -1242,6 +1292,10 @@ paths:
         name: nsId
         required: true
         type: string
+      - description: Wait until the application answers on every node, up to AIAPP_HEALTH_TIMEOUT
+        in: query
+        name: waitHealthy
+        type: boolean
       - description: Deployment request
         in: body
         name: deployReq
@@ -1408,6 +1462,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Control a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/health:
+    get:
+      description: Run a read-only curl against 127.0.0.1 on the serving port and
+        health path on every node of the deployment, through the CB-Tumblebug remote
+        command channel. A node is ready on a 2xx or 3xx answer, and the deployment
+        is ready when every node is. Without appId the application is read from the
+        ai-mcmp.app-id label of the deployment
+      operationId: GetDeploymentHealth
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      - description: Registered application whose serving port is checked. Defaults
+          to the deployment label
+        in: query
+        name: appId
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Serving health
+          schema:
+            $ref: '#/definitions/model.ServingHealth'
+        "400":
+          description: No appId given and the deployment carries no application label
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Deployment or application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Serving health check failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Check whether a deployment serves
       tags:
       - '[Deploy] AI Application Deployment'
   /ns/{nsId}/deployments/{infraId}/status:

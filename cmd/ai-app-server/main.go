@@ -65,8 +65,9 @@ func main() {
 	}
 
 	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
-	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug,
-		deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner)...)
+	deployOptions := append(deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner),
+		deploy.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
+	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug, deployOptions...)
 
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)

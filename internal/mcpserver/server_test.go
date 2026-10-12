@@ -66,10 +66,17 @@ func TestListRegisteredTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(res.Tools) != 14 {
-		t.Fatalf("tools/list returned %d tools, want 14", len(res.Tools))
+	if len(res.Tools) != 15 {
+		t.Fatalf("tools/list returned %d tools, want 15", len(res.Tools))
 	}
+	health := false
 	for _, tool := range res.Tools {
+		if tool.Name == "check_serving_health" {
+			health = true
+			if got := tool.Meta[MetaGrade]; got != string(tools.GradeRead) {
+				t.Errorf("check_serving_health: _meta grade = %v, want read", got)
+			}
+		}
 		grade := registry.Grade(tool.Name)
 		if got := tool.Meta[MetaGrade]; got != string(grade) {
 			t.Errorf("%s: _meta grade = %v, want %q", tool.Name, got, grade)
@@ -85,6 +92,9 @@ func TestListRegisteredTools(t *testing.T) {
 			*tool.Annotations.DestructiveHint != (grade == tools.GradeDestructive) {
 			t.Errorf("%s: destructiveHint wrong for grade %s", tool.Name, grade)
 		}
+	}
+	if !health {
+		t.Error("tools/list does not carry check_serving_health")
 	}
 }
 

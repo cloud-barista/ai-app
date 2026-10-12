@@ -102,11 +102,11 @@ func TestCardWhenConnected(t *testing.T) {
 		t.Errorf("identity = %+v", card)
 	}
 	if len(card.MCPServers) != 1 || card.MCPServers[0].URL != client.Endpoint() ||
-		!card.MCPServers[0].Connected || card.MCPServers[0].ToolCount != 14 {
+		!card.MCPServers[0].Connected || card.MCPServers[0].ToolCount != 15 {
 		t.Errorf("mcpServers = %+v", card.MCPServers)
 	}
-	if len(card.Tools) != 14 {
-		t.Fatalf("tools = %d, want 14", len(card.Tools))
+	if len(card.Tools) != 15 {
+		t.Fatalf("tools = %d, want 15", len(card.Tools))
 	}
 	want := map[string]model.ToolDescriptor{}
 	for _, d := range registry.Descriptors() {
@@ -175,7 +175,7 @@ func TestRegisterPostsCardWithToken(t *testing.T) {
 	if err := json.Unmarshal(fake.bodies[0], &sent); err != nil {
 		t.Fatalf("decode sent card: %v", err)
 	}
-	if sent.Name != Name || len(sent.Tools) != 14 || !sent.MCPServers[0].Connected || sent.Registration != nil {
+	if sent.Name != Name || len(sent.Tools) != 15 || !sent.MCPServers[0].Connected || sent.Registration != nil {
 		t.Errorf("sent card = %+v", sent)
 	}
 
@@ -335,7 +335,7 @@ func TestRegisterWaitsForLateMCPServer(t *testing.T) {
 	if err := json.Unmarshal(fake.bodies[0], &sent); err != nil {
 		t.Fatalf("decode sent card: %v", err)
 	}
-	if !sent.MCPServers[0].Connected || sent.MCPServers[0].ToolCount != 14 || len(sent.Tools) != 14 {
+	if !sent.MCPServers[0].Connected || sent.MCPServers[0].ToolCount != 15 || len(sent.Tools) != 15 {
 		t.Errorf("sent card mcpServers = %+v, tools = %d", sent.MCPServers, len(sent.Tools))
 	}
 }

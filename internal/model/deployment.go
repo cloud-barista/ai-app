@@ -174,6 +174,33 @@ type AcceleratorReport struct {
 	Message  string   `json:"message"`
 }
 
+// ServingHealth reports whether the application answers on its serving port,
+// asked on each node through 127.0.0.1.
+type ServingHealth struct {
+	InfraID    string `json:"infraId"`
+	AppID      string `json:"appId"`
+	Port       int    `json:"port"`
+	HealthPath string `json:"healthPath,omitempty"`
+	// Ready is true when every node answered with a 2xx or 3xx status.
+	Ready bool `json:"ready"`
+	// Attempts is how many times the nodes were asked before this result.
+	Attempts  int          `json:"attempts"`
+	Nodes     []NodeHealth `json:"nodes"`
+	CheckedAt time.Time    `json:"checkedAt"`
+	Message   string       `json:"message"`
+}
+
+// NodeHealth is the health answer of one node.
+type NodeHealth struct {
+	NodeID   string `json:"nodeId"`
+	PublicIP string `json:"publicIp,omitempty"`
+	// HTTPCode is the status the application answered with. Zero means
+	// nothing answered, or the check could not run; Error says which.
+	HTTPCode int    `json:"httpCode"`
+	Ready    bool   `json:"ready"`
+	Error    string `json:"error,omitempty"`
+}
+
 // DeploymentResult reports the outcome of a deployment attempt.
 type DeploymentResult struct {
 	Plan *DeploymentPlan `json:"plan"`
@@ -187,6 +214,9 @@ type DeploymentResult struct {
 	Serving *ServingAccess `json:"serving,omitempty"`
 	// Accelerator reports what the nodes answered when asked what they carry.
 	Accelerator *AcceleratorReport `json:"accelerator,omitempty"`
+	// Health reports whether the application answered on its serving port,
+	// on a real run. A dry run leaves it out because nothing was started.
+	Health *ServingHealth `json:"health,omitempty"`
 	// Message explains the outcome to the caller.
 	Message string `json:"message"`
 }

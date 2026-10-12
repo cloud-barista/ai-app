@@ -37,6 +37,7 @@ func Register(registry *Registry, apps *catalog.Store, service *deploy.Service) 
 	registry.Add(listDeploymentsTool(service))
 	registry.Add(deploymentStatusTool(service))
 	registry.Add(probeAcceleratorTool(apps, service))
+	registry.Add(servingHealthTool(apps, service))
 	registry.Add(planDeploymentTool(service))
 	registry.Add(reviewDeploymentTool(service))
 	registry.Add(deployTool(service))
@@ -236,6 +237,46 @@ func probeAcceleratorTool(apps *catalog.Store, service *deploy.Service) Tool {
 	}
 }
 
+func servingHealthTool(apps *catalog.Store, service *deploy.Service) Tool {
+	return Tool{
+		Name:  "check_serving_health",
+		Grade: GradeRead,
+		Description: "Check whether a deployed application answers on its serving port. It runs a read-only curl " +
+			"on each node against 127.0.0.1 and the application's health path, and reports the HTTP status per " +
+			"node; the deployment is ready when every node answers 2xx or 3xx. A model server can take minutes " +
+			"to load, so call it again after deploy_ai_app reports the application not ready yet.",
+		InputSchema: object(map[string]any{
+			"infraId": stringProp("Identifier of the deployment"),
+			"appId":   stringProp("Registered application to check. Optional; defaults to the one the deployment was created with"),
+		}, "infraId"),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			var args struct {
+				InfraID string `json:"infraId"`
+				AppID   string `json:"appId"`
+			}
+			if err := decode(input, &args); err != nil {
+				return nil, err
+			}
+			if args.InfraID == "" {
+				return nil, fmt.Errorf("infraId required")
+			}
+			var (
+				app *model.AppSpec
+				err error
+			)
+			if args.AppID != "" {
+				app, err = apps.Get(ctx, args.AppID)
+			} else {
+				app, err = service.DeployedApp(ctx, nsID, args.InfraID)
+			}
+			if err != nil {
+				return nil, err
+			}
+			return service.CheckServingHealth(ctx, nsID, args.InfraID, app)
+		},
+	}
+}
+
 func planDeploymentTool(service *deploy.Service) Tool {
 	return Tool{
 		Name:  "plan_deployment",
@@ -293,7 +334,15 @@ func deployTool(service *deploy.Service) Tool {
 			if err != nil {
 				return nil, err
 			}
-			return service.Deploy(ctx, nsID, req)
+			result, err := service.Deploy(ctx, nsID, req)
+			if err != nil {
+				return nil, err
+			}
+			if result.Health != nil && !result.Health.Ready {
+				result.Message += "; the application does not answer on every node yet, " +
+					"check again with check_serving_health"
+			}
+			return result, nil
 		},
 	}
 }

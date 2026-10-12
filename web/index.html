@@ -477,6 +477,22 @@
   </div>
 
   <div class="panel">
+    <h3>서빙 상태 확인 <span class="hint">노드가 떴다고 응용이 답하는 것은 아닙니다</span></h3>
+    <div class="row">
+      <input type="text" id="dp-health-infra" placeholder="배포 이름 (infraId)">
+      <button class="ghost" onclick="runHealth()">응답 확인</button>
+    </div>
+    <div id="dp-health-out" style="margin-top:12px"></div>
+    <details class="wire" id="dp-health-wire"></details>
+    <div class="note info" style="margin-top:14px">
+      각 노드 안에서 <code>curl</code> 로 <code>127.0.0.1:&lt;서빙 포트&gt;&lt;헬스 경로&gt;</code> 를 한 번 부릅니다.
+      방화벽이나 공인 IP 와 무관하게 <b>서버 프로세스가 답하는지</b>만 봅니다.
+      2xx·3xx 면 준비됨이고, 모든 노드가 준비돼야 배포가 준비됨입니다.
+      응용은 배포 이름의 <code>ai-mcmp.app-id</code> 라벨로 찾습니다.
+    </div>
+  </div>
+
+  <div class="panel">
     <h3>이 화면에 쓰기 버튼이 없는 이유</h3>
     <div class="note warn">
       실제 생성·제어·삭제 버튼을 의도적으로 넣지 않았습니다. dry-run 이 켜져 있어도 마찬가지입니다.
@@ -1126,6 +1142,40 @@ async function runProbe() {
     <div class="note" style="margin-top:12px">
       <b>메모리의 "모름" 은 0 이 아닙니다.</b> PCI 버스는 장치가 무엇인지는 말해도 메모리는 말하지 않습니다.
       0 으로 적으면 측정값으로 읽히기 때문에 비워 둡니다.</div>`;
+}
+
+async function runHealth() {
+  const ns = $('dp-ns').value || 'default';
+  const infra = $('dp-health-infra').value;
+  if (!infra) { $('dp-health-out').innerHTML = '<div class="note">배포 이름을 넣어 주세요.</div>'; return; }
+
+  $('dp-health-out').innerHTML = '<div class="spin">노드에 묻는 중...</div>';
+  const r = await api('GET',
+    `/ns/${encodeURIComponent(ns)}/deployments/${encodeURIComponent(infra)}/health`);
+  wire($('dp-health-wire'), r);
+
+  if (!r.ok) { $('dp-health-out').innerHTML = failNote(r) + platformNote(r); return; }
+
+  const h = r.data || {};
+  const nodes = h.nodes || [];
+  $('dp-health-out').innerHTML = `
+    <div class="grid g3">
+      <div class="stat"><div class="k">상태</div><div class="v sm">${h.ready
+        ? '<span class="b b-off">준비됨</span>' : '<span class="b b-on">안 됨</span>'}</div></div>
+      <div class="stat"><div class="k">응용</div><div class="v sm mono">${esc(h.appId || '-')}</div></div>
+      <div class="stat"><div class="k">확인한 곳</div><div class="v sm mono">:${esc(h.port || '-')}${esc(h.healthPath || '/')}</div></div>
+    </div>
+    ${nodes.length ? `<table style="margin-top:12px">
+      <tr><th>노드</th><th>공인 IP</th><th>HTTP</th><th>준비</th><th>오류</th></tr>
+      ${nodes.map((n) => `<tr>
+        <td class="mono" style="font-size:12px">${esc(n.nodeId || '-')}</td>
+        <td class="mono" style="font-size:12px">${esc(n.publicIp || '-')}</td>
+        <td class="mono">${n.httpCode ? esc(n.httpCode) : '<span class="b b-mut">응답 없음</span>'}</td>
+        <td>${n.ready ? '<span class="b b-off">예</span>' : '<span class="b b-on">아니오</span>'}</td>
+        <td style="font-size:12px">${esc(n.error || '')}</td>
+      </tr>`).join('')}
+    </table>` : ''}
+    <div class="note" style="margin-top:12px">${esc(h.message || '')}</div>`;
 }
 
 /* The deployment path is the only one that needs the platform, so a failure

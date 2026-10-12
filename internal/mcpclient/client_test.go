@@ -44,8 +44,8 @@ func TestDefinitionsGradesAndDryRun(t *testing.T) {
 	}
 
 	defs := client.Definitions()
-	if len(defs) != 14 {
-		t.Fatalf("Definitions returned %d tools, want 14", len(defs))
+	if len(defs) != 15 {
+		t.Fatalf("Definitions returned %d tools, want 15", len(defs))
 	}
 	want := map[string]bool{}
 	for _, def := range registry.Definitions() {
@@ -61,6 +61,9 @@ func TestDefinitionsGradesAndDryRun(t *testing.T) {
 		if got, wantGrade := client.Grade(def.Name), registry.Grade(def.Name); got != wantGrade {
 			t.Errorf("%s: grade = %q, want %q", def.Name, got, wantGrade)
 		}
+	}
+	if got := client.Grade("check_serving_health"); got != tools.GradeRead {
+		t.Errorf("check_serving_health grade = %q, want read", got)
 	}
 	if !client.DryRun() {
 		t.Error("DryRun = false, want true")

@@ -42,6 +42,11 @@ services:
       # container started by accident cannot provision anything billable.
       AIAPP_TUMBLEBUG_DRY_RUN: "${AIAPP_TUMBLEBUG_DRY_RUN:-true}"
 
+      # How long a deployment asked with waitHealthy=true waits for the
+      # application to answer on its serving port, and how often it asks.
+      AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
+      AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
+
       # Recommendation and provisioning stay on CB-Tumblebug unless pointed at
       # an external service.
       AIAPP_RECOMMENDER: "${AIAPP_RECOMMENDER:-local}"

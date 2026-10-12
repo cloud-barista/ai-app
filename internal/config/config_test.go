@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // clearBackendEnv makes the test independent of the shell it runs in.
@@ -102,5 +103,33 @@ func TestAgentRegistryReadsURLAndToken(t *testing.T) {
 	}
 	if cfg.Agent.RegistryURL != "http://registry.example/api" || cfg.Agent.RegistryToken != "secret" {
 		t.Errorf("agent = %+v", cfg.Agent)
+	}
+}
+
+func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_HEALTH_TIMEOUT", "")
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Health.Timeout != 15*time.Minute || cfg.Health.Interval != 20*time.Second {
+		t.Errorf("health = %+v, want 15m and 20s by default", cfg.Health)
+	}
+
+	t.Setenv("AIAPP_HEALTH_TIMEOUT", "2m")
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "5s")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Health.Timeout != 2*time.Minute || cfg.Health.Interval != 5*time.Second {
+		t.Errorf("health = %+v, want 2m and 5s", cfg.Health)
+	}
+
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "0s")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "health interval") {
+		t.Errorf("Load error = %v, want one naming the health interval", err)
 	}
 }

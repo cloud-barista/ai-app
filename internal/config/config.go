@@ -46,6 +46,7 @@ type Config struct {
 	App       AppConfig
 	Archive   ArchiveConfig
 	Auth      AuthConfig
+	Health    HealthConfig
 	// Recommender selects who picks the spec and image of a plan.
 	Recommender BackendConfig
 	// Provisioner selects who reviews, creates and updates Infras.
@@ -141,6 +142,13 @@ type AuthConfig struct {
 	Token string
 }
 
+// HealthConfig holds how long a deployment told to wait for its application
+// keeps asking whether it answers, and how often.
+type HealthConfig struct {
+	Timeout  time.Duration
+	Interval time.Duration
+}
+
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
 	Dir string
@@ -171,6 +179,8 @@ func Load() (*Config, error) {
 	v.SetDefault("agent.archive_dir", "./data/agent-archive")
 	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
+	v.SetDefault("health.timeout", 15*time.Minute)
+	v.SetDefault("health.interval", 20*time.Second)
 	v.SetDefault("placement.recommender", BackendLocal)
 	v.SetDefault("placement.provisioner", BackendLocal)
 
@@ -201,6 +211,8 @@ func Load() (*Config, error) {
 		"app.token",
 		"archive.dir",
 		"auth.token",
+		"health.timeout",
+		"health.interval",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -264,6 +276,10 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			Token: v.GetString("auth.token"),
+		},
+		Health: HealthConfig{
+			Timeout:  v.GetDuration("health.timeout"),
+			Interval: v.GetDuration("health.interval"),
 		},
 		Recommender: BackendConfig{
 			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.recommender"))),
@@ -333,6 +349,12 @@ func (c *Config) validate() error {
 	}
 	if c.Archive.Dir == "" {
 		return fmt.Errorf("%s_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.Health.Timeout <= 0 {
+		return fmt.Errorf("invalid health timeout: %s", c.Health.Timeout)
+	}
+	if c.Health.Interval <= 0 {
+		return fmt.Errorf("invalid health interval: %s", c.Health.Interval)
 	}
 	if err := c.Recommender.validate(envPrefix + "_RECOMMENDER"); err != nil {
 		return err

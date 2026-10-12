@@ -454,7 +454,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off",
+                "description": "Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off. After provisioning the serving port is checked on every node once; with waitHealthy=true the call keeps checking until every node answers or AIAPP_HEALTH_TIMEOUT passes. Either way a node that does not answer is reported under health and does not fail the deployment",
                 "consumes": [
                     "application/json"
                 ],
@@ -474,6 +474,12 @@
                         "name": "nsId",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Wait until the application answers on every node, up to AIAPP_HEALTH_TIMEOUT",
+                        "name": "waitHealthy",
+                        "in": "query"
                     },
                     {
                         "description": "Deployment request",
@@ -785,6 +791,73 @@
                     },
                     "500": {
                         "description": "Deployment control failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Run a read-only curl against 127.0.0.1 on the serving port and health path on every node of the deployment, through the CB-Tumblebug remote command channel. A node is ready on a 2xx or 3xx answer, and the deployment is ready when every node is. Without appId the application is read from the ai-mcmp.app-id label of the deployment",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Check whether a deployment serves",
+                "operationId": "GetDeploymentHealth",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered application whose serving port is checked. Defaults to the deployment label",
+                        "name": "appId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Serving health",
+                        "schema": {
+                            "$ref": "#/definitions/model.ServingHealth"
+                        }
+                    },
+                    "400": {
+                        "description": "No appId given and the deployment carries no application label",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Serving health check failed",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1760,6 +1833,14 @@
                     "description": "DryRun is true when the plan was archived but never sent.",
                     "type": "boolean"
                 },
+                "health": {
+                    "description": "Health reports whether the application answered on its serving port,\non a real run. A dry run leaves it out because nothing was started.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ServingHealth"
+                        }
+                    ]
+                },
                 "infra": {
                     "description": "Infra is the provisioned Infra, present only on a real run."
                 },
@@ -1874,6 +1955,27 @@
                     "description": "SizeGiB is the on-disk footprint, used to size the root disk.",
                     "type": "number",
                     "example": 16
+                }
+            }
+        },
+        "model.NodeHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "httpCode": {
+                    "description": "HTTPCode is the status the application answered with. Zero means\nnothing answered, or the check could not run; Error says which.",
+                    "type": "integer"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "publicIp": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
                 }
             }
         },
@@ -2050,6 +2152,43 @@
                 "sourceIp": {
                     "description": "SourceIP is the range the port was opened to.",
                     "type": "string"
+                }
+            }
+        },
+        "model.ServingHealth": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "string"
+                },
+                "attempts": {
+                    "description": "Attempts is how many times the nodes were asked before this result.",
+                    "type": "integer"
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "healthPath": {
+                    "type": "string"
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeHealth"
+                    }
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "ready": {
+                    "description": "Ready is true when every node answered with a 2xx or 3xx status.",
+                    "type": "boolean"
                 }
             }
         },

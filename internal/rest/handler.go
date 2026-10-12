@@ -43,6 +43,8 @@ func statusCodeFor(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, deploy.ErrAppMismatch):
 		return http.StatusConflict
+	case errors.Is(err, deploy.ErrNoAppLabel):
+		return http.StatusBadRequest
 	case errors.Is(err, deploy.ErrRequirementNotDeployed):
 		return http.StatusConflict
 	case errors.Is(err, llm.ErrDisabled):

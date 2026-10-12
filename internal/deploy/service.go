@@ -52,6 +52,10 @@ type Service struct {
 	// level setting rather than a per-request flag so that a planning model
 	// cannot talk its way past the guard.
 	dryRun bool
+	// healthTimeout and healthInterval bound how long a deployment told to
+	// wait for its application keeps asking, and how often.
+	healthTimeout  time.Duration
+	healthInterval time.Duration
 }
 
 // Option replaces a default of a Service.
@@ -79,8 +83,10 @@ func NewService(client *tumblebug.Client, store *catalog.Store, cfg config.Tumbl
 			specNamespace:  cfg.SpecNamespace,
 			defaultOSType:  cfg.DefaultOSType,
 		},
-		provisioner: &localProvisioner{tumblebug: client},
-		dryRun:      cfg.DryRun,
+		provisioner:    &localProvisioner{tumblebug: client},
+		dryRun:         cfg.DryRun,
+		healthTimeout:  defaultHealthTimeout,
+		healthInterval: defaultHealthInterval,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -208,7 +214,22 @@ func (s *Service) Review(ctx context.Context, plan *model.DeploymentPlan) (*mode
 // The order is fixed on purpose: a review always runs before a create, so a
 // rejected request never reaches the CSP, and a dry run and a real run produce
 // the same plan and the same review for comparison.
+//
+// The serving health is checked once after provisioning. An application that
+// loads a model takes minutes to answer, so the first check usually reports it
+// not ready yet; DeployAndWait keeps asking instead.
 func (s *Service) Deploy(ctx context.Context, nsID string, req *model.DeployAppReq) (*model.DeploymentResult, error) {
+	return s.deploy(ctx, nsID, req, false)
+}
+
+// DeployAndWait deploys like Deploy and then waits, up to the health timeout,
+// until every node answers on the serving port. Running out of time is
+// reported in the result and does not fail the deployment.
+func (s *Service) DeployAndWait(ctx context.Context, nsID string, req *model.DeployAppReq) (*model.DeploymentResult, error) {
+	return s.deploy(ctx, nsID, req, true)
+}
+
+func (s *Service) deploy(ctx context.Context, nsID string, req *model.DeployAppReq, waitHealthy bool) (*model.DeploymentResult, error) {
 	plan, err := s.Plan(ctx, nsID, req)
 	if err != nil {
 		return nil, err
@@ -277,6 +298,13 @@ func (s *Service) Deploy(ctx context.Context, nsID string, req *model.DeployAppR
 		}
 	}
 
+	var health *model.ServingHealth
+	if waitHealthy {
+		health = s.WaitServingHealthy(ctx, nsID, created.ID, app)
+	} else {
+		health = s.checkOnce(ctx, nsID, created.ID, app)
+	}
+
 	return &model.DeploymentResult{
 		Plan:        plan,
 		DryRun:      false,
@@ -284,6 +312,7 @@ func (s *Service) Deploy(ctx context.Context, nsID string, req *model.DeployAppR
 		Infra:       created,
 		Serving:     serving,
 		Accelerator: accelerator,
+		Health:      health,
 		Message:     fmt.Sprintf("%s deployed (%s)", req.InfraName, elapsed),
 	}, nil
 }
