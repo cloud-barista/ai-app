@@ -5,6 +5,24 @@
 > - **AI-App ④** AI반도체 기반 **AI 응용 배포 및 운용** (메타데이터 규격 / 등록·배포 / 라이프사이클)
 > - **AI-Ops ⑥** **AI 응용 자동화 에이전트** (구조 설계 / 배포·제어 자동화 / 정보 아카이빙)
 
+## 2026-10 구조 변경 - AI-App 서비스와 자동화 에이전트로 분리
+
+1차년도 프로토타입은 한 프로세스였습니다. 지금은 두 프로세스이고, 둘은 **MCP** 로 연결됩니다.
+설계와 그 근거는 `docs/design/app-agent-split.md` 에 있습니다.
+
+| 프로세스 | 소스 | 포트 | 맡는 것 |
+|---|---|---|---|
+| **AI-App 서비스** | `cmd/ai-app-server` | `8090` | 응용 카탈로그, 배포·업데이트·라이프사이클, 도구 15개와 dry-run 게이트, **MCP 서버(`/aiapp/mcp`)**, 운영자 콘솔, 배포·제어 아카이브 |
+| **AI 응용 관리 자동화 에이전트** | `cmd/ai-agent` | `8091` | 자연어 지시(`/intents`), LLM 반복 루프, 지시 실행 아카이브, 에이전트 카드(`/agent/card`) |
+
+- 에이전트는 도구를 직접 갖고 있지 않습니다. 기동할 때 AI-App 의 MCP 서버(`AIAPP_APP_MCP_URL`)에서
+  도구 목록과 등급, dry-run 상태를 받아 오고, 도구 호출도 MCP 로 합니다.
+  **dry-run 게이트는 AI-App 쪽에 있으므로** 에이전트가 어떻게 부르든 게이트를 건너뛸 수 없습니다.
+- 콘솔과 운영자는 AI-App 주소(`8090`) 하나만 알면 됩니다. AI-App 이 `POST /aiapp/ns/{nsId}/intents` 와
+  `/aiapp/agent/*` 를 에이전트(`AIAPP_AGENT_URL`)로 넘깁니다.
+- 아래 1절·10절·12절의 실측 기록은 한 프로세스 시절에 잰 것이라 그대로 두었습니다.
+  REST 경로(`/aiapp/...`)는 분리 뒤에도 같습니다.
+
 ## 1. 이게 뭘 하는 건가 - 한 문장
 
 > **AI 응용(vLLM 같은 추론 서버)의 메타데이터를 등록해 두고, 운영자가 자연어로 지시하면
@@ -27,7 +45,7 @@ review  : creationViable=true, "All VMs can be created successfully"
 **입력은 "GPU 24GiB 이상"이라는 응용의 요구사항 하나뿐입니다.**
 어느 CSP 의 어느 리전에 어떤 인스턴스 타입을 쓸지, 어떤 이미지로 부팅할지는 이 서비스가 정합니다.
 
-## 2. 왜 이렇게 만들었나 - 다섯 개의 설계 결정
+## 2. 왜 이렇게 만들었나 - 일곱 개의 설계 결정
 
 근거는 전부 과제 산출물인 기술 조사 문서의 사례 조사에 있습니다. 그 문서는 이 저장소 밖에 있습니다.
 
@@ -46,9 +64,16 @@ review  : creationViable=true, "All VMs can be created successfully"
 ```
    자연어 지시 ─────────────────────────┐
                                        v
-POST /aiapp/ns/{ns}/intents      [ internal/agent ]
+POST /aiapp/ns/{ns}/intents      [ internal/agent ]                cmd/ai-agent (8091)
                                   LLM 에 "무엇을 부를지" 묻는 반복 루프
                                        │  tool_use / tool_result
+                                       v
+                                 [ internal/mcpclient ]
+                                       │
+  - - - - - - - - - - - - - - - - - - -│- MCP (Streamable HTTP)  /aiapp/mcp - - - -
+                                       v
+                                 [ internal/mcpserver ]            cmd/ai-app-server (8090)
+                                       │
                                        v
                                  [ internal/tools ]
                                   등급(read/review/write/destructive)별 게이트
@@ -59,7 +84,8 @@ POST /aiapp/ns/{ns}/intents      [ internal/agent ]
              AI 응용 메타데이터    요구사항 -> 스펙/이미지   JSON Lines 레코드
                                   -> 배포 요청 조립
                                   -> 가속기 프로브
-                                     (pci + 6종 벤더 도구)
+                                     (pci + 7종 벤더 도구)
+                                  -> 서빙 헬스 확인
                                        │
                                        v
                               [ internal/tumblebug ]
@@ -69,6 +95,12 @@ POST /aiapp/ns/{ns}/intents      [ internal/agent ]
 ```
 
 `internal/llm` 은 Anthropic Messages API 어댑터이고 `internal/rest` 는 Echo 라우팅입니다.
+점선 위는 에이전트 프로세스, 아래는 AI-App 프로세스입니다.
+
+계획 모델은 `AIAPP_LLM_BASE_URL` 에 `/v1/messages` 를 붙여 부르므로 **Anthropic Messages
+형식을 받는 엔드포인트면 무엇이든** 됩니다. Ollama 도 0.15 부터 `/v1/messages` 를 받아서 그대로 붙습니다
+(2026-10-07, `glm-4.7-flash` 로 시연). Ollama 는 키를 보지 않지만 `AIAPP_LLM_API_KEY` 가 비어 있으면
+에이전트가 계획 모델이 없다고 보고 `/intents` 에 503 을 내므로, 아무 값이나 넣습니다.
 
 ### 3-1. 왜 도구 계층이 따로 있나
 
@@ -76,6 +108,8 @@ POST /aiapp/ns/{ns}/intents      [ internal/agent ]
 LLM 이 붙든 안 붙든 동작과 아카이브 형태가 같습니다.
 그리고 도구 목록은 `GET /aiapp/tools` 로 노출되므로, 나중에 AI-Ops 프레임워크 골격이
 BESP/ETRI 것으로 정해져도 그 위에 같은 도구를 다시 얹을 수 있습니다.
+2026-10 분리 뒤에는 같은 도구가 MCP 서버(`/aiapp/mcp`)로도 나가고, 이 저장소의 에이전트도
+그 MCP 서버를 통해서만 도구를 부릅니다.
 
 ## 4. AI 응용 메타데이터 규격 (1차년도 ④ 산출물)
 
@@ -106,11 +140,13 @@ BESP/ETRI 것으로 정해져도 그 위에 같은 도구를 다시 얹을 수 �
 | `runtime` / `runtimeVersion` | 배포 단위. 가속기가 GPU 에서 NPU 로 바뀌어도 이 값은 안 바뀜 |
 | `accelerator` | **그대로 CB-Tumblebug 스펙 필터로 변환됨** (아래 5절) |
 | `model` | ③ AI 모델 통합 관리와의 접점. 여기서는 참조만 하고 등록은 안 함 |
-| `serving` | ⑤ AI 응용 모니터링과의 접점. 살아 있는지 확인할 포트와 경로 |
+| `serving` | ⑤ AI 응용 모니터링과의 접점. 살아 있는지 확인할 포트와 경로. `healthPath`·`apiBasePath` 는 `/` 로 시작해야 하고 `@`·`#`·공백을 넣을 수 없음 (`@` 가 들어가면 노드의 헬스 확인 요청이 다른 호스트로 감) |
+| `kind` / `requires` | `model-service`(모델을 올리고 추론 API 를 엶) 와 `application`(그 API 를 부르는 응용) 을 가름. `application` 은 `requires` 에 쓰는 모델 서비스와, 그 엔드포인트를 넘겨받을 환경변수 이름을 적음 |
 | `install` | CB-Tumblebug `postCommands` 로 그대로 실림 |
 | `deployTargets` | 1차년도 `vm`. 3차년도 `container` 가 들어와도 규격이 안 깨지게 |
 
-기본 등록 항목 3개 (`internal/catalog/seed.go`): vLLM Llama 3.1 8B / Ollama Qwen2.5 7B / Triton ResNet-50.
+기본 등록 항목 4개 (`internal/catalog/seed.go`): 모델 서비스 vLLM Llama 3.1 8B / Ollama Qwen2.5 7B / Triton ResNet-50,
+응용 Open WebUI (Llama 3.1 8B 모델 서비스를 `requires` 로 씀).
 
 ## 5. 핵심 변환 - 응용 요구사항이 어떻게 인프라가 되나
 
@@ -149,8 +185,12 @@ AppSpec.resources
                         serving.port 인바운드 개방
                                           |
                         POST /ns/{ns}/cmd/infra/{infra}
-                        PCI 버스 재고 + 벤더 도구 6종 -> 카탈로그 약속과 대조
+                        PCI 버스 재고 + 벤더 도구 7종 -> 카탈로그 약속과 대조
                         (gpu / npu / tpu, 출처를 값마다 표기)
+                                          |
+                        POST /ns/{ns}/cmd/infra/{infra}
+                        노드 안에서 curl http://127.0.0.1:{port}{healthPath}
+                        (waitHealthy=true 면 AIAPP_HEALTH_TIMEOUT 안에서 AIAPP_HEALTH_INTERVAL 간격으로 반복)
                                           v
                         http://<publicIP>:8000/health
 ```
@@ -174,9 +214,9 @@ AppSpec.resources
 
 | 등급 | 도구 | dry-run 게이트 |
 |---|---|---|
-| `read` | `list_ai_apps`, `find_ai_apps`, `get_ai_app`, `recommend_accelerator_spec`, `resolve_node_image`, `plan_deployment`, `list_deployments`, `get_deployment_status`, `probe_accelerator` | 해당 없음. 항상 실행 |
+| `read` | `list_ai_apps`, `find_ai_apps`, `get_ai_app`, `recommend_accelerator_spec`, `resolve_node_image`, `plan_deployment`, `list_deployments`, `get_deployment_status`, `probe_accelerator`, `check_serving_health` | 해당 없음. 항상 실행 |
 | `review` | `review_deployment` | 해당 없음. 아무것도 안 만듦 |
-| `write` | `deploy_ai_app`, `control_deployment` | **걸림** |
+| `write` | `deploy_ai_app`, `update_deployment`, `control_deployment` | **걸림** |
 | `destructive` | `delete_deployment` | **걸림** |
 
 ### 6-2. 실행 여부를 LLM 이 정하지 않는다
@@ -258,7 +298,7 @@ template" 이라고 적어 두었습니다. 즉 **기본값에서는 서빙 포�
      [ 장치 재고 ]  BDF · 커널 드라이버 · PF/VF
             ^
             |  BDF 로 조인 (도메인 자리수·대소문자 정규화)
-   nvidia-smi · rocm-smi · rbln-stat · furiosa-smi · hl-smi · tpu-info
+   nvidia-smi · amd-smi · rocm-smi · rbln-stat · furiosa-smi · hl-smi · tpu-info
    있으면 메모리 · UUID · 드라이버 버전 · MIG 를 덧칠
 ```
 
@@ -279,6 +319,7 @@ template" 이라고 적어 두었습니다. 즉 **기본값에서는 서빙 포�
 0000:01:00.0 0x030000 0x10de 0x2184 nvidia -
 ===AIAPP-PROBE nvidia-smi===
 0, GPU-6f3a..., NVIDIA T4G, 15360, 595.71.05, N/A, 00000000:00:1E.0
+===AIAPP-PROBE amd-smi===
 ===AIAPP-PROBE rocm-smi===
 ===AIAPP-PROBE rbln-stat===
 ===AIAPP-PROBE furiosa-smi===
@@ -328,7 +369,8 @@ template" 이라고 적어 두었습니다. 즉 **기본값에서는 서빙 포�
 |---|---|
 | PCI 인벤토리 파싱 | **로컬 `/sys/bus/pci/devices` 실제 출력으로 단위테스트** |
 | `nvidia-smi` 파서 | **실증 배포 출력으로 단위테스트** (NVIDIA T4G, 595.71.05) |
-| `rocm-smi` 파서 | 공개 문서 형식. **실기기 미검증** |
+| `amd-smi` 파서 | AMD CLI 소스(`amdsmi_cli`)의 출력 형식. **실기기 미검증** |
+| `rocm-smi` 파서 | 실제 AMD 장비에서 받은 출력 캡처(Telegraf 테스트 데이터, `internal/deploy/testdata/rocm-smi`)로 단위테스트. **이 프로토타입의 실기기 왕복은 미검증** |
 | `rbln-stat`·`furiosa-smi`·`hl-smi`·`tpu-info` 파서 | 공개 문서 형식. **실기기 미검증 - 장비 없음** |
 | 원격 실행 왕복 | NVIDIA 노드에서만 실증. 다벤더 스크립트는 **미검증** |
 
@@ -351,7 +393,12 @@ review 가 `"image 'ubuntu22.04' not found in DB or CSP"` 로 잡아냈고, 그�
 
 ## 7. 아카이빙 (1차년도 ⑥ 산출물)
 
-`data/archive/runs.jsonl` 에 한 줄에 한 레코드씩 append 합니다.
+`runs.jsonl` 에 한 줄에 한 레코드씩 append 합니다. 2026-10 분리 뒤에는 아카이브가 둘입니다.
+
+| 아카이브 | 쓰는 쪽 | 위치 (기본값) | 무엇이 남나 |
+|---|---|---|---|
+| 배포·제어 | AI-App 서비스 | `AIAPP_ARCHIVE_DIR` (`./data/archive`) | 에이전트를 거치지 않은 직접 REST 호출 |
+| 지시 실행 | 자동화 에이전트 | `AIAPP_AGENT_ARCHIVE_DIR` (`./data/agent-archive`) | 자연어 지시 한 건의 반복 루프 전체 |
 
 레코드에는 **최종 결과만이 아니라** 다음이 전부 들어갑니다.
 
@@ -366,6 +413,7 @@ review 가 `"image 'ubuntu22.04' not found in DB or CSP"` 로 잡아냈고, 그�
 결과만 남기면 왜 그 결정을 했는지가 사라져서 되먹일 수 없습니다.
 
 에이전트를 거치지 않은 직접 REST 호출도 같은 형태로 남습니다 (`kind`: `deployment` / `control`).
+조회는 AI-App 의 `GET /aiapp/archive` 가 배포·제어 아카이브를, `GET /aiapp/agent/archive` 가 지시 실행 아카이브를 돌려줍니다.
 
 실측 예:
 
@@ -379,6 +427,8 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 ## 8. API
 
 `GET /aiapp/api/index.html` 에서 Swagger UI 로 볼 수 있습니다.
+아래는 전부 AI-App 서비스(`8090`) 주소입니다. **(에이전트)** 라고 적은 것은 AI-App 이 에이전트로 넘깁니다.
+`AIAPP_AUTH_TOKEN` 을 설정하면 `/readyz`, `/ui`, `/api/*`, `/agent/readyz` 를 뺀 전부가 `Authorization: Bearer <토큰>` 을 요구합니다.
 
 | 메서드 | 경로 | 하는 일 |
 |---|---|---|
@@ -391,34 +441,57 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | DELETE | `/aiapp/apps/{appId}` | AI 응용 삭제 |
 | GET | `/aiapp/apps/{appId}/specs` | 가속기 요구사항에 맞는 스펙 추천 |
 | POST | `/aiapp/ns/{nsId}/deployments/plan` | 배포 계획만 만듦 (클라우드 미접촉) |
-| POST | `/aiapp/ns/{nsId}/deployments` | 배포 (review 후, 게이트 통과 시 생성). `sgTemplateId` 로 보안그룹 템플릿 지정 가능 |
+| POST | `/aiapp/ns/{nsId}/deployments` | 배포 (review 후, 게이트 통과 시 생성). `sgTemplateId` 로 보안그룹 템플릿 지정 가능. 생성 뒤 서빙 포트 응답을 한 번 확인해 `health` 에 담음. `?waitHealthy=true` 면 모든 노드가 응답하거나 `AIAPP_HEALTH_TIMEOUT` 이 지날 때까지 다시 확인 (응답이 없어도 배포는 실패로 안 바뀜) |
 | GET | `/aiapp/ns/{nsId}/deployments` | 배포 목록 |
 | GET | `/aiapp/ns/{nsId}/deployments/{infraId}/status` | 배포 상태 |
 | GET | `/aiapp/ns/{nsId}/deployments/{infraId}/accelerator` | **노드의 실제 가속기 조회 + 카탈로그 약속과 대조** |
+| GET | `/aiapp/ns/{nsId}/deployments/{infraId}/health` | 노드 안에서 `curl 127.0.0.1:{port}{healthPath}` 로 서빙 응답 확인. 배포 라벨에 응용이 없으면 `?appId=` 필요. 읽기 전용이라 dry-run 과 무관 |
+| POST | `/aiapp/ns/{nsId}/deployments/{infraId}/update` | 등록된 응용의 현재 버전을 노드를 그대로 둔 채 다시 설치 (설치 명령 재실행). 게이트에 걸림 |
 | POST | `/aiapp/ns/{nsId}/deployments/{infraId}/control` | suspend / resume / reboot / terminate |
 | DELETE | `/aiapp/ns/{nsId}/deployments/{infraId}` | 배포 삭제 |
-| POST | `/aiapp/ns/{nsId}/intents` | **자연어 지시 -> 에이전트 실행** |
+| POST | `/aiapp/ns/{nsId}/intents` | **자연어 지시 -> 에이전트 실행** (에이전트) |
 | GET | `/aiapp/tools` | 에이전트가 부를 수 있는 도구 목록과 등급 |
-| GET | `/aiapp/archive` | 아카이브 목록 (최신순) |
-| GET | `/aiapp/archive/{runId}` | 아카이브 단건 |
+| POST | `/aiapp/mcp` | **같은 도구의 MCP 서버** (Streamable HTTP). 에이전트가 여기로 도구를 부름 |
+| GET | `/aiapp/archive` | 배포·제어 아카이브 목록 (최신순) |
+| GET | `/aiapp/archive/{runId}` | 배포·제어 아카이브 단건 |
+| GET | `/aiapp/agent/readyz` | 에이전트 준비 상태 (에이전트) |
+| GET | `/aiapp/agent/card` | 에이전트 카드: 이름, 계획 모델, MCP 주소, 받은 도구, 레지스트리 등록 결과 (에이전트) |
+| GET | `/aiapp/agent/archive` | 지시 실행 아카이브 목록 (에이전트) |
+| GET | `/aiapp/agent/archive/{runId}` | 지시 실행 아카이브 단건 (에이전트) |
 
 ## 9. 실행 방법
 
 ### 9-1. 설정 없이 바로
 
+프로세스가 둘이라 터미널도 둘입니다. 에이전트는 기동할 때 AI-App 의 MCP 서버에서 도구를 받아 오므로
+`run-app` 을 먼저 띄웁니다.
+
 ```sh
-make run
+make run-app      # AI-App 서비스, :8090
+make run-agent    # 자동화 에이전트, :8091 (다른 터미널)
 open http://localhost:8090/aiapp/ui
 ```
 
+바이너리가 필요하면 `make build` 가 `bin/ai-app-server` 와 `bin/ai-agent` 둘을 만듭니다.
+
 **끝입니다.** env 파일을 만들 필요가 없습니다. 모든 설정에 기본값이 있습니다.
+아래는 설정 없이 띄웠을 때의 기동 로그입니다 (2026-10-13, JSON 로그를 줄여 옮김).
 
 ```
+# ai-app-server
 WRN CB-Tumblebug base URL was not configured, so deployment calls will not reach a real
     platform  url=http://localhost:1323/tumblebug source=default
+INF Placement backends  recommender=local provisioner=local
+WRN Dry run is on: deploy, control, update and delete calls are planned and archived but never sent
+WRN AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open
+INF Starting server port=8090 basePath=/aiapp tools=15 agentUrl=http://127.0.0.1:8091
+
+# ai-agent
 WRN Planning model is not configured: the intent endpoint will report 503
-WRN Dry run is on: deploy, control and delete calls are planned and archived but never sent
-INF Starting server port=8090 basePath=/aiapp model=claude-opus-5 tools=13
+WRN AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open
+INF Connected to the AI-App MCP server  endpoint=http://127.0.0.1:8090/aiapp/mcp tools=15 dryRun=true
+INF AIAPP_AGENT_REGISTRY_URL is not set: the agent card is not registered anywhere
+INF Starting agent port=8091 basePath=/aiapp model=claude-opus-5 mcpUrl=http://127.0.0.1:8090/aiapp/mcp
 ```
 
 이 상태에서 **클라우드에 닿지 않는 것은 전부 동작합니다.**
@@ -426,18 +499,23 @@ INF Starting server port=8090 basePath=/aiapp model=claude-opus-5 tools=13
 ```sh
 open http://localhost:8090/aiapp/ui                       # 운영자 콘솔 (아래 9-5)
 curl localhost:8090/aiapp/readyz                          # {"message":"Service is ready"}
-curl localhost:8090/aiapp/apps                            # 등록된 응용 3건
+curl localhost:8090/aiapp/agent/readyz                    # 에이전트 쪽 준비 상태 (AI-App 이 넘겨줌)
+curl localhost:8090/aiapp/apps                            # 등록된 응용 4건
 curl -G localhost:8090/aiapp/apps/search      --data-urlencode "q=라마 추론서버"                     # 후보 순위 + 판정 근거
-curl localhost:8090/aiapp/tools                           # 도구 13개와 등급
-curl localhost:8090/aiapp/archive                         # 아카이브
+curl localhost:8090/aiapp/tools                           # 도구 15개와 등급
+curl localhost:8090/aiapp/agent/card                      # 에이전트 카드
+curl localhost:8090/aiapp/archive                         # 배포·제어 아카이브
+curl localhost:8090/aiapp/agent/archive                   # 지시 실행 아카이브
 open http://localhost:8090/aiapp/api/index.html           # Swagger UI
 ```
 
-클라우드에 닿는 경로만 실패합니다.
+클라우드에 닿는 경로와, 계획 모델이 필요한 경로만 실패합니다.
 
 ```sh
 curl localhost:8090/aiapp/ns/default/deployments/none-01/accelerator
 # HTTP 500  {"message":"Accelerator probe failed"}
+curl -X POST localhost:8090/aiapp/ns/default/intents -H 'Content-Type: application/json' -d '{"intent":"x"}'
+# HTTP 503  {"message":"Planning model is not configured"}
 ```
 
 **기동 로그가 base URL 과 그 출처(`default`/`environment`)를 반드시 찍습니다.**
@@ -448,11 +526,12 @@ curl localhost:8090/aiapp/ns/default/deployments/none-01/accelerator
 ```sh
 cp conf/template-setup.env conf/setup.env
 # conf/setup.env 를 채운다 (아래 설정 표 참고)
-make run
+make run-app
+make run-agent    # 다른 터미널
 ```
 
 `conf/setup.env` 는 **있으면 읽고 없으면 넘어갑니다.** `source` 할 필요가 없어졌습니다.
-이미 환경변수로 설정된 값이 파일보다 우선합니다.
+이미 환경변수로 설정된 값이 파일보다 우선합니다. 두 프로세스가 같은 파일을 읽고, 각자 자기에게 필요한 변수만 씁니다.
 
 ### 9-3. Docker
 
@@ -462,7 +541,14 @@ make docker-logs
 make docker-down
 ```
 
-**이쪽도 설정 파일이 필요 없습니다.**
+**이쪽도 설정 파일이 필요 없습니다.** `docker-compose.yml` 은 같은 이미지에서 두 서비스를 띄웁니다.
+
+| 서비스 | 포트 | 비고 |
+|---|---|---|
+| `ai-app-server` | `8090` | 아카이브는 named volume `archive` |
+| `ai-agent` | `8091` | `ai-app-server` 가 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-app-server:8090/aiapp/mcp`, 아카이브는 named volume `agent-archive` |
+
+아래 `docker ps` 출력은 한 프로세스 시절(1차년도)에 받은 것입니다.
 
 ```
 $ docker compose up -d
@@ -488,7 +574,9 @@ docker compose up -d
 `host.docker.internal` 이 기본값이고, Linux 에서도 되게 `extra_hosts` 를 걸어 두었습니다.
 
 컨테이너에서도 **dry-run 이 기본 `true`** 입니다. 실수로 띄운 컨테이너가 과금되는 자원을
-만들 수 없습니다. 아카이브는 named volume(`archive`)에 있어 컨테이너보다 오래 삽니다.
+만들 수 없습니다. 아카이브는 named volume(`archive`, `agent-archive`)에 있어 컨테이너보다 오래 삽니다.
+compose 는 `AIAPP_AUTH_TOKEN` 하나를 AI-App 의 `AIAPP_AUTH_TOKEN` 과 에이전트의 `AIAPP_AUTH_TOKEN`·`AIAPP_APP_TOKEN` 에
+같이 넣습니다. AI-App 이 넘기는 요청은 호출자의 `Authorization` 헤더를 그대로 달고 가기 때문입니다.
 
 ### 9-4. 검증 명령
 
@@ -509,13 +597,13 @@ http://localhost:8090/aiapp/ui
 
 | 화면 | 부르는 것 | 무엇을 보여주나 |
 |---|---|---|
-| 개요 | `GET /readyz` · `/tools` | 준비 상태, **dry-run 게이트**, 도구 13개의 등급 분포 |
+| 개요 | `GET /readyz` · `/tools` · `/agent/readyz` · `/agent/card` | 두 프로세스의 준비 상태, **dry-run 게이트**, 도구 15개의 등급 분포, 에이전트 카드 |
 | 응용 카탈로그 | `GET/POST/DELETE /apps` | 메타데이터 규격을 실물로. 등록·삭제가 실제로 됩니다 |
 | **자연어 매칭** | `GET /apps/search?q=` | **가장 볼 만한 화면.** 후보 순위와 **왜 골랐는지**(`alias:라마`) |
 | 도구와 게이트 | `GET /tools` | 등급별 분류, 입력 스키마, 게이트에 걸리는 것 |
 | 자연어 지시 | `POST /ns/{ns}/intents` | 에이전트가 고른 도구와 **게이트가 막았는지** |
-| 배포와 라이프사이클 | `plan` · `specs` · `deployments` · `accelerator` | 계획·스펙 추천·가속기 판독 |
-| 아카이브 | `GET /archive` | 실행 기록 |
+| 배포와 라이프사이클 | `plan` · `specs` · `deployments` · `accelerator` · `health` | 계획·스펙 추천·가속기 판독·서빙 응답 확인 |
+| 아카이브 | `GET /archive` · `/agent/archive` | 배포·제어 기록과 지시 실행 기록 |
 
 설계에서 지킨 것 넷입니다.
 
@@ -530,26 +618,47 @@ http://localhost:8090/aiapp/ui
 - **외부 리소스를 하나도 안 씁니다.** CDN·폰트·스크립트 전부 없어서 망이 끊긴 곳에서도
   그대로 뜹니다. 페이지는 `//go:embed` 로 바이너리에 들어가므로 컨테이너에도 볼륨이 필요 없습니다.
 
-콘솔은 API 와 **같은 오리진**에서 서빙됩니다. 인증이 아직 없는 API 에 CORS 정책을 여는 것보다,
+콘솔은 API 와 **같은 오리진**에서 서빙됩니다. API 에 CORS 정책을 여는 것보다,
 페이지를 같은 자리에서 내보내는 쪽이 낫다고 판단했습니다.
+`AIAPP_AUTH_TOKEN` 을 켜면 콘솔 페이지 자체는 열려 있고, 운영자가 넣은 토큰을 매 호출에 실어 보냅니다.
 
 ### 설정
 
-| 환경변수 | 기본값 | 설명 |
-|---|---|---|
-| `AIAPP_SERVER_PORT` | `8090` | 리스닝 포트 |
-| `AIAPP_TUMBLEBUG_BASE_URL` | `http://localhost:1323/tumblebug` | 예 `http://<host>:1323/tumblebug`. **없어도 기동합니다.** 기동 로그가 출처를 찍습니다 |
-| `AIAPP_TUMBLEBUG_USERNAME` / `_PASSWORD` | | basic auth |
-| `AIAPP_TUMBLEBUG_TIMEOUT` | `20m` | Infra 생성이 동기라 넉넉해야 함 |
-| `AIAPP_TUMBLEBUG_IMAGE_NAMESPACE` | `system` | 이미지 카탈로그가 있는 네임스페이스 |
-| `AIAPP_TUMBLEBUG_SPEC_NAMESPACE` | `system` | 스펙 카탈로그가 있는 네임스페이스 |
-| `AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE` | `ubuntu 22.04` | 응용이 OS 를 안 정했을 때 |
-| **`AIAPP_TUMBLEBUG_DRY_RUN`** | **`true`** | **쓰기 게이트. `false` 로 바꾸면 실제로 과금됨** |
-| `AIAPP_LLM_BASE_URL` | `https://api.anthropic.com` | Messages API 엔드포인트 |
-| `AIAPP_LLM_API_KEY` | | 비어 있으면 `/intents` 만 503, 나머지는 정상 동작 |
-| `AIAPP_LLM_MODEL` | `claude-opus-5` | 계획 수립 모델 |
-| `AIAPP_AGENT_MAX_STEPS` | `12` | 도구 호출 반복 상한 |
-| `AIAPP_ARCHIVE_DIR` | `./data/archive` | 아카이브 위치 |
+**필수 변수는 없습니다.** 전부 기본값이 있고, `AIAPP_RECOMMENDER=remote`·`AIAPP_PROVISIONER=remote` 일 때만
+그 `_URL` 이 필수가 됩니다. 두 프로세스가 같은 설정 로더를 쓰므로 값이 잘못되면 둘 다 기동을 거부합니다.
+"쓰는 쪽" 은 그 값을 실제로 쓰는 프로세스입니다 (App = `ai-app-server`, Agent = `ai-agent`).
+
+| 환경변수 | 기본값 | 쓰는 쪽 | 설명 |
+|---|---|---|---|
+| `AIAPP_SERVER_PORT` | `8090` | App | AI-App 리스닝 포트 |
+| `AIAPP_AGENT_PORT` | `8091` | Agent | 에이전트 리스닝 포트 |
+| `AIAPP_AGENT_URL` | `http://127.0.0.1:8091` | App | `/intents` 와 `/agent/*` 를 넘길 에이전트 주소 |
+| `AIAPP_APP_MCP_URL` | `http://127.0.0.1:8090/aiapp/mcp` | Agent | 도구를 받아 올 AI-App MCP 서버 |
+| `AIAPP_AUTH_TOKEN` | | App, Agent | 설정하면 `/readyz`·`/ui`·`/api/*`·`/agent/readyz` 를 뺀 전부가 이 bearer 토큰을 요구. 비우면 인증 꺼짐(기동 로그가 경고). 넘긴 요청은 헤더를 그대로 달고 가므로 두 프로세스에 같은 값을 넣음 |
+| `AIAPP_APP_TOKEN` | | Agent | 에이전트가 AI-App MCP 서버에 보내는 bearer 토큰. AI-App 의 `AIAPP_AUTH_TOKEN` 과 같은 값 |
+| `AIAPP_TUMBLEBUG_BASE_URL` | `http://localhost:1323/tumblebug` | App | 예 `http://<host>:1323/tumblebug`. **없어도 기동합니다.** 기동 로그가 출처를 찍습니다 |
+| `AIAPP_TUMBLEBUG_USERNAME` / `_PASSWORD` | | App | basic auth |
+| `AIAPP_TUMBLEBUG_CREDENTIAL_HOLDER` | | App | `x-credential-holder` 헤더 값. 비우면 CB-Tumblebug 기본 holder |
+| `AIAPP_TUMBLEBUG_TIMEOUT` | `20m` | App | Infra 생성이 동기라 넉넉해야 함. `AIAPP_PROVISIONER=remote` 호출에도 같은 값을 씀 |
+| `AIAPP_TUMBLEBUG_IMAGE_NAMESPACE` | `system` | App | 이미지 카탈로그가 있는 네임스페이스 |
+| `AIAPP_TUMBLEBUG_SPEC_NAMESPACE` | `system` | App | 스펙 카탈로그가 있는 네임스페이스 |
+| `AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE` | `ubuntu 22.04` | App | 응용이 OS 를 안 정했을 때 |
+| **`AIAPP_TUMBLEBUG_DRY_RUN`** | **`true`** | App | **쓰기 게이트. 생성·업데이트·제어·삭제를 막음. `false` 로 바꾸면 실제로 과금됨.** `probe_accelerator`·`check_serving_health` 의 읽기 전용 원격 명령은 막지 않음 |
+| `AIAPP_HEALTH_TIMEOUT` | `15m` | App | `waitHealthy=true` 배포가 서빙 응답을 기다리는 상한 |
+| `AIAPP_HEALTH_INTERVAL` | `20s` | App | 그 사이 다시 확인하는 간격 |
+| `AIAPP_RECOMMENDER` | `local` | App | 스펙·이미지를 누가 고르나. `local` = CB-Tumblebug 카탈로그, `remote` = 외부 추천 서비스 |
+| `AIAPP_RECOMMENDER_URL` / `_TOKEN` | | App | `remote` 일 때 주소(필수)와 bearer 토큰 |
+| `AIAPP_PROVISIONER` | `local` | App | Infra 검토·생성·업데이트를 누가 하나. `local` = CB-Tumblebug 직접, `remote` = 외부 배포 서비스 |
+| `AIAPP_PROVISIONER_URL` / `_TOKEN` | | App | `remote` 일 때 주소(필수)와 bearer 토큰 |
+| `AIAPP_LLM_BASE_URL` | `https://api.anthropic.com` | Agent | Messages API 엔드포인트. `/v1/messages` 를 받는 곳이면 됨 (3절) |
+| `AIAPP_LLM_API_KEY` | | Agent | 비어 있으면 `/intents` 만 503, 나머지는 정상 동작 |
+| `AIAPP_LLM_MODEL` | `claude-opus-5` | Agent | 계획 수립 모델 |
+| `AIAPP_LLM_MAX_TOKENS` | `16000` | Agent | 모델 호출 한 번의 최대 출력 토큰 |
+| `AIAPP_LLM_TIMEOUT` | `5m` | Agent | 모델 호출 한 번의 시간 상한 |
+| `AIAPP_AGENT_MAX_STEPS` | `12` | Agent | 도구 호출 반복 상한 |
+| `AIAPP_AGENT_REGISTRY_URL` / `_TOKEN` | | Agent | 기동할 때 에이전트 카드를 등록할 레지스트리와 그 bearer 토큰. 비우면 등록 안 함 |
+| `AIAPP_ARCHIVE_DIR` | `./data/archive` | App | 배포·제어 아카이브 위치 |
+| `AIAPP_AGENT_ARCHIVE_DIR` | `./data/agent-archive` | Agent | 지시 실행 아카이브 위치 |
 
 ## 10. 검증 결과 - 실제 VM 생성부터 삭제까지 (2026-09-02)
 
@@ -697,7 +806,7 @@ B 에서 8080 이 계속 살아 있으므로 VM 이나 리스너가 죽은 것�
 
 | 항목 | 왜 |
 |---|---|
-| 자연어 intent 의 실제 Messages API 호출 | 이 환경에 API 키가 없음. 루프 자체는 스텁으로만 검증 |
+| 자연어 intent 의 실제 Messages API 호출 | 이 환경에 API 키가 없음. 루프 자체는 스텁으로만 검증. 이후 2026-10-07 에 Ollama(`glm-4.7-flash`)로 dry-run 시연을 했고, 아카이브 레코드상 도구 선택부터 `review_deployment` 까지 돌았음 |
 | **가속기 프로브의 원격 실행** | 파서는 실측 출력으로 단위테스트했지만, `POST /ns/{ns}/cmd/infra` 왕복은 VM 없이 확인 못 함 |
 | **NPU·TPU 실기기 판독** | **경로는 만들었습니다** (6-5). 파서는 공개 문서 예시로만 단위테스트했고 **실기기가 없습니다** |
 | **다벤더 프로브의 원격 실행 왕복** | 섹션 스크립트가 실제 노드에서 어떻게 도는지는 NVIDIA 노드에서만 봤습니다 |
@@ -737,7 +846,7 @@ NVIDIA Deep Learning AMI 를 붙였습니다. 부팅은 되지만 드라이버�
 | 승인 대기 상태 저장소 | 아카이브 레코드로 대체. 2차년도에 붙일 때 구조가 안 바뀜 |
 | 카탈로그 영속화 | 2차년도 "대규모 AI 응용 통합 저장소" 항목. 지금은 메모리 |
 | `go-playground/validator` | 신규 의존성 승인 전. `validate` 태그는 규격 문서용으로 두고 검증은 명시적으로 함 |
-| 인증·인가 | 프레임워크 골격(BESP/경희대) 확정 전 |
+| 사용자·역할 단위 인가 | 프레임워크 골격(BESP/경희대) 확정 전. 지금은 두 프로세스가 같이 쓰는 bearer 토큰 하나(`AIAPP_AUTH_TOKEN`)만 있음 |
 | ETRI 인프라 추천 연동 | 출력 스키마 미확정. `recommend_accelerator_spec` 도구 하나만 교체하면 됨 |
 
 ## 12. 이 프로토타입이 확인해 준 CB-Tumblebug 사실
