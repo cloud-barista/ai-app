@@ -139,3 +139,115 @@ func TestDeploymentHealthWithoutLabelIsBadRequest(t *testing.T) {
 		t.Errorf("a deployment of unknown application was checked: %q", commands)
 	}
 }
+
+// newProvisioningServer builds an AI-App server with the dry-run guard off, on a
+// fake CB-Tumblebug that reviews and creates a one node Infra. The health
+// checks answer healthCodes in order, the last one repeating; every other
+// remote command, such as the accelerator probe, answers empty. healthChecks
+// counts the health checks that reached the fake.
+func newProvisioningServer(t *testing.T, healthCodes []string, healthChecks *int) *Server {
+	t.Helper()
+	MarkReady()
+
+	var mu sync.Mutex
+	tb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/ns/default/infra":
+			_, _ = w.Write([]byte(`{"infra":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/ns/default/infraDynamicReview":
+			_ = json.NewEncoder(w).Encode(tumblebug.ReviewResult{CreationViable: true, OverallStatus: "Ready"})
+		case r.Method == http.MethodPost && r.URL.Path == "/ns/default/infraDynamic":
+			_ = json.NewEncoder(w).Encode(tumblebug.InfraInfo{ID: "vllm-lab-01", Name: "vllm-lab-01", Status: "Running",
+				Node: []tumblebug.NodeInfo{{ID: "n1", Status: "Running", PublicIP: "203.0.113.10"}}})
+		case r.Method == http.MethodPost && r.URL.Path == "/ns/default/cmd/infra/vllm-lab-01":
+			var req tumblebug.InfraCmdReq
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			stdout := ""
+			if len(req.Command) == 1 && strings.Contains(req.Command[0], "%{http_code}") {
+				mu.Lock()
+				*healthChecks++
+				stdout = healthCodes[min(*healthChecks, len(healthCodes))-1]
+				mu.Unlock()
+			}
+			_ = json.NewEncoder(w).Encode(tumblebug.CommandResults{Results: []tumblebug.CommandResult{
+				{NodeID: "n1", NodeIP: "203.0.113.10", Stdout: map[string]string{"0": stdout}},
+			}})
+		default:
+			http.Error(w, `{"message":"unexpected call"}`, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(tb.Close)
+
+	appArchive, err := archive.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("app archive: %v", err)
+	}
+	tbCfg := config.TumblebugConfig{BaseURL: tb.URL, Timeout: 5 * time.Second, DryRun: false}
+	apps := catalog.NewStore()
+	if err := catalog.Seed(context.Background(), apps); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	registry := tools.NewRegistry(tbCfg.DryRun)
+	deployService := deploy.NewService(tumblebug.NewClient(tbCfg), apps, tbCfg,
+		deploy.WithHealthWait(5*time.Second, time.Millisecond))
+	tools.Register(registry, apps, deployService)
+
+	return NewAppServer(&config.Config{Agent: config.AgentConfig{URL: "http://127.0.0.1:1"}}, AppDependencies{
+		Catalog: apps,
+		Deploy:  deployService,
+		Archive: appArchive,
+		Tools:   registry,
+	})
+}
+
+func postJSON(s *Server, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPostDeploymentWaitHealthy(t *testing.T) {
+	const body = `{"appId":"vllm-llama31-8b","infraName":"vllm-lab-01",` +
+		`"specId":"aws+us-west-2+g6.xlarge","imageId":"ubuntu22.04"}`
+
+	for _, tc := range []struct {
+		name         string
+		path         string
+		wantReady    bool
+		wantAttempts int
+	}{
+		{"waitHealthy checks again", "/aiapp/ns/default/deployments?waitHealthy=true", true, 2},
+		{"no query checks once", "/aiapp/ns/default/deployments", false, 1},
+		{"waitHealthy=false checks once", "/aiapp/ns/default/deployments?waitHealthy=false", false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			healthChecks := 0
+			s := newProvisioningServer(t, []string{"000", "200"}, &healthChecks)
+
+			rec := postJSON(s, tc.path, body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
+			}
+			var result model.DeploymentResult
+			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if result.DryRun || result.Infra == nil {
+				t.Fatalf("result = %+v, want a provisioned deployment", result)
+			}
+			health := result.Health
+			if health == nil {
+				t.Fatalf("health missing from %s", rec.Body)
+			}
+			if health.Attempts != tc.wantAttempts || health.Ready != tc.wantReady {
+				t.Errorf("health attempts/ready = %d/%v, want %d/%v", health.Attempts, health.Ready, tc.wantAttempts, tc.wantReady)
+			}
+			if healthChecks != tc.wantAttempts {
+				t.Errorf("health checks sent = %d, want %d", healthChecks, tc.wantAttempts)
+			}
+		})
+	}
+}

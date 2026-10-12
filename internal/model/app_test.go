@@ -50,6 +50,19 @@ func TestValidateKinds(t *testing.T) {
 		{"application accelerator without count", func(a *AppSpec) {
 			a.Accelerator = AcceleratorRequirement{Type: "gpu"}
 		}, validApplication, "accelerator.minCount"},
+		{"health path with query", func(a *AppSpec) { a.Serving.HealthPath = "/ready?x=1&y=2" }, validModelService, ""},
+		{"root health path", func(a *AppSpec) { a.Serving.HealthPath = "/" }, validModelService, ""},
+		{"health path without slash", func(a *AppSpec) { a.Serving.HealthPath = "health" }, validModelService, "serving.healthPath must start with /"},
+		{"health path naming another host", func(a *AppSpec) { a.Serving.HealthPath = "@evil.example/x" }, validModelService, "serving.healthPath must start with /"},
+		{"health path with at sign", func(a *AppSpec) { a.Serving.HealthPath = "/@evil.example/x" }, validModelService, "serving.healthPath must not contain"},
+		{"health path with fragment", func(a *AppSpec) { a.Serving.HealthPath = "/health#x" }, validModelService, "serving.healthPath must not contain"},
+		{"health path with space", func(a *AppSpec) { a.Serving.HealthPath = "/health x" }, validModelService, "serving.healthPath must not contain"},
+		{"health path with newline", func(a *AppSpec) { a.Serving.HealthPath = "/health\nx" }, validModelService, "serving.healthPath must not contain"},
+		{"api base path", func(a *AppSpec) { a.Serving.APIBasePath = "/v1" }, validModelService, ""},
+		{"api base path without slash", func(a *AppSpec) { a.Serving.APIBasePath = "v1" }, validModelService, "serving.apiBasePath must start with /"},
+		{"api base path with at sign", func(a *AppSpec) { a.Serving.APIBasePath = "/v1@evil.example" }, validModelService, "serving.apiBasePath must not contain"},
+		{"api base path with fragment", func(a *AppSpec) { a.Serving.APIBasePath = "/v1#x" }, validModelService, "serving.apiBasePath must not contain"},
+		{"api base path with tab", func(a *AppSpec) { a.Serving.APIBasePath = "/v1\t" }, validModelService, "serving.apiBasePath must not contain"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

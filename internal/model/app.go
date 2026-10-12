@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"strings"
+	"unicode"
 )
 
 // Runtime is the inference engine that serves an AI application.
@@ -170,6 +172,12 @@ func (a *AppSpec) Validate() error {
 	case len(a.Install.Commands) == 0:
 		return errRequired("install.commands")
 	}
+	if err := validateURLPath("serving.healthPath", a.Serving.HealthPath); err != nil {
+		return err
+	}
+	if err := validateURLPath("serving.apiBasePath", a.Serving.APIBasePath); err != nil {
+		return err
+	}
 
 	switch a.EffectiveKind() {
 	case KindModelService:
@@ -178,6 +186,23 @@ func (a *AppSpec) Validate() error {
 		return a.validateApplication()
 	}
 	return errInvalid("kind", "must be model-service or application")
+}
+
+// validateURLPath checks a path that is appended to "scheme://host:port".
+//
+// An "@" would turn everything before it into userinfo and send the request to
+// another host, a "#" would cut the path short, and whitespace would split the
+// command line the path is placed on.
+func validateURLPath(field, path string) error {
+	switch {
+	case path == "":
+		return nil
+	case !strings.HasPrefix(path, "/"):
+		return errInvalid(field, "must start with /")
+	case strings.ContainsAny(path, "@#") || strings.IndexFunc(path, unicode.IsSpace) >= 0:
+		return errInvalid(field, "must not contain @, # or whitespace")
+	}
+	return nil
 }
 
 func (a *AppSpec) validateModelService() error {

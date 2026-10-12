@@ -86,7 +86,7 @@ func main() {
 		Str("provisioner", cfg.Provisioner.Kind).Str("provisionerUrl", cfg.Provisioner.URL).
 		Msg("Placement backends")
 	if cfg.Tumblebug.DryRun {
-		log.Warn().Msg("Dry run is on: deploy, control and delete calls are planned and archived but never sent")
+		log.Warn().Msg("Dry run is on: deploy, control, update and delete calls are planned and archived but never sent")
 	}
 	if cfg.Auth.Token == "" {
 		log.Warn().Msg("AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open")
