@@ -1044,7 +1044,10 @@ async function runPlan() {
     <div class="grid g3">
       <div class="stat"><div class="k">스펙</div><div class="v sm mono">${esc(p.specId || p.spec?.id || '-')}</div></div>
       <div class="stat"><div class="k">이미지</div><div class="v sm mono">${esc(p.imageId || p.image?.id || '-')}</div></div>
-      <div class="stat"><div class="k">시간당 비용</div><div class="v sm">${esc(p.estimatedCost || p.cost || '-')}</div></div>
+      <div class="stat"><div class="k">가속기</div><div class="v sm">${esc(p.acceleratorSummary || '-')}</div></div>
+    </div>
+    <div class="grid g3" style="margin-top:12px">
+      <div class="stat"><div class="k">시간당 비용</div><div class="v sm">${esc(p.estimatedCost || '검토 후 산출')}</div></div>
     </div>
     <div class="note" style="margin-top:12px">클라우드에 <b>아무것도 만들지 않았습니다.</b>
       계획만 세운 것이고 전체 응답은 아래 접이식에서 볼 수 있습니다.</div>`;
@@ -1180,9 +1183,10 @@ async function runHealth() {
 
 /* The deployment path is the only one that needs the platform, so a failure
    there gets one line of context. It is added next to the server's own message,
-   never instead of it. */
+   never instead of it, and only when the server itself failed: a 4xx is the
+   server answering about the request, not about a missing platform. */
 function platformNote(r) {
-  if (r.transport) return '';
+  if (r.transport || r.status < 500) return '';
   return `<div class="note info">
     이 경로는 <b>이종 클라우드 관리 계층(CB-Tumblebug)</b> 에 닿아야 동작합니다.
     붙어 있지 않으면 위와 같이 실패하고, 그것을 감추지 않는 것이 이 화면의 방침입니다.

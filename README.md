@@ -482,7 +482,8 @@ open http://localhost:8090/aiapp/ui
 WRN CB-Tumblebug base URL was not configured, so deployment calls will not reach a real
     platform  url=http://localhost:1323/tumblebug source=default
 INF Placement backends  recommender=local provisioner=local
-WRN Dry run is on: deploy, control, update and delete calls are planned and archived but never sent
+WRN Dry run is on: deploy, control, update and delete calls are planned but never sent to the cloud;
+    direct API calls are archived here, MCP calls by the calling agent
 WRN AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open
 INF Starting server port=8090 basePath=/aiapp tools=15 agentUrl=http://127.0.0.1:8091
 

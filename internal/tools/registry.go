@@ -139,7 +139,7 @@ func (r *Registry) Call(ctx context.Context, nsID, name string, input json.RawMe
 // before it plans, that a guarded call will not take effect.
 func (r *Registry) describe(tool Tool) string {
 	if r.dryRun && tool.Grade.GuardedByDryRun() {
-		return tool.Description + " NOTE: dry run is on, so this call is planned and archived but never sent to the cloud."
+		return tool.Description + " NOTE: dry run is on, so this call is planned and returned, never sent to the cloud; the calling agent records it."
 	}
 	return tool.Description
 }
