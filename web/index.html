@@ -92,6 +92,14 @@
   .stat .v { font-size: 17px; font-weight: 700; word-break: break-all; }
   .stat .v.sm { font-size: 13px; font-weight: 400; }
   .stat.mock { border: 1px dashed var(--mock-line); background: var(--mock-soft); }
+  .stat .v.md, .md { word-break: normal; overflow-wrap: anywhere; line-height: 1.6; }
+  .md p { margin: 0 0 8px; }
+  .md h4 { margin: 12px 0 6px; font-size: 14.5px; }
+  .md h5 { margin: 10px 0 4px; font-size: 13.5px; }
+  .md ul, .md ol { margin: 0 0 8px; padding-left: 22px; }
+  .md table { margin: 4px 0 10px; background: #fff; }
+  .md code { background: #F0F0EC; padding: 0 4px; border-radius: 3px; font-size: 12px; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 
   /* ---------- architecture ---------- */
   .arch { display: flex; flex-direction: column; align-items: center; }
@@ -136,6 +144,7 @@
   .b-mut { background: #F0F0EC; color: var(--ink-3); }
   .b-reason { background: var(--accent-soft); color: var(--accent); font-weight: 400; margin: 0 4px 4px 0; }
   .b-mock { background: var(--mock-soft); color: var(--mock); border: 1px dashed var(--mock-line); }
+  .b-use { background: var(--accent-soft); color: var(--accent); }
   /* Engine step and run outcomes. */
   .b-st-succeeded { background: var(--ok-soft); color: var(--ok); }
   .b-st-blocked { background: #FFE9C7; color: #8A4B00; }
@@ -646,7 +655,8 @@
 <section class="page" id="p-tools">
   <h2>도구와 게이트 (MCP)</h2>
   <p class="lede">
-    AI-App 이 MCP 서버(<code>/mcp</code>)로 여는 기능 도구 목록입니다. 자동화 엔진이 이 도구를 부릅니다.
+    MCP 도구는 두 층입니다. 자동화 엔진이 여는 상위 도구를 자연어 에이전트와 외부 에이전트가 부르고,
+    엔진은 그 안에서 AI-App 이 여는 기능 도구를 부릅니다.
     <b>등급이 곧 안전장치</b>이고, 실행 여부는 서비스 설정이지 부르는 쪽의 판단이 아닙니다.
   </p>
 
@@ -656,7 +666,19 @@
   </div>
 
   <div class="panel">
-    <h3>도구 <span class="hint" id="tl-count"></span></h3>
+    <h3>자동화 엔진이 여는 도구 <span class="hint" id="tl-eng-count"></span></h3>
+    <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-2)">
+      자연어 에이전트·외부 에이전트가 부르는 도구입니다. 엔진 기술서(<code>GET /engine/card</code>)의
+      <code>tools.exposed</code> 를 그대로 보여 줍니다.</p>
+    <div id="tl-eng-list"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="tl-eng-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>AI-App 이 여는 기능 도구 <span class="hint" id="tl-count"></span></h3>
+    <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-2)">
+      엔진이 부르는 도구입니다(<code>GET /tools</code>). 엔진 기술서의 <code>tools.uses</code> 에 있는 것은
+      <span class="b b-use">엔진이 사용</span> 으로 표시합니다.</p>
     <div id="tl-list"></div>
     <details class="wire" id="tl-wire"></details>
   </div>
@@ -1631,11 +1653,42 @@ const GRADE_NOTE = {
 };
 const GRADE_ORDER = ['read', 'review', 'write', 'destructive'];
 
-async function loadTools() {
-  const r = await api('GET', '/tools');
-  wire($('tl-wire'), r);
+const gateBadge = (t) => t.guardedByDryRun ? '<span class="b b-on">걸림</span>' : '<span class="b b-mut">없음</span>';
+const gradeBadge = (g) => g ? `<span class="b b-${esc(g)}">${esc(g)}</span>` : '<span class="b b-mut">?</span>';
 
-  if (!r.ok) { $('tl-gate').innerHTML = failNote(r); $('tl-list').innerHTML = ''; return; }
+/* engineToolsTable renders tools.exposed of the engine card: the tools the
+   natural language agent and outside agents call. The card carries no
+   description, so the table shows the name, grade and gate only. */
+function engineToolsTable(c) {
+  const exposed = ((c.tools && c.tools.exposed) || []).slice()
+    .sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade));
+  $('tl-eng-count').textContent = exposed.length + ' 개';
+  if (!exposed.length) return '<div class="empty">엔진 기술서에 공개 도구가 없습니다.</div>';
+  return `<div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">
+      엔진 MCP <code>${esc(c.mcpEndpoint || '-')}</code></div>
+    <table>
+      <tr><th style="width:230px">도구</th><th style="width:110px">등급</th><th>등급의 뜻</th><th style="width:78px">게이트</th></tr>
+      ${exposed.map((t) => `<tr>
+        <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b></td>
+        <td>${gradeBadge(t.grade)}</td>
+        <td style="font-size:12.5px;color:var(--ink-2)">${esc(GRADE_NOTE[t.grade] || '')}</td>
+        <td>${gateBadge(t)}</td>
+      </tr>`).join('')}
+    </table>`;
+}
+
+async function loadTools() {
+  const [r, c] = await Promise.all([api('GET', '/tools'), api('GET', '/engine/card')]);
+  wire($('tl-wire'), r);
+  wire($('tl-eng-wire'), c);
+
+  const card = c.ok && c.data && typeof c.data === 'object' ? c.data : null;
+  $('tl-eng-list').innerHTML = card ? engineToolsTable(card)
+    : failNote(c) + `<div class="note">자동화 엔진의 기술서를 못 읽어 엔진 도구와 <span class="b b-use">엔진이 사용</span> 표시를 낼 수 없습니다.</div>`;
+  if (!card) $('tl-eng-count').textContent = '';
+  const used = new Set(((card && card.tools && card.tools.uses) || []).map((t) => t.name));
+
+  if (!r.ok) { $('tl-gate').innerHTML = failNote(r); $('tl-list').innerHTML = ''; $('tl-count').textContent = ''; return; }
 
   const dry = r.data.dryRun;
   const list = r.data.tools || [];
@@ -1661,13 +1714,14 @@ async function loadTools() {
           <tr><th style="width:230px">도구</th><th>하는 일</th><th style="width:78px">게이트</th></tr>
           ${items.map((t) => `<tr>
             <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b>
+              ${used.has(t.name) ? '<span class="b b-use" style="margin-left:6px">엔진이 사용</span>' : ''}
               <details class="wire" style="margin-top:6px;border:0;padding:0">
                 <summary style="font-size:11px">입력 스키마</summary>
                 <pre class="json" style="margin-top:6px;font-size:11px">${esc(JSON.stringify(t.inputSchema, null, 2))}</pre>
               </details>
             </td>
             <td style="font-size:12.5px;color:var(--ink-2)">${esc(t.description)}</td>
-            <td>${t.guardedByDryRun ? '<span class="b b-on">걸림</span>' : '<span class="b b-mut">없음</span>'}</td>
+            <td>${gateBadge(t)}</td>
           </tr>`).join('')}
         </table>
       </div>`;
@@ -1675,6 +1729,67 @@ async function loadTools() {
 }
 
 /* ---------- 협력 기관 · 자연어 지시 ---------- */
+/* mdLite renders the markdown subset a model answer uses: headings, lists,
+   bold, inline code, paragraphs, rules and pipe tables. The whole text is
+   escaped first and only these patterns become fixed tags, so links, images
+   and raw HTML stay visible as escaped text. */
+function mdInline(s) {
+  return s.split(/(`[^`]+`)/).map((part, i) => i % 2
+    ? `<code>${part.slice(1, -1)}</code>`
+    : part.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('');
+}
+
+function mdLite(src) {
+  const lines = esc(src).replace(/\r\n?/g, '\n').split('\n');
+  const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+  const isSep = (l) => /^\s*\|?(\s*:?-{3,}:?\s*\|)+(\s*:?-{3,}:?\s*)?\|?\s*$/.test(l);
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((x) => mdInline(x.trim()));
+  const out = [];
+  let para = [];
+  let list = null;
+  const flush = () => {
+    if (para.length) out.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
+    if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${mdInline(x)}</li>`).join('')}</${list.tag}>`);
+    para = [];
+    list = null;
+  };
+  const item = (tag, text) => {
+    if (para.length || (list && list.tag !== tag)) flush();
+    if (!list) list = { tag, items: [] };
+    list.items.push(text);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    let m;
+    if (!l.trim()) { flush(); continue; }
+    if (isRow(l) && i + 1 < lines.length && isSep(lines[i + 1])) {
+      flush();
+      const head = cells(l);
+      const body = [];
+      i += 2;
+      while (i < lines.length && isRow(lines[i])) body.push(cells(lines[i++]));
+      i--;
+      out.push(`<table><tr>${head.map((x) => `<th>${x}</th>`).join('')}</tr>${body.map((r) =>
+        `<tr>${r.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('')}</table>`);
+      continue;
+    }
+    if ((m = /^\s*(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l))) {
+      flush();
+      const tag = m[1].length <= 2 ? 'h4' : 'h5';
+      out.push(`<${tag}>${mdInline(m[2])}</${tag}>`);
+      continue;
+    }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push('<hr>'); continue; }
+    if ((m = /^\s*[-*+]\s+(.*)$/.exec(l))) { item('ul', m[1]); continue; }
+    if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(l))) { item('ol', m[1]); continue; }
+    if (list) flush();
+    para.push(l.trim());
+  }
+  flush();
+  return out.join('');
+}
+
 async function runIntent() {
   const intent = $('in-q').value;
   const ns = $('in-ns').value || 'default';
@@ -1717,10 +1832,12 @@ async function runIntent() {
 
   const d = r.data || {};
   const steps = d.steps || [];
+  const answer = d.answer || '';
+  const mk = /^(\[partner mock\])[ \t]*/.exec(answer);
   $('in-result').innerHTML = `
     <div class="stat mock" style="margin-bottom:12px">
       <div class="k">에이전트의 답 · ${esc(d.runId || '')}</div>
-      <div class="v sm">${esc(d.answer || '')}</div>
+      <div class="v sm md">${mk ? `<div class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(mk[1])}</div>` : ''}${mdLite(mk ? answer.slice(mk[0].length) : answer)}</div>
     </div>
     ${steps.length ? `<table>
       <tr><th style="width:34px">#</th><th>엔진 도구</th><th style="width:96px">등급</th>
@@ -1853,6 +1970,17 @@ function targetOf(x) {
   return parts.join(' · ');
 }
 
+/* stepsStatus reads the state of a record that carries no status, such as an
+   intent run of the agent mock, from its error and steps: any error is failed,
+   a step the gate held is blocked, and every step executed is 실행됨. */
+function stepsStatus(x) {
+  const steps = x.steps || [];
+  if (x.error || steps.some((s) => s.error)) return stBadge('failed');
+  if (steps.some((s) => s.engineStatus === 'blocked' || s.executed === false)) return stBadge('blocked');
+  if (steps.length && steps.every((s) => s.executed)) return '<span class="b b-st-succeeded">실행됨</span>';
+  return '<span class="b b-mut">-</span>';
+}
+
 async function loadArchive() {
   const results = await Promise.all(ARCHIVES.map((a) => api('GET', a.path)));
   wire($('ar-wire'), results[1], 'GET /archive, GET /engine/runs, GET /partner/nl/runs 를 불렀습니다 (아래는 engine/runs)');
@@ -1882,8 +2010,7 @@ async function loadArchive() {
         <th style="width:96px">상태</th><th>지시 / 대상</th><th style="width:170px">시각</th></tr>
     ${rows.map((x) => {
       const src = ARCHIVES[x._src];
-      const status = x.status ? stBadge(x.status)
-        : x.error ? '<span class="b b-st-failed">failed</span>' : '<span class="b b-mut">-</span>';
+      const status = x.status ? stBadge(x.status) : stepsStatus(x);
       return `<tr class="click" onclick="showRun(${x._src}, '${esc(x.runId || x.id || '')}')">
       <td class="mono" style="font-size:12px">${esc(x.runId || x.id || '')}</td>
       <td style="font-size:12px">${src.mock
