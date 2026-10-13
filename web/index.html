@@ -13,6 +13,7 @@
     --warn: #8A5A00; --warn-soft: #FFF7E6;
     --bad: #B71C1C; --bad-soft: #FFEBEE;
     --info: #0D47A1; --info-soft: #E3F2FD;
+    --mock: #9A6B1F; --mock-line: #C9963F; --mock-soft: #FFF8EC;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
@@ -24,7 +25,7 @@
   code, pre, .mono { font-family: var(--mono); }
 
   /* ---------- layout ---------- */
-  .wrap { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+  .wrap { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
   nav {
     background: #1F2937; color: #E8E8E4; padding: 20px 0;
     position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -50,17 +51,35 @@
   nav .auth button { padding: 6px 12px; font-size: 12px; }
   nav .auth .state { font-size: 11px; color: #9AA3AF; margin-top: 6px; line-height: 1.5; }
 
+  /* The two areas of the sidebar: what this prototype implements, and the
+     partner institution's connection points that only exist here as mocks. */
+  nav .zone { margin: 10px 10px 0; border-radius: 8px; padding: 2px 0 6px; }
+  nav .zone .sect { margin: 10px 10px 6px; }
+  nav .zone a { padding-left: 14px; }
+  nav .zone.inno .sect { color: #A79BE6; }
+  nav .zone.mock { border: 1px dashed var(--mock-line); background: #2B2820; }
+  nav .zone.mock .sect { color: #E0B062; }
+  nav .zone.mock .zone-note { font-size: 10.5px; color: #B9A27A; margin: 0 10px 6px; line-height: 1.5; }
+  nav .zone.mock a.on { background: #1E1B15; border-left-color: #E5A540; }
+  nav .zone.mock a:hover { background: #36301F; }
+
   main { padding: 28px 32px 64px; max-width: 1180px; }
   .page { display: none; }
   .page.on { display: block; }
   h2 { font-size: 20px; margin: 0 0 4px; }
   .lede { color: var(--ink-2); margin: 0 0 22px; font-size: 13px; }
 
+  .mockband {
+    border: 1.5px dashed var(--mock-line); background: var(--mock-soft); color: var(--mock);
+    padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; margin: 0 0 16px;
+  }
+
   /* ---------- panel ---------- */
   .panel {
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     padding: 18px 20px; margin-bottom: 16px;
   }
+  .page.mock .panel { border-style: dashed; border-color: #E4CFA6; }
   .panel > h3 { font-size: 14px; margin: 0 0 12px; }
   .panel > h3 .hint { font-weight: 400; color: var(--ink-3); font-size: 12px; margin-left: 8px; }
   .grid { display: grid; gap: 12px; }
@@ -72,6 +91,31 @@
   .stat .k { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; }
   .stat .v { font-size: 17px; font-weight: 700; word-break: break-all; }
   .stat .v.sm { font-size: 13px; font-weight: 400; }
+  .stat.mock { border: 1px dashed var(--mock-line); background: var(--mock-soft); }
+
+  /* ---------- architecture ---------- */
+  .arch { display: flex; flex-direction: column; align-items: center; }
+  .arch .box {
+    width: 380px; border-radius: 10px; padding: 10px 14px; background: #FFF; border: 1px solid var(--line);
+  }
+  .arch .box.inno { border: 1.5px solid #8B7FD4; background: var(--accent-soft); }
+  .arch .box.mock { border: 1.5px dashed var(--mock-line); background: var(--mock-soft); }
+  .arch .box.ext { border: 1px solid #C8C8C0; background: #F4F4F0; }
+  .arch .box .who { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
+  .arch .box.inno .who { color: var(--accent); }
+  .arch .box.mock .who { color: var(--mock); }
+  .arch .box.ext .who { color: var(--ink-3); }
+  .arch .box .t { font-weight: 700; font-size: 13.5px; }
+  .arch .box .d { font-size: 11.5px; color: var(--ink-2); }
+  .arch .box .st { margin-top: 6px; font-size: 12px; }
+  .arch .arrow { font-size: 11.5px; color: var(--ink-3); padding: 3px 0; text-align: center; }
+  .arch .arrow b { display: block; font-size: 15px; line-height: 1; color: #9A9A92; }
+  .arch .split { display: flex; gap: 16px; }
+  .arch .split .box { width: 300px; }
+  .legend { font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+  .legend i {
+    display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin: 0 4px 0 12px; vertical-align: -1px;
+  }
 
   /* ---------- badge ---------- */
   .b {
@@ -91,6 +135,13 @@
   .b-off { background: var(--ok-soft); color: var(--ok); }
   .b-mut { background: #F0F0EC; color: var(--ink-3); }
   .b-reason { background: var(--accent-soft); color: var(--accent); font-weight: 400; margin: 0 4px 4px 0; }
+  .b-mock { background: var(--mock-soft); color: var(--mock); border: 1px dashed var(--mock-line); }
+  /* Engine step and run outcomes. */
+  .b-st-succeeded { background: var(--ok-soft); color: var(--ok); }
+  .b-st-blocked { background: #FFE9C7; color: #8A4B00; }
+  .b-st-waiting { background: var(--info-soft); color: var(--info); }
+  .b-st-failed { background: var(--bad-soft); color: var(--bad); }
+  .b-st-skipped { background: #F0F0EC; color: var(--ink-3); }
 
   /* ---------- controls ---------- */
   input[type=text], textarea, select {
@@ -111,6 +162,7 @@
   .row > *:first-child { flex: 1; }
   label { display: block; font-size: 12px; color: var(--ink-2); margin: 0 0 4px; }
   .field { margin-bottom: 10px; }
+  a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
   /* ---------- wire (request/response) ---------- */
   details.wire { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -170,6 +222,8 @@
     .wrap { grid-template-columns: 1fr; }
     nav { position: static; height: auto; }
     main { padding: 20px 16px 48px; }
+    .arch .box, .arch .split .box { width: 100%; }
+    .arch .split { flex-direction: column; }
   }
 </style>
 </head>
@@ -178,24 +232,25 @@
 
 <nav>
   <h1>AI 응용 자동화 에이전트</h1>
-  <p class="sub">AI-MCMP 1차년도 프로토타입<br>㈜이노그리드</p>
+  <p class="sub">AI-MCMP 프로토타입<br>㈜이노그리드</p>
 
-  <div class="sect">상태</div>
-  <a data-page="overview" class="on">개요</a>
+  <div class="zone inno">
+    <div class="sect">이노그리드 구현</div>
+    <a data-page="overview" class="on">개요</a>
+    <a data-page="catalog">응용 카탈로그 (등록·버전)</a>
+    <a data-page="engine">자동화 엔진</a>
+    <a data-page="deploy">배포와 라이프사이클</a>
+    <a data-page="monitor">모니터링</a>
+    <a data-page="tools">도구와 게이트 (MCP)</a>
+    <a data-page="archive">아카이브</a>
+  </div>
 
-  <div class="sect">AI 응용</div>
-  <a data-page="catalog">응용 카탈로그</a>
-  <a data-page="match">자연어 매칭</a>
-
-  <div class="sect">에이전트</div>
-  <a data-page="tools">도구와 게이트</a>
-  <a data-page="intent">자연어 지시</a>
-
-  <div class="sect">배포</div>
-  <a data-page="deploy">배포와 라이프사이클</a>
-
-  <div class="sect">기록</div>
-  <a data-page="archive">아카이브</a>
+  <div class="zone mock">
+    <div class="sect">협력 기관 연동 지점 · 모의</div>
+    <div class="zone-note">협력 기관 담당 영역입니다. 연동을 확인하려고 둔 모의 구현입니다.</div>
+    <a data-page="intent">자연어 지시</a>
+    <a data-page="recommend">인프라 추천</a>
+  </div>
 
   <div class="auth">
     <label for="auth-token">API 토큰</label>
@@ -223,7 +278,53 @@
 <!-- ============ 개요 ============ -->
 <section class="page on" id="p-overview">
   <h2>개요</h2>
-  <p class="lede">이 서비스가 지금 어떤 상태인지. 전부 이 서버에 물어본 값입니다.</p>
+  <p class="lede">무엇이 이노그리드 구현이고 무엇이 협력 기관 연동 지점(모의)인지, 지금 각각이 답하는지. 전부 이 서버를 거쳐 물어본 값입니다.</p>
+
+  <div class="panel">
+    <h3>구조와 연결 상태</h3>
+    <div class="arch">
+      <div class="box mock">
+        <div class="who">협력 기관 · 모의</div>
+        <div class="t">자연어 지원 에이전트 (LLM)</div>
+        <div class="d">지시를 해석해 엔진의 상위 작업 도구를 부릅니다</div>
+        <div class="st" id="ov-st-nl"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>MCP · 엔진 상위 작업 도구 (deploy_application 등)</div>
+      <div class="box inno">
+        <div class="who">이노그리드 구현</div>
+        <div class="t">자동배포/자동제어 엔진</div>
+        <div class="d">AI-Ops 의 AI 응용 관리 자동화 에이전트. LLM 없이 정해진 순서로 실행</div>
+        <div class="st" id="ov-st-engine"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>MCP · AI-App 기능 도구 (plan_deployment 등)</div>
+      <div class="box inno">
+        <div class="who">이노그리드 구현</div>
+        <div class="t">AI-App 서비스</div>
+        <div class="d">모델·응용 등록·버전, 라이프사이클, 모니터링, 배포 실행, MCP 서버, 이 콘솔</div>
+        <div class="st" id="ov-st-app"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>REST</div>
+      <div class="split">
+        <div class="box mock">
+          <div class="who">협력 기관 · 모의</div>
+          <div class="t">인프라 추천 API</div>
+          <div class="d">AI-App 이 <code>AIAPP_RECOMMENDER_URL</code> 로 부릅니다</div>
+          <div class="st" id="ov-st-rec"><span class="spin">부르는 중...</span></div>
+        </div>
+        <div class="box ext">
+          <div class="who">외부 플랫폼</div>
+          <div class="t">CB-Tumblebug</div>
+          <div class="d">이종 클라우드 관리 계층. 배포 실행 대상</div>
+          <div class="st" id="ov-st-tb"><span class="spin">부르는 중...</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <i style="background:var(--accent-soft);border:1.5px solid #8B7FD4"></i>이노그리드 구현
+      <i style="background:var(--mock-soft);border:1.5px dashed var(--mock-line)"></i>협력 기관 연동 지점 · 모의
+      <i style="background:#F4F4F0;border:1px solid #C8C8C0"></i>외부 플랫폼
+    </div>
+  </div>
 
   <div class="panel">
     <h3>서비스 상태</h3>
@@ -239,35 +340,39 @@
   <div class="panel">
     <h3>이 프로토타입이 하는 일</h3>
     <div class="note">
-      운영자가 <b>자연어로 지시</b>하면 LLM 이 어떤 API 를 어떤 값으로 부를지 정하고,
-      AI반도체 노드에 추론 서버를 올리고 제어하며, 그 과정을 전부 기록합니다.
+      이노그리드 담당 영역은 <b>AI-App 서비스</b>(AI 응용 등록·버전, 라이프사이클, 모니터링)와
+      <b>자동배포/자동제어 엔진</b>입니다. 두 프로세스 모두 <b>LLM 을 쓰지 않습니다.</b>
+      엔진은 구조화된 요청을 받아 정해진 순서로 AI-App 의 도구를 부르고, 단계마다 무엇을 불렀고 무엇이 돌아왔는지 기록합니다.
+      자연어 해석과 인프라 추천은 협력 기관 담당 영역이라 여기에는 연동을 확인하는 모의 구현만 있습니다.
     </div>
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
-        <h4>요구사항이 인프라가 된다</h4>
+        <h4>응용 등록·버전과 라이프사이클</h4>
         <div class="meta">
-          응용이 <code>gpu x1, 22GiB 이상</code> 이라고만 말하면 어느 CSP 의 어느 인스턴스를
-          쓸지는 서비스가 정합니다. <b>코드에 CSP 이름이 없습니다.</b>
+          모델 서비스와 그것을 쓰는 AI 응용을 메타데이터로 등록하고, 같은 id 로 다시 올리면 새 버전이 됩니다.
+          배포·업데이트·정지·재개·재부팅·종료를 AI-App 이 맡습니다.
+        </div>
+      </div>
+      <div class="card">
+        <h4>자동배포/자동제어 엔진</h4>
+        <div class="meta">
+          <code>deploy</code> · <code>heal</code> · <code>control</code> · <code>status</code> 워크플로를
+          정해진 순서로 실행합니다. AI 응용이 모델 서비스를 필요로 하면 모델 서비스부터 올립니다.
+          <b>다음 단계는 앞 단계의 결과로 정하고, 모델이 정하지 않습니다.</b>
         </div>
       </div>
       <div class="card">
         <h4>쓰기는 기본적으로 막혀 있다</h4>
         <div class="meta">
-          배포·제어·삭제는 등급이 붙어 있고, dry-run 이 켜져 있으면 계획과 검증까지만 하고 멈춥니다.
-          <b>LLM 이 실행 여부를 정하지 않습니다.</b>
+          배포·제어·삭제는 등급이 붙어 있고, dry-run 이 켜져 있으면 계획과 검토까지만 하고 멈춥니다.
+          엔진은 막힌 단계를 "차단됨", 그 결과가 있어야 하는 다음 단계를 "선행 단계 대기" 로 남깁니다.
         </div>
       </div>
       <div class="card">
-        <h4>만들어진 것과 쓸 수 있는 것은 다르다</h4>
+        <h4>모니터링: 만들어진 것과 쓸 수 있는 것은 다르다</h4>
         <div class="meta">
-          노드가 <code>Running</code> 이라고 가속기를 쓸 수 있다는 뜻이 아닙니다.
-          배포 직후 노드에 직접 물어 카탈로그의 약속과 대조합니다.
-        </div>
-      </div>
-      <div class="card">
-        <h4>왜 그렇게 정했는지가 남는다</h4>
-        <div class="meta">
-          최종 결과만이 아니라 지시·고른 도구·인자 전체·게이트가 막았는지까지 한 레코드에 남습니다.
+          노드가 <code>Running</code> 이라고 응용이 답하거나 가속기를 쓸 수 있다는 뜻이 아닙니다.
+          노드 안에서 서빙 포트에 직접 묻고, 가속기를 직접 읽어 카탈로그의 약속과 대조합니다.
         </div>
       </div>
     </div>
@@ -278,7 +383,8 @@
 <section class="page" id="p-catalog">
   <h2>응용 카탈로그</h2>
   <p class="lede">
-    AI 응용 메타데이터 규격을 실물로 본 것입니다. <b>런타임 축과 가속기 축이 서로 다른 필드</b>라는 것이 핵심입니다.
+    AI 응용 메타데이터 규격을 실물로 본 것입니다. <b>런타임 축과 가속기 축이 서로 다른 필드</b>라는 것이 핵심이고,
+    AI 응용은 <code>requires</code> 로 먼저 떠 있어야 할 모델 서비스를 적습니다.
   </p>
 
   <div class="panel">
@@ -310,98 +416,112 @@
     </div>
     <details class="wire" id="cat-new-wire"></details>
   </div>
-</section>
-
-<!-- ============ 매칭 ============ -->
-<section class="page" id="p-match">
-  <h2>자연어 매칭</h2>
-  <p class="lede">
-    <b>"라마 추론서버 올려줘" 가 카탈로그의 어느 항목인가</b>를 정하는 단계입니다.
-    규칙 기반 매처가 후보를 좁히고 <b>왜 골랐는지를 같이 돌려줍니다.</b>
-  </p>
 
   <div class="panel">
-    <h3>운영자가 쓰는 말 그대로 넣어 보세요</h3>
+    <h3>카탈로그 검색 <span class="hint">규칙 기반 매처. 왜 골랐는지를 같이 돌려줍니다</span></h3>
     <div class="row">
-      <input type="text" id="mt-q" placeholder="라마 추론서버 올려줘" value="라마 추론서버 올려줘">
+      <input type="text" id="mt-q" placeholder="라마 추론서버" value="라마 추론서버">
       <button onclick="runMatch()">검색</button>
     </div>
     <div style="margin-top:10px" id="mt-samples"></div>
     <div style="margin-top:16px" class="grid g2" id="mt-list"></div>
     <div id="mt-msg"></div>
     <details class="wire" id="mt-wire"></details>
-  </div>
-
-  <div class="panel">
-    <h3>읽는 법</h3>
-    <div class="note">
+    <div class="note" style="margin-top:14px">
       <b>구조화된 필드에 걸려야 후보가 됩니다.</b> id·별칭·모델명·런타임·포맷이 그것입니다.
       설명문 단어는 동점을 가르는 데만 쓰이고 혼자서는 후보를 만들지 못합니다.
-      흔한 단어 하나로 확신에 찬 오답을 내는 것보다 "없다" 가 낫기 때문입니다.
-    </div>
-    <div class="note">
-      <b>후보가 없으면 빈 목록이 돌아옵니다.</b> 그때 시스템 프롬프트가 모델에게
-      "가장 비슷한 것을 배포하지 말고 없다고 답하라" 고 지시합니다.
-    </div>
-    <div class="note warn">
-      <b>알려진 한계.</b> 점수가 별칭의 길이나 특이도를 반영하지 않아, 별칭이 겹치면 동점이 납니다.
-      <code>라마npu</code> 로 검색해 보면 두 응용이 같은 45점으로 나옵니다. 아직 안 고쳤습니다.
+      후보가 없으면 빈 목록이 돌아옵니다. 흔한 단어 하나로 확신에 찬 오답을 내는 것보다 "없다" 가 낫기 때문입니다.
     </div>
   </div>
 </section>
 
-<!-- ============ 도구 ============ -->
-<section class="page" id="p-tools">
-  <h2>도구와 게이트</h2>
+<!-- ============ 자동화 엔진 ============ -->
+<section class="page" id="p-engine">
+  <h2>자동화 엔진</h2>
   <p class="lede">
-    에이전트가 부를 수 있는 함수 목록입니다. <b>등급이 곧 안전장치</b>이고,
-    실행 여부는 서비스 설정이지 모델의 판단이 아닙니다.
+    AI-Ops 의 AI 응용 관리 자동화 에이전트, 곧 <b>자동배포/자동제어 엔진</b>입니다.
+    LLM 없이 정해진 순서로 AI-App 의 MCP 도구를 부르고, 단계마다 <b>부른 도구, 결과, dry-run 게이트가 막았는지</b>를 기록합니다.
   </p>
 
   <div class="panel">
-    <h3>게이트 상태</h3>
-    <div id="tl-gate"><div class="spin">부르는 중...</div></div>
-  </div>
-
-  <div class="panel">
-    <h3>도구 <span class="hint" id="tl-count"></span></h3>
-    <div id="tl-list"></div>
-    <details class="wire" id="tl-wire"></details>
-  </div>
-</section>
-
-<!-- ============ 지시 ============ -->
-<section class="page" id="p-intent">
-  <h2>자연어 지시</h2>
-  <p class="lede">
-    지시를 넣으면 LLM 이 <b>다음에 무엇을 부를지</b>를 반복해서 정합니다.
-    한 번에 계획을 다 뽑지 않고, 중간 결과가 다음 호출을 바꿉니다.
-  </p>
-
-  <div class="panel">
-    <h3>지시</h3>
-    <div class="field">
-      <textarea id="in-q" rows="3">Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노드에 올려줘</textarea>
+    <h3>워크플로 실행</h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>워크플로</label>
+        <select id="en-wf" onchange="engineForm()">
+          <option value="deploy">deploy · 응용 배포 (필요한 모델 서비스부터)</option>
+          <option value="heal">heal · 응답 없으면 한 번 업데이트</option>
+          <option value="control">control · 정지·재개·재부팅·종료</option>
+          <option value="status">status · 노드·서빙·가속기 요약</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>네임스페이스</label>
+        <input type="text" id="en-ns" value="default">
+      </div>
     </div>
-    <div class="field">
-      <label>네임스페이스</label>
-      <input type="text" id="in-ns" value="default">
+    <div class="note" id="en-wf-desc" style="margin-top:0"></div>
+
+    <div class="grid g3" id="en-f-deploy">
+      <div class="field">
+        <label>응용</label>
+        <select id="en-app"></select>
+      </div>
+      <div class="field">
+        <label>배포 이름</label>
+        <input type="text" id="en-name" value="demo-webui">
+      </div>
     </div>
+    <div class="grid g3" id="en-f-target" style="display:none">
+      <div class="field">
+        <label>배포 ID (deploymentId)</label>
+        <input type="text" id="en-dep" placeholder="demo-webui" list="dep-ids">
+      </div>
+      <div class="field" id="en-f-app2">
+        <label>응용 (선택)</label>
+        <select id="en-app2"></select>
+      </div>
+      <div class="field" id="en-f-action" style="display:none">
+        <label>동작 (action)</label>
+        <select id="en-action">
+          <option value="suspend">suspend · 정지</option>
+          <option value="resume">resume · 재개</option>
+          <option value="reboot">reboot · 재부팅</option>
+          <option value="terminate">terminate · 종료</option>
+        </select>
+      </div>
+    </div>
+
     <div class="row">
-      <div class="spin" id="in-msg"></div>
-      <button onclick="runIntent()" id="in-btn">실행</button>
+      <div class="spin" id="en-msg"></div>
+      <button onclick="runWorkflow()" id="en-btn">실행</button>
     </div>
-    <div id="in-result" style="margin-top:14px"></div>
-    <details class="wire" id="in-wire"></details>
+    <div class="legend" style="margin:12px 0 0">
+      상태 배지
+      <span class="b b-st-succeeded">succeeded</span> 성공 ·
+      <span class="b b-st-blocked">blocked</span> dry-run 게이트가 막음 ·
+      <span class="b b-st-waiting">waiting</span> 막힌 단계의 결과를 기다림 ·
+      <span class="b b-st-failed">failed</span> 실패 ·
+      <span class="b b-st-skipped">skipped</span> 앞 단계 실패로 건너뜀
+    </div>
+    <div id="en-result" style="margin-top:14px"></div>
+    <details class="wire" id="en-wire"></details>
   </div>
 
   <div class="panel">
-    <h3>무엇이 기록되나</h3>
-    <div class="note">
-      LLM 이 고른 <b>도구와 인자 전체</b>, 도구가 돌려준 응답, <b>게이트가 막았는지</b>,
-      소요 시간까지 한 레코드로 남습니다. 결과만 남기면 왜 그 결정을 했는지가 사라져서,
-      2차년도의 "배포 정보 수집 및 추론 재적용" 에 쓸 수 없습니다.
+    <h3>최근 실행 <span class="hint" id="en-runs-count"></span></h3>
+    <div id="en-runs"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadEngineRuns()">새로고침</button>
     </div>
+    <details class="wire" id="en-runs-wire"></details>
+  </div>
+
+  <div class="panel" id="en-detail-panel" style="display:none">
+    <h3>실행 상세 <span class="hint" id="en-detail-id"></span></h3>
+    <div id="en-detail"></div>
+    <details class="wire" id="en-detail-wire"></details>
   </div>
 </section>
 
@@ -409,8 +529,8 @@
 <section class="page" id="p-deploy">
   <h2>배포와 라이프사이클</h2>
   <p class="lede">
-    여기서 부르는 것은 전부 <b>실제 호출</b>입니다. 이종 클라우드 관리 계층이 붙어 있지 않으면
-    실패 응답이 그대로 보입니다. 그것도 동작의 일부라 감추지 않습니다.
+    AI-App 의 배포 API 를 직접 부르는 화면입니다. 여기서 부르는 것은 전부 <b>실제 호출</b>이고,
+    이종 클라우드 관리 계층이 붙어 있지 않으면 실패 응답이 그대로 보입니다. 그것도 동작의 일부라 감추지 않습니다.
   </p>
 
   <div class="panel">
@@ -430,24 +550,15 @@
       </div>
     </div>
     <div class="row">
-      <div class="spin" id="dp-plan-msg"></div>
+      <div class="note" style="margin:0">
+        <b>"계획만 만들기" 는 AI-App 의 단일 응용 계획입니다.</b> 고른 응용 하나의 스펙·이미지·설치 명령만 정합니다.
+        AI 응용이 필요로 하는 모델 서비스까지 순서대로 올리는 것은 자동화 엔진의 <code>deploy</code> 워크플로입니다.
+      </div>
       <button class="ghost" onclick="runPlan()">계획만 만들기</button>
     </div>
+    <div class="spin" id="dp-plan-msg"></div>
     <div id="dp-plan-out" style="margin-top:12px"></div>
     <details class="wire" id="dp-plan-wire"></details>
-  </div>
-
-  <div class="panel">
-    <h3>가속기 스펙 추천 <span class="hint">응용의 요구사항이 그대로 스펙 필터가 됩니다</span></h3>
-    <div class="row">
-      <div class="note" style="margin:0">
-        위에서 고른 응용의 <code>accelerator</code> 와 <code>resources</code> 를
-        그대로 조건으로 바꿔 가장 싼 것부터 받아옵니다.
-      </div>
-      <button class="ghost" onclick="runSpecs()">추천받기</button>
-    </div>
-    <div id="dp-spec-out" style="margin-top:12px"></div>
-    <details class="wire" id="dp-spec-wire"></details>
   </div>
 
   <div class="panel">
@@ -461,29 +572,50 @@
   </div>
 
   <div class="panel">
-    <h3>가속기 판독 <span class="hint">만들어진 것과 쓸 수 있는 것은 다릅니다</span></h3>
-    <div class="row">
-      <input type="text" id="dp-infra" placeholder="배포 이름 (infraId)">
-      <button class="ghost" onclick="runProbe()">노드에 물어보기</button>
+    <h3>이 화면에 쓰기 버튼이 없는 이유</h3>
+    <div class="note warn">
+      실제 생성·제어·삭제 버튼을 이 화면에는 의도적으로 넣지 않았습니다.
+      <b>되돌릴 수 없고 과금되는 행동을 화면의 버튼 하나에 걸어 두지 않는 것</b>이 이 프로토타입의
+      안전장치와 같은 취지입니다. 생성·제어는 API 를 직접 부르거나 자동화 엔진의 워크플로로 하고,
+      엔진 화면은 dry-run 이 꺼져 있으면 실행 전에 한 번 더 묻습니다.
+      서빙 상태와 가속기 판독은 <a class="link" onclick="show('monitor')">모니터링</a> 화면에 있습니다.
     </div>
-    <div id="dp-probe-out" style="margin-top:12px"></div>
-    <details class="wire" id="dp-probe-wire"></details>
-    <div class="note info" style="margin-top:14px">
-      노드에서 <b>PCI 버스를 먼저 읽고</b>, 벤더 도구(<code>nvidia-smi</code>·<code>rocm-smi</code>·
-      <code>rbln-stat</code>·<code>furiosa-smi</code>·<code>hl-smi</code>·<code>tpu-info</code>)가
-      있으면 그 위에 덧칠합니다. 버스는 아무것도 설치돼 있지 않아도 답하므로,
-      <b>드라이버가 안 붙은 장치와 아예 없는 장치를 가를 수 있습니다.</b>
+  </div>
+</section>
+
+<!-- ============ 모니터링 ============ -->
+<section class="page" id="p-monitor">
+  <h2>모니터링</h2>
+  <p class="lede">
+    배포된 응용이 <b>실제로 답하는지</b>와 노드의 <b>가속기를 실제로 쓸 수 있는지</b>를 노드 안에서 직접 확인합니다.
+  </p>
+
+  <div class="panel">
+    <h3>대상</h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>네임스페이스</label>
+        <input type="text" id="mo-ns" value="default">
+      </div>
+      <div class="field">
+        <label>배포 이름 (infraId)</label>
+        <input type="text" id="mo-infra" placeholder="배포 이름" list="dep-ids">
+      </div>
+    </div>
+    <div class="row">
+      <div class="spin" id="mo-list-msg"></div>
+      <button class="ghost" onclick="loadMonitorTargets()">배포 목록에서 고르기</button>
     </div>
   </div>
 
   <div class="panel">
     <h3>서빙 상태 확인 <span class="hint">노드가 떴다고 응용이 답하는 것은 아닙니다</span></h3>
     <div class="row">
-      <input type="text" id="dp-health-infra" placeholder="배포 이름 (infraId)">
+      <div></div>
       <button class="ghost" onclick="runHealth()">응답 확인</button>
     </div>
-    <div id="dp-health-out" style="margin-top:12px"></div>
-    <details class="wire" id="dp-health-wire"></details>
+    <div id="mo-health-out" style="margin-top:12px"></div>
+    <details class="wire" id="mo-health-wire"></details>
     <div class="note info" style="margin-top:14px">
       각 노드 안에서 <code>curl</code> 로 <code>127.0.0.1:&lt;서빙 포트&gt;&lt;헬스 경로&gt;</code> 를 한 번 부릅니다.
       방화벽이나 공인 IP 와 무관하게 <b>서버 프로세스가 답하는지</b>만 봅니다.
@@ -493,13 +625,40 @@
   </div>
 
   <div class="panel">
-    <h3>이 화면에 쓰기 버튼이 없는 이유</h3>
-    <div class="note warn">
-      실제 생성·제어·삭제 버튼을 의도적으로 넣지 않았습니다. dry-run 이 켜져 있어도 마찬가지입니다.
-      <b>되돌릴 수 없고 과금되는 행동을 화면의 버튼 하나에 걸어 두지 않는 것</b>이 이 프로토타입의
-      안전장치와 같은 취지입니다. 계획과 검증까지가 여기서 할 수 있는 전부이고,
-      실제 생성은 API 를 직접 부르거나 에이전트를 통해서 합니다.
+    <h3>가속기 판독 <span class="hint">만들어진 것과 쓸 수 있는 것은 다릅니다</span></h3>
+    <div class="row">
+      <div></div>
+      <button class="ghost" onclick="runProbe()">노드에 물어보기</button>
     </div>
+    <div id="mo-probe-out" style="margin-top:12px"></div>
+    <details class="wire" id="mo-probe-wire"></details>
+    <div class="note info" style="margin-top:14px">
+      노드에서 <b>PCI 버스를 먼저 읽고</b>, 벤더 도구(<code>nvidia-smi</code>·<code>rocm-smi</code>·
+      <code>rbln-stat</code>·<code>furiosa-smi</code>·<code>hl-smi</code>·<code>tpu-info</code>)가
+      있으면 그 위에 덧칠합니다. 버스는 아무것도 설치돼 있지 않아도 답하므로,
+      <b>드라이버가 안 붙은 장치와 아예 없는 장치를 가를 수 있습니다.</b>
+    </div>
+  </div>
+  <datalist id="dep-ids"></datalist>
+</section>
+
+<!-- ============ 도구 ============ -->
+<section class="page" id="p-tools">
+  <h2>도구와 게이트 (MCP)</h2>
+  <p class="lede">
+    AI-App 이 MCP 서버(<code>/mcp</code>)로 여는 기능 도구 목록입니다. 자동화 엔진이 이 도구를 부릅니다.
+    <b>등급이 곧 안전장치</b>이고, 실행 여부는 서비스 설정이지 부르는 쪽의 판단이 아닙니다.
+  </p>
+
+  <div class="panel">
+    <h3>게이트 상태</h3>
+    <div id="tl-gate"><div class="spin">부르는 중...</div></div>
+  </div>
+
+  <div class="panel">
+    <h3>도구 <span class="hint" id="tl-count"></span></h3>
+    <div id="tl-list"></div>
+    <details class="wire" id="tl-wire"></details>
   </div>
 </section>
 
@@ -507,7 +666,8 @@
 <section class="page" id="p-archive">
   <h2>아카이브</h2>
   <p class="lede">
-    지시·판단·결과가 한 줄에 한 레코드씩 남습니다. <b>게이트가 막은 것도 기록됩니다.</b>
+    세 곳의 기록을 시각순으로 합쳐 봅니다. AI-App 배포 호출, 자동화 엔진 실행, 협력 기관 모의 자연어 에이전트의 지시 실행입니다.
+    <b>게이트가 막은 것도 기록됩니다.</b>
   </p>
 
   <div class="panel">
@@ -522,8 +682,106 @@
 
   <div class="panel" id="ar-detail-panel" style="display:none">
     <h3>레코드 <span class="hint" id="ar-detail-id"></span></h3>
+    <div id="ar-detail-run"></div>
     <pre class="json" id="ar-detail"></pre>
     <details class="wire" id="ar-detail-wire"></details>
+  </div>
+</section>
+
+<!-- ============ 협력 기관 · 자연어 지시 ============ -->
+<section class="page mock" id="p-intent">
+  <div class="mockband">협력 기관 담당 영역 · 연동 확인용 모의 구현 (이노그리드 프로토타입 아님)</div>
+  <h2>자연어 지시 <span class="b b-mock">모의</span></h2>
+  <p class="lede">
+    협력 기관의 자연어 지원 에이전트를 흉내 낸 모의 구현입니다. LLM 이 지시를 해석해
+    <b>자동화 엔진의 MCP 도구</b>(<code>deploy_application</code> 등)를 부르고,
+    실제 배포 순서와 기록은 이노그리드 엔진이 맡습니다.
+  </p>
+
+  <div class="panel">
+    <h3>지시</h3>
+    <div class="field">
+      <textarea id="in-q" rows="3">Open WebUI 챗봇을 demo-webui 라는 이름으로 띄워줘</textarea>
+    </div>
+    <div class="field">
+      <label>네임스페이스</label>
+      <input type="text" id="in-ns" value="default">
+    </div>
+    <div class="row">
+      <div class="spin" id="in-msg"></div>
+      <button onclick="runIntent()" id="in-btn">실행</button>
+    </div>
+    <div id="in-result" style="margin-top:14px"></div>
+    <details class="wire" id="in-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>연동 지점</h3>
+    <div class="note">
+      이노그리드 쪽 계약은 <b>엔진의 MCP 도구</b>와 엔진 기술서(<code>GET /engine/card</code>)입니다.
+      모의 에이전트는 그 도구를 부르는 MCP 클라이언트이고, 도구가 돌려준 엔진 실행 ID 를 단계마다 남깁니다.
+      엔진 실행 ID 를 누르면 자동화 엔진 화면에서 그 실행의 단계를 봅니다.
+    </div>
+  </div>
+</section>
+
+<!-- ============ 협력 기관 · 인프라 추천 ============ -->
+<section class="page mock" id="p-recommend">
+  <div class="mockband">협력 기관 담당 영역 · 연동 확인용 모의 구현 (이노그리드 프로토타입 아님)</div>
+  <h2>인프라 추천 <span class="b b-mock">모의</span></h2>
+  <p class="lede">
+    AI-App 은 추천을 직접 하지 않고 <code>AIAPP_RECOMMENDER_URL</code> 의 추천 API 를 부릅니다.
+    여기서 보는 후보는 그 API(지금은 모의 구현)가 돌려준 것입니다.
+  </p>
+
+  <div class="panel">
+    <h3>스펙 후보</h3>
+    <div class="row">
+      <select id="rc-app"></select>
+      <button class="ghost" onclick="runSpecs()">추천받기</button>
+      <button class="ghost" onclick="runSourceCheck()">계획에서 출처 확인</button>
+    </div>
+    <div id="rc-spec-out" style="margin-top:12px"></div>
+    <details class="wire" id="rc-spec-wire"></details>
+    <div id="rc-src-out" style="margin-top:12px"></div>
+    <details class="wire" id="rc-src-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>계약 요약 <span class="hint">이노그리드가 제안한 계약. 요청에 AppSpec 을 그대로 실어 보냅니다</span></h3>
+    <table>
+      <tr><th style="width:230px">호출</th><th>요청</th><th>응답</th></tr>
+      <tr>
+        <td class="mono" style="font-size:12px">POST /recommendations/specs</td>
+        <td class="mono" style="font-size:12px">{ app: AppSpec, limit }</td>
+        <td class="mono" style="font-size:12px">{ candidates: [ { id, providerName, regionName, acceleratorType,
+          acceleratorModel, acceleratorCount, acceleratorMemoryGB, vCPU, memoryGiB, costPerHour } ], reason }</td>
+      </tr>
+      <tr>
+        <td class="mono" style="font-size:12px">POST /recommendations/image</td>
+        <td class="mono" style="font-size:12px">{ app: AppSpec, specId }</td>
+        <td class="mono" style="font-size:12px">{ imageId, source, reason }</td>
+      </tr>
+    </table>
+    <div class="note" style="margin-top:12px">
+      AI-App 은 첫 후보를 계획에 쓰고 계획에 <code>specSource: recommended:remote</code>,
+      <code>imageSource: resolved:remote</code> 로 남깁니다.
+      추천 API 가 설정되지 않으면 요청에 <code>specId</code> 와 <code>imageId</code> 를 직접 지정해야 하고,
+      아니면 <code>422</code> 로 실패합니다.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>협력 기관이 할 일</h3>
+    <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--ink-2)">
+      <li>요구 분석: AppSpec 의 가속기·자원 요구와 모델 크기에서 필요한 인프라 조건을 뽑습니다.</li>
+      <li>추천 알고리즘: 조건을 만족하는 스펙을 비용·성능·가용성 기준으로 순위를 매깁니다.</li>
+      <li>근거: 왜 그 스펙과 이미지인지 <code>reason</code> 으로 돌려줍니다.</li>
+      <li>이미지 선택: 가속기 벤더와 드라이버에 맞는 노드 이미지를 고릅니다.</li>
+    </ul>
+    <div class="note" style="margin-top:12px">
+      지금의 모의 구현은 1차년도 로직(가속기 요구 → CB-Tumblebug 스펙 필터, 비용순, 벤더별 이미지)을 옮겨 둔 것입니다.
+    </div>
   </div>
 </section>
 
@@ -563,6 +821,7 @@ function setToken(value) {
   renderToken();
   $('auth-note').style.display = 'none';
   for (const k of Object.keys(loaded)) delete loaded[k];
+  APPS = [];
   const current = (location.hash || '#overview').slice(1);
   show(loaders.hasOwnProperty(current) ? current : 'overview');
 }
@@ -642,11 +901,11 @@ function failNote(r) {
 }
 
 /* ---------- navigation ---------- */
-/* Pages that call on first open. The matcher runs its default query so the page
-   shows what it does instead of an empty box asking to be told. */
+/* Pages that call on first open. */
 const loaders = {
-  overview: loadOverview, catalog: loadCatalog, match: runMatch,
-  tools: loadTools, intent: null, deploy: loadDeployPage, archive: loadArchive
+  overview: loadOverview, catalog: loadCatalogPage, engine: loadEnginePage,
+  deploy: loadDeployPage, monitor: null, tools: loadTools, archive: loadArchive,
+  intent: null, recommend: loadRecommendPage
 };
 const loaded = {};
 
@@ -661,54 +920,109 @@ function show(name) {
     p.classList.toggle('on', p.id === 'p-' + name));
   location.hash = name;
   if (!loaded[name] && loaders[name]) { loaded[name] = true; loaders[name](); }
+  window.scrollTo(0, 0);
+}
+
+/* ---------- shared badges ---------- */
+/* fmtTime shows a record time in the browser's local time, to the second. */
+function fmtTime(s) {
+  const d = new Date(s);
+  if (!s || isNaN(d)) return s || '';
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function upBadge(r) {
+  if (r.status === 0) return '<span class="b b-on">연결 실패</span>';
+  if (r.ok) return '<span class="b b-off">응답함</span>';
+  return `<span class="b b-on">HTTP ${esc(r.status)}</span>`;
+}
+
+function regBadge(reg) {
+  reg = reg || {};
+  const b = reg.status === 'registered' ? '<span class="b b-off">등록됨</span>'
+    : reg.status === 'failed' ? '<span class="b b-on">등록 실패</span>'
+    : reg.status === 'pending' ? '<span class="b b-mut">등록 중</span>'
+    : reg.status === 'disabled' ? '<span class="b b-mut">등록 안 함</span>'
+    : '<span class="b b-mut">모름</span>';
+  return `<span title="${esc(reg.message || '')}">${b}</span>`;
+}
+
+const STATUS_KO = {
+  succeeded: '성공', blocked: 'dry-run 게이트가 막음', waiting: '막힌 단계의 결과를 기다림',
+  failed: '실패', skipped: '앞 단계 실패로 건너뜀'
+};
+function stBadge(s) {
+  return `<span class="b b-st-${esc(s || 'skipped')}" title="${esc(STATUS_KO[s] || '')}">${esc(s || '-')}</span>`;
+}
+
+/* sourceLabel names who decided a plan value. A ":remote" suffix is the
+   recommender API, which is the partner institution's area. */
+function sourceLabel(s) {
+  if (!s) return '-';
+  if (/:remote$/.test(s)) return '협력 기관 추천 API(모의)';
+  if (s === 'requested') return '요청에 지정';
+  return s;
 }
 
 /* ---------- 개요 ---------- */
 async function loadOverview() {
-  const [ready, tools, agent, card] = await Promise.all([
-    api('GET', '/readyz'), api('GET', '/tools'), api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card')]);
-  wire($('ov-wire'), tools, 'GET /readyz, GET /tools, GET /partner/nl/readyz, GET /partner/nl/card 를 불렀습니다 (아래는 tools)');
+  ['ov-st-nl', 'ov-st-engine', 'ov-st-app', 'ov-st-rec', 'ov-st-tb'].forEach((id) =>
+    $(id).innerHTML = '<span class="spin">부르는 중...</span>');
+
+  const [ready, tools, engReady, engCard, nlReady, nlCard] = await Promise.all([
+    api('GET', '/readyz'), api('GET', '/tools'),
+    api('GET', '/engine/readyz'), api('GET', '/engine/card'),
+    api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card')]);
+  wire($('ov-wire'), engCard,
+    'GET /readyz, /tools, /engine/readyz, /engine/card, /partner/nl/readyz, /partner/nl/card 를 불렀습니다 (아래는 engine/card)');
 
   const t = tools.data || {};
   const list = t.tools || [];
   const byGrade = list.reduce((m, x) => (m[x.grade] = (m[x.grade] || 0) + 1, m), {});
   const guarded = list.filter((x) => x.guardedByDryRun).length;
-
-  const readyLabel = ready.status === 0 ? '연결 실패'
-    : (ready.ok ? ((ready.data && ready.data.message) || '준비됨') : 'HTTP ' + ready.status);
-
-  /* The agent is another process behind this service's proxy, so a 502 here
-     means the agent is down, not this service. */
-  const agentLabel = agent.status === 0 ? '연결 실패'
-    : agent.ok ? '<span class="b b-off">연결됨</span>'
-    : `<span class="b b-on">끊김 · HTTP ${esc(agent.status)}</span>`;
-
-  /* The card is a summary only; a missing or failed card leaves the rest of
-     the overview as it is. */
-  const cardLabel = cardSummary(card);
-
   const dry = t.dryRun;
+  const ec = engCard.ok && engCard.data && typeof engCard.data === 'object' ? engCard.data : null;
+  const nc = nlCard.ok && nlCard.data && typeof nlCard.data === 'object' ? nlCard.data : null;
+
+  $('ov-st-app').innerHTML = `${upBadge(ready)} · 도구 ${list.length} · dry-run ${
+    dry === undefined ? '<span class="b b-mut">모름</span>' : dry ? '<span class="b b-off">켜짐</span>' : '<span class="b b-on">꺼짐</span>'}`;
+  $('ov-st-engine').innerHTML = `${upBadge(engReady)}${ec ? ` · LLM ${ec.usesLLM ? '<span class="b b-on">사용</span>' : '<span class="b b-off">없음</span>'}
+    · 워크플로 ${esc((ec.workflows || []).length)} · AI-App MCP ${engineMCPBadge(ec)}` : ''}`;
+  $('ov-st-nl').innerHTML = `${upBadge(nlReady)}${nc ? ` · 엔진 MCP ${
+    ((nc.mcpServers || [])[0] || {}).connected ? '<span class="b b-off">연결됨</span>' : SESSION_NONE}` : ''}`;
+
   $('ov-stats').innerHTML = `
-    <div class="stat"><div class="k">서비스</div><div class="v sm">${esc(readyLabel)}</div></div>
-    <div class="stat"><div class="k">에이전트 연결 상태</div><div class="v sm">${agentLabel}</div></div>
-    <div class="stat"><div class="k">에이전트 카드</div><div class="v sm">${cardLabel}</div></div>
+    <div class="stat"><div class="k">AI-App 서비스</div><div class="v sm">${upBadge(ready)}
+      ${ready.data && ready.data.message ? `<div class="mono" style="font-size:11.5px">${esc(ready.data.message)}</div>` : ''}</div></div>
     <div class="stat"><div class="k">쓰기 게이트 (dry-run)</div><div class="v">
       ${dry === undefined ? '<span class="b b-mut">모름</span>'
         : dry ? '<span class="b b-off">켜짐 · 안전</span>'
               : '<span class="b b-on">꺼짐 · 실제 과금</span>'}
     </div></div>
-    <div class="stat"><div class="k">도구</div><div class="v">${list.length}<span
-      style="font-size:12px;font-weight:400;color:var(--ink-3)"> 개 · 게이트 대상 ${guarded}</span></div></div>
-    <div class="stat"><div class="k">읽기 / 검토</div><div class="v">${byGrade.read || 0} / ${byGrade.review || 0}</div></div>
-    <div class="stat"><div class="k">쓰기 / 파괴적</div><div class="v">${byGrade.write || 0} / ${byGrade.destructive || 0}</div></div>
+    <div class="stat"><div class="k">AI-App 도구</div><div class="v">${list.length}<span
+      style="font-size:12px;font-weight:400;color:var(--ink-3)"> 개 · 게이트 대상 ${guarded}
+      · 읽기 ${byGrade.read || 0} / 검토 ${byGrade.review || 0} / 쓰기 ${byGrade.write || 0} / 파괴적 ${byGrade.destructive || 0}</span></div></div>
+    <div class="stat"><div class="k">자동화 엔진</div><div class="v sm">${upBadge(engReady)}</div></div>
+    <div class="stat"><div class="k">엔진 카드</div><div class="v sm">${engineCardSummary(engCard)}</div></div>
+    <div class="stat mock"><div class="k">자연어 에이전트 · 협력 기관 모의</div><div class="v sm">${upBadge(nlReady)}
+      <div style="margin-top:4px">${cardSummary(nlCard)}</div></div></div>
+    <div class="stat mock"><div class="k">인프라 추천 API · 협력 기관 모의</div><div class="v sm" id="ov-rec">
+      <span class="spin">부르는 중...</span></div></div>
+    <div class="stat"><div class="k">CB-Tumblebug</div><div class="v sm" id="ov-tb">
+      <span class="spin">부르는 중...</span></div></div>
     <div class="stat"><div class="k">콘솔 경로</div><div class="v sm mono">${esc(BASE)}/ui</div></div>
   `;
 
   let notes = '';
   if (!tools.ok) notes += failNote(tools);
-  if (!agent.ok) {
-    notes += failNote(agent) + `<div class="note">자연어 에이전트(협력 기관 담당 영역 · 모의 구현)가 응답하지 않습니다.
-      자연어 지시와 지시 실행 기록은 에이전트가 뜰 때까지 쓸 수 없고, 나머지 화면은 그대로 동작합니다.</div>`;
+  if (!engReady.ok) {
+    notes += failNote(engReady) + `<div class="note">자동화 엔진이 응답하지 않습니다.
+      AI-App 서비스는 <code>/engine/*</code> 을 <code>AIAPP_ENGINE_URL</code> 로 넘깁니다. 엔진이 떠 있는지 확인해 주세요.</div>`;
+  }
+  if (!nlReady.ok) {
+    notes += failNote(nlReady) + `<div class="note">자연어 에이전트(협력 기관 담당 영역 · 모의 구현)가 응답하지 않습니다.
+      자연어 지시와 그 실행 기록은 에이전트가 뜰 때까지 쓸 수 없고, 이노그리드 구현 화면은 그대로 동작합니다.</div>`;
   }
   if (dry === false) {
     notes += `<div class="note bad"><b>dry-run 이 꺼져 있습니다.</b>
@@ -716,9 +1030,67 @@ async function loadOverview() {
   } else if (dry === true) {
     notes += `<div class="note"><b>dry-run 이 켜져 있습니다.</b>
       쓰기 도구는 계획과 사전 검증까지만 하고 멈춥니다.
-      이것은 요청 파라미터가 아니라 <b>서비스 설정</b>이라, 모델이 "확실하니 실행하자" 고 해도 바뀌지 않습니다.</div>`;
+      이것은 요청 파라미터가 아니라 <b>서비스 설정</b>이라, 부르는 쪽이 엔진이든 자연어 에이전트든 바뀌지 않습니다.</div>`;
   }
   $('ov-notes').innerHTML = notes;
+
+  loadOverviewPlatform();
+}
+
+/* The recommender and CB-Tumblebug sit behind AI-App, so each is checked with
+   one ordinary call through it: a one candidate spec recommendation for a
+   model service, and the deployment listing. A 422 on the first is AI-App
+   saying no recommender API is configured; a 4xx on the second is still
+   CB-Tumblebug answering. */
+async function loadOverviewPlatform() {
+  await ensureApps();
+  const ms = APPS.find((a) => a.kind !== 'application');
+  const [spec, dep] = await Promise.all([
+    ms ? api('GET', '/apps/' + encodeURIComponent(ms.id) + '/specs?limit=1') : Promise.resolve(null),
+    api('GET', '/ns/default/deployments')]);
+
+  let rec;
+  if (!spec) rec = '<span class="b b-mut">확인할 모델 서비스 없음</span>';
+  else if (spec.status === 422) rec = '<span class="b b-mut">설정 안 됨</span> <span style="font-size:12px">AIAPP_RECOMMENDER_URL 이 비어 있습니다</span>';
+  else if (spec.ok) {
+    const n = Array.isArray(spec.data) ? spec.data.length : 0;
+    const first = n ? spec.data[0] : null;
+    rec = `<span class="b b-off">응답함</span> 후보 ${n}${first ? ` · <span class="mono" style="font-size:11.5px">${esc(first.id)}</span>` : ''}
+      <div style="font-size:11.5px;color:var(--ink-3)">${esc(ms.id)} 로 한 번 불러 봄</div>`;
+  } else rec = `${upBadge(spec)} <span style="font-size:12px">${esc((spec.data && spec.data.message) || '')}</span>`;
+
+  const tb = dep.status === 0 ? '<span class="b b-on">연결 실패</span>'
+    : dep.status >= 500 ? `<span class="b b-on">닿지 못함 · HTTP ${esc(dep.status)}</span>`
+    : `<span class="b b-off">응답함</span> <span style="font-size:12px">배포 목록 조회 HTTP ${esc(dep.status)}</span>`;
+
+  $('ov-rec').innerHTML = rec;
+  $('ov-tb').innerHTML = tb;
+  $('ov-st-rec').innerHTML = rec;
+  $('ov-st-tb').innerHTML = tb;
+}
+
+/* A card reports the MCP session it holds now. No session means it has not
+   connected yet or lost the connection; the card cannot tell which. */
+const SESSION_NONE = '<span class="b b-mut" title="아직 연결하지 않았거나 연결이 끊겼습니다">세션 없음</span>';
+
+function engineMCPBadge(c) {
+  const s = (c.mcp && c.mcp.appServer) || {};
+  return s.connected ? `<span class="b b-off">연결됨</span> 도구 ${esc(s.toolCount)}` : SESSION_NONE;
+}
+
+/* engineCardSummary renders GET /engine/card: no model, the workflows, the
+   AI-App MCP connection and registration. */
+function engineCardSummary(r) {
+  const c = r.data;
+  if (!r.ok || !c || typeof c !== 'object') {
+    return r.status === 0 ? '<span class="b b-mut">불러오지 못함</span>'
+      : `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
+  }
+  return `<div class="mono">${esc(c.name || '-')}</div>
+    <div>LLM ${c.usesLLM ? '<span class="b b-on">사용</span>' : '<span class="b b-off">없음 (usesLLM false)</span>'}</div>
+    <div>워크플로 ${esc((c.workflows || []).length)} · <span class="mono" style="font-size:11.5px">${esc((c.workflows || []).join(', '))}</span></div>
+    <div>AI-App MCP ${engineMCPBadge(c)}</div>
+    <div>등록 ${regBadge(c.registration)}</div>`;
 }
 
 /* cardSummary renders GET /partner/nl/card as a few lines: name, model, MCP
@@ -730,17 +1102,11 @@ function cardSummary(r) {
       : `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
   }
   const mcp = (c.mcpServers || [])[0] || {};
-  const reg = c.registration || {};
-  const regBadge = reg.status === 'registered' ? '<span class="b b-off">등록됨</span>'
-    : reg.status === 'failed' ? '<span class="b b-on">등록 실패</span>'
-    : reg.status === 'pending' ? '<span class="b b-mut">등록 중</span>'
-    : reg.status === 'disabled' ? '<span class="b b-mut">등록 안 함</span>'
-    : '<span class="b b-mut">모름</span>';
   return `<div class="mono">${esc(c.name || '-')}</div>
     <div>모델 <span class="mono">${esc((c.llm && c.llm.model) || '-')}</span></div>
-    <div>MCP ${mcp.connected ? '<span class="b b-off">연결됨</span>' : '<span class="b b-on">끊김</span>'}
+    <div>엔진 MCP ${mcp.connected ? '<span class="b b-off">연결됨</span>' : SESSION_NONE}
       · 도구 ${esc((c.tools || []).length)}</div>
-    <div title="${esc(reg.message || '')}">등록 ${regBadge}</div>`;
+    <div>등록 ${regBadge(c.registration)}</div>`;
 }
 
 /* ---------- 카탈로그 ---------- */
@@ -765,6 +1131,15 @@ function resetNewApp() {
 }
 
 let APPS = [];
+
+async function ensureApps() {
+  if (!APPS.length) await loadCatalog();
+}
+
+function loadCatalogPage() {
+  loadCatalog();
+  runMatch();
+}
 
 async function loadCatalog() {
   const r = await api('GET', '/apps');
@@ -839,8 +1214,8 @@ async function registerApp() {
   }
 }
 
-/* ---------- 매칭 ---------- */
-const SAMPLES = ['라마 추론서버 올려줘', '라마npu', '큐원 작은거', 'vllm', 'resnet 분류 모델', '없는모델 올려줘'];
+/* ---------- 카탈로그 검색 ---------- */
+const SAMPLES = ['라마 추론서버', '라마npu', '큐원 작은거', 'vllm', 'open webui', 'resnet 분류 모델', '없는모델'];
 
 $('mt-samples').innerHTML = SAMPLES.map((s) =>
   `<button class="ghost" style="padding:4px 10px;font-size:12px;font-weight:400;margin:0 6px 6px 0"
@@ -862,7 +1237,7 @@ async function runMatch() {
     $('mt-list').innerHTML = '';
     $('mt-msg').innerHTML = `<div class="note warn">
       <b>후보가 없습니다.</b> 이것이 정상 동작입니다. 매처는 구조화된 필드에 걸린 것만 후보로 올리므로,
-      비슷해 보이는 것을 억지로 고르지 않습니다. 모델에게도 "없다고 답하라" 고 지시합니다.</div>`;
+      비슷해 보이는 것을 억지로 고르지 않습니다.</div>`;
     return;
   }
 
@@ -889,139 +1264,170 @@ async function runMatch() {
   if (tie) {
     $('mt-msg').innerHTML = `<div class="note warn">
       <b>1위와 2위가 동점입니다.</b> 점수 체계가 별칭의 길이나 특이도를 반영하지 않아 생기는 것으로,
-      알려진 한계이고 아직 안 고쳤습니다. 이 경우 최종 선택은 LLM 이 합니다.</div>`;
+      알려진 한계이고 아직 안 고쳤습니다. 이 경우 부르는 쪽이 후보 중에서 고릅니다.</div>`;
   }
 }
 
-/* ---------- 도구 ---------- */
-const GRADE_NOTE = {
-  read: '조회만 합니다. 게이트에 걸리지 않고 항상 실행됩니다.',
-  review: '아무것도 만들지 않고 가능 여부와 비용만 돌려줍니다.',
-  write: '자원을 만들거나 상태를 바꿉니다. dry-run 이 켜져 있으면 막힙니다.',
-  destructive: '되돌릴 수 없습니다. dry-run 이 켜져 있으면 막힙니다.'
+/* ---------- 자동화 엔진 ---------- */
+const WF_DESC = {
+  deploy: '응용을 배포합니다. AI 응용이면 <code>requires</code> 의 모델 서비스가 떠 있는지 보고, 없으면 모델 서비스 배포 단계를 먼저 넣습니다. 각 배포마다 계획(추천 포함) → 검토 → 배포 → 서빙 헬스 확인 순서입니다.',
+  heal: '서빙 헬스를 확인하고, 답하지 않으면 설치 명령을 한 번 다시 실행(업데이트)한 뒤 다시 확인합니다.',
+  control: '배포에 라이프사이클 동작(정지·재개·재부팅·종료)을 적용합니다.',
+  status: '노드 상태, 서빙 헬스, 가속기 실측을 한 번에 요약합니다. 읽기만 합니다.'
 };
-const GRADE_ORDER = ['read', 'review', 'write', 'destructive'];
 
-async function loadTools() {
-  const r = await api('GET', '/tools');
-  wire($('tl-wire'), r);
+let ENGINE_DRY;
 
-  if (!r.ok) { $('tl-gate').innerHTML = failNote(r); $('tl-list').innerHTML = ''; return; }
-
-  const dry = r.data.dryRun;
-  const list = r.data.tools || [];
-  $('tl-count').textContent = list.length + ' 개';
-
-  $('tl-gate').innerHTML = dry
-    ? `<div class="note"><b>dry-run 켜짐.</b> <code>write</code> 와 <code>destructive</code> 도구는
-       계획과 사전 검증까지만 하고 멈춥니다. 아래에서 <span class="b b-on">게이트</span> 가 붙은 것들입니다.<br><br>
-       이것은 <b>요청 파라미터가 아니라 서비스 설정</b>입니다. 모델이 무엇을 판단하든 도구 계층에서 막습니다.
-       시스템 프롬프트에도 게이트 상태를 알려 주는데, 지키라고 부탁하는 것이 아니라
-       운영자에게 "다 했습니다" 라고 잘못 보고하지 않게 하려는 것입니다.</div>`
-    : `<div class="note bad"><b>dry-run 꺼짐.</b> 쓰기 도구가 실제로 실행되고 과금됩니다.</div>`;
-
-  $('tl-list').innerHTML = GRADE_ORDER.map((g) => {
-    const items = list.filter((t) => t.grade === g);
-    if (!items.length) return '';
-    return `
-      <div style="margin-bottom:20px">
-        <div style="margin-bottom:6px">
-          <span class="b b-${g}">${g}</span>
-          <span style="font-size:12px;color:var(--ink-2);margin-left:8px">${esc(GRADE_NOTE[g] || '')}</span>
-        </div>
-        <table>
-          <tr><th style="width:230px">도구</th><th>하는 일</th><th style="width:78px">게이트</th></tr>
-          ${items.map((t) => `<tr>
-            <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b>
-              <details class="wire" style="margin-top:6px;border:0;padding:0">
-                <summary style="font-size:11px">입력 스키마</summary>
-                <pre class="json" style="margin-top:6px;font-size:11px">${esc(JSON.stringify(t.inputSchema, null, 2))}</pre>
-              </details>
-            </td>
-            <td style="font-size:12.5px;color:var(--ink-2)">${esc(t.description)}</td>
-            <td>${t.guardedByDryRun ? '<span class="b b-on">걸림</span>' : '<span class="b b-mut">없음</span>'}</td>
-          </tr>`).join('')}
-        </table>
-      </div>`;
-  }).join('');
+async function loadEnginePage() {
+  await ensureApps();
+  fillAppSelect();
+  engineForm();
+  loadEngineRuns();
+  const c = await api('GET', '/engine/card');
+  if (c.ok && c.data) ENGINE_DRY = c.data.dryRun;
 }
 
-/* ---------- 지시 ---------- */
-async function runIntent() {
-  const intent = $('in-q').value;
-  const ns = $('in-ns').value || 'default';
+function engineForm() {
+  const wf = $('en-wf').value;
+  $('en-wf-desc').innerHTML = WF_DESC[wf] || '';
+  $('en-f-deploy').style.display = wf === 'deploy' ? '' : 'none';
+  $('en-f-target').style.display = wf === 'deploy' ? 'none' : '';
+  $('en-f-app2').style.display = (wf === 'heal' || wf === 'status') ? '' : 'none';
+  $('en-f-action').style.display = wf === 'control' ? '' : 'none';
+}
 
-  $('in-btn').disabled = true;
-  $('in-msg').textContent = '모델에 묻는 중... (도구 호출을 반복하므로 시간이 걸릴 수 있습니다)';
-  $('in-result').innerHTML = '';
+function engineInput(wf) {
+  if (wf === 'deploy') return { appId: $('en-app').value, deploymentName: $('en-name').value.trim() };
+  const input = { deploymentId: $('en-dep').value.trim() };
+  if (wf === 'control') input.action = $('en-action').value;
+  else if ($('en-app2').value) input.appId = $('en-app2').value;
+  return input;
+}
 
-  const r = await api('POST', `/partner/nl/ns/${encodeURIComponent(ns)}/intents`, { intent });
-  wire($('in-wire'), r);
+async function runWorkflow() {
+  const wf = $('en-wf').value;
+  const ns = $('en-ns').value || 'default';
+  const input = engineInput(wf);
 
-  $('in-btn').disabled = false;
-  $('in-msg').textContent = '';
+  /* With the gate open a deploy or control run changes real resources and is
+     billed, so the button asks once more. Status only reads. */
+  if (wf !== 'status' && ENGINE_DRY === false &&
+      !confirm('dry-run 이 꺼져 있습니다. 실제 자원이 만들어지거나 바뀌고 과금됩니다. 실행할까요?')) return;
+
+  $('en-btn').disabled = true;
+  $('en-msg').textContent = '엔진이 단계를 실행하는 중... (CB-Tumblebug 호출이 있어 시간이 걸릴 수 있습니다)';
+  $('en-result').innerHTML = '';
+
+  const r = await api('POST', `/engine/workflows/${encodeURIComponent(wf)}?ns=${encodeURIComponent(ns)}`, input);
+  wire($('en-wire'), r);
+  $('en-btn').disabled = false;
+  $('en-msg').textContent = '';
 
   if (!r.ok) {
     let extra = '';
-    const msg = (r.data && r.data.message) || '';
     if (r.status === 502) {
-      extra = `<div class="note">자연어 에이전트(모의)가 응답하지 않습니다. 지시는 AI-App 서비스를 거쳐
-        에이전트(<code>AIAPP_MOCK_NL_URL</code>)로 넘어가므로, 에이전트가 떠 있는지 확인해 주세요.</div>`;
-    } else if (r.status === 503 && /tool server/i.test(msg)) {
-      extra = `<div class="note">에이전트가 자동화 엔진의 MCP 서버(<code>AIAPP_MOCK_NL_ENGINE_MCP_URL</code>)에 닿지 못했습니다.
-        엔진이 뜨면 다음 지시부터 다시 붙습니다.</div>`;
+      extra = `<div class="note">자동화 엔진이 응답하지 않습니다. AI-App 서비스가 <code>AIAPP_ENGINE_URL</code> 로 넘기므로 엔진이 떠 있는지 확인해 주세요.</div>`;
     } else if (r.status === 503) {
-      extra = `<div class="note">계획 모델이 설정되지 않았습니다. <code>AIAPP_LLM_API_KEY</code> 를 주면
-        이 경로가 열립니다. <b>나머지 엔드포인트는 이것과 무관하게 전부 동작합니다</b> -
-        모델이 없다고 서비스가 안 뜨지는 않습니다.</div>`;
+      extra = `<div class="note">엔진이 AI-App 의 MCP 서버(<code>AIAPP_APP_MCP_URL</code>)에 닿지 못했습니다. 실행 기록은 남지 않았습니다.</div>`;
+    } else if (r.status === 400) {
+      extra = `<div class="note">입력이 비었거나 형식이 맞지 않습니다. 워크플로마다 필요한 칸을 채워 주세요.</div>`;
     }
-    $('in-result').innerHTML = failNote(r) + extra;
+    $('en-result').innerHTML = failNote(r) + extra;
     return;
   }
+  $('en-result').innerHTML = renderRun(r.data || {});
+  loadEngineRuns();
+}
 
-  const d = r.data || {};
-  const steps = d.steps || [];
-  $('in-result').innerHTML = `
-    <div class="stat" style="margin-bottom:12px">
-      <div class="k">에이전트의 답 · ${esc(d.runId || '')}</div>
-      <div class="v sm">${esc(d.answer || '')}</div>
+/* renderRun draws one engine run: a summary and every step with the AI-App
+   tool it called and how it ended. */
+function renderRun(run) {
+  const steps = run.steps || [];
+  const took = run.startedAt && run.endedAt
+    ? ((new Date(run.endedAt) - new Date(run.startedAt)) / 1000).toFixed(1) + '초' : '-';
+  return `
+    <div class="grid g3">
+      <div class="stat"><div class="k">상태</div><div class="v">${stBadge(run.status)}</div></div>
+      <div class="stat"><div class="k">워크플로 · 실행 ID</div><div class="v sm mono">${esc(run.workflow || '-')} · ${esc(run.runId || '-')}</div></div>
+      <div class="stat"><div class="k">dry-run · 소요</div><div class="v sm">${run.dryRun
+        ? '<span class="b b-off">켜짐</span>' : '<span class="b b-on">꺼짐</span>'} · ${esc(took)}</div></div>
     </div>
-    ${steps.length ? `<table>
-      <tr><th style="width:34px">#</th><th>도구</th><th style="width:96px">등급</th>
-          <th style="width:86px">실행</th><th>인자</th></tr>
+    <div class="note" style="margin-top:10px"><b>엔진 메시지</b> ${esc(run.message || '')}</div>
+    ${steps.length ? `<table style="margin-top:8px">
+      <tr><th style="width:34px">#</th><th>단계</th><th style="width:190px">호출한 AI-App 도구</th>
+          <th style="width:96px">상태</th><th>메시지</th></tr>
       ${steps.map((s, i) => `<tr>
-        <td>${i + 1}</td>
-        <td class="mono" style="font-size:12px">${esc(s.name || s.tool || '')}</td>
-        <td><span class="b b-${esc(s.grade || 'mut')}">${esc(s.grade || '?')}</span></td>
-        <td>${s.error
-              ? '<span class="b b-mut">실패</span>'
-              : s.executed === false
-                ? '<span class="b b-on">막힘</span>'
-                : '<span class="b b-off">실행됨</span>'}</td>
-        <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre>
+        <td>${esc(s.index || i + 1)}</td>
+        <td style="font-size:12.5px">${esc(s.name || '')}</td>
+        <td class="mono" style="font-size:12px">${esc(s.tool || '')}</td>
+        <td>${stBadge(s.status)}</td>
+        <td style="font-size:12px;color:var(--ink-2)">${esc(s.message || '')}
           ${s.error ? `<div class="err" style="font-size:12px">${esc(s.error)}</div>` : ''}</td>
       </tr>`).join('')}
-    </table>` : '<div class="empty">도구 호출이 없었습니다.</div>'}
-    ${steps.some((s) => s.executed === false && !s.error)
-      ? `<div class="note warn" style="margin-top:12px"><b>게이트가 막은 호출이 있습니다.</b>
-         무엇을 하려 했는지는 그대로 기록에 남습니다.</div>` : ''}
-    ${steps.some((s) => s.error)
-      ? `<div class="note" style="margin-top:12px"><b>실패한 호출이 있습니다.</b>
-         게이트와 무관하게 도구가 오류를 냈고, 서버가 낸 메시지를 그대로 보여 줍니다.</div>` : ''}`;
+    </table>` : '<div class="empty">단계가 없습니다.</div>'}
+    ${steps.some((s) => s.status === 'blocked')
+      ? `<div class="note warn" style="margin-top:12px"><b>dry-run 게이트가 막은 단계가 있습니다.</b>
+         그 결과가 있어야 하는 다음 단계는 실행한 것처럼 보이지 않게 <code>waiting</code> 으로 남깁니다.</div>` : ''}`;
+}
+
+async function loadEngineRuns() {
+  const r = await api('GET', '/engine/runs');
+  wire($('en-runs-wire'), r);
+  if (!r.ok) { $('en-runs').innerHTML = failNote(r); $('en-runs-count').textContent = ''; return; }
+
+  const runs = (r.data && r.data.runs) || [];
+  $('en-runs-count').textContent = runs.length + ' 건';
+  if (!runs.length) { $('en-runs').innerHTML = '<div class="empty">아직 엔진 실행이 없습니다.</div>'; return; }
+
+  $('en-runs').innerHTML = `<table>
+    <tr><th style="width:150px">실행 ID</th><th style="width:80px">워크플로</th><th style="width:96px">상태</th>
+        <th>대상</th><th style="width:170px">시각</th></tr>
+    ${runs.map((x) => `<tr class="click" onclick="showEngineRun('${esc(x.runId)}')">
+      <td class="mono" style="font-size:12px">${esc(x.runId)}</td>
+      <td class="mono" style="font-size:12px">${esc(x.workflow)}</td>
+      <td>${stBadge(x.status)}</td>
+      <td style="font-size:12.5px">${esc(targetOf(x))}</td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(x.startedAt))}</td>
+    </tr>`).join('')}</table>`;
+}
+
+async function showEngineRun(id) {
+  if (!id) return;
+  const r = await api('GET', '/engine/runs/' + encodeURIComponent(id));
+  $('en-detail-panel').style.display = '';
+  $('en-detail-id').textContent = id;
+  $('en-detail').innerHTML = r.ok ? renderRun(r.data || {}) : failNote(r);
+  wire($('en-detail-wire'), r);
+  $('en-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* openEngineRun moves to the engine page and opens one run there. */
+function openEngineRun(id) {
+  show('engine');
+  showEngineRun(id);
 }
 
 /* ---------- 배포 ---------- */
 function fillAppSelect() {
-  const sel = $('dp-app');
-  if (!sel) return;
-  const keep = sel.value;
-  sel.innerHTML = APPS.map((a) =>
+  const opts = APPS.map((a) =>
     `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('');
-  if (keep) sel.value = keep;
+  for (const id of ['dp-app', 'en-app', 'rc-app']) {
+    const sel = $(id);
+    const keep = sel.value;
+    sel.innerHTML = opts;
+    if (keep) sel.value = keep;
+  }
+  const sel2 = $('en-app2');
+  const keep2 = sel2.value;
+  sel2.innerHTML = '<option value="">(배포 때 쓴 응용)</option>' + opts;
+  sel2.value = keep2;
+  if (!$('en-app').dataset.touched && APPS.some((a) => a.id === 'open-webui-llama31')) {
+    $('en-app').value = 'open-webui-llama31';
+  }
 }
 
 async function loadDeployPage() {
-  if (!APPS.length) await loadCatalog();
+  await ensureApps();
   fillAppSelect();
   // The listing runs on open so that a missing platform shows up here rather
   // than after a click that looks like it should have worked.
@@ -1030,55 +1436,56 @@ async function loadDeployPage() {
 
 async function runPlan() {
   const ns = $('dp-ns').value || 'default';
-  const body = { appId: $('dp-app').value, infraName: $('dp-name').value };
+  const appId = $('dp-app').value;
+  const body = { appId, infraName: $('dp-name').value };
 
   $('dp-plan-msg').textContent = '부르는 중...';
   const r = await api('POST', `/ns/${encodeURIComponent(ns)}/deployments/plan`, body);
   wire($('dp-plan-wire'), r);
   $('dp-plan-msg').textContent = '';
 
-  if (!r.ok) { $('dp-plan-out').innerHTML = failNote(r) + platformNote(r); return; }
+  if (!r.ok) {
+    const app = APPS.find((a) => a.id === appId) || {};
+    let extra = '';
+    if (r.status === 409 && app.kind === 'application') {
+      extra = `<div class="note info">
+        <b>AI 응용은 모델 서비스가 먼저 떠 있어야 합니다.</b>
+        자동화 엔진의 <code>deploy</code> 워크플로가 모델 서비스부터 순서대로 처리합니다.
+        <div style="margin-top:8px"><button class="ghost" onclick="goEngineDeploy()">자동화 엔진에서 deploy 로 열기</button></div></div>`;
+    } else if (r.status === 422) {
+      extra = `<div class="note info"><b>추천 API 가 설정되지 않았습니다.</b>
+        AI-App 은 인프라 추천을 직접 하지 않고 <code>AIAPP_RECOMMENDER_URL</code> 의 추천 API(협력 기관 담당)를 부릅니다.
+        설정이 없으면 요청에 <code>specId</code> 와 <code>imageId</code> 를 직접 지정해야 합니다.</div>`;
+    }
+    $('dp-plan-out').innerHTML = failNote(r) + extra + platformNote(r);
+    return;
+  }
 
   const p = r.data || {};
   $('dp-plan-out').innerHTML = `
     <div class="grid g3">
-      <div class="stat"><div class="k">스펙</div><div class="v sm mono">${esc(p.specId || p.spec?.id || '-')}</div></div>
-      <div class="stat"><div class="k">이미지</div><div class="v sm mono">${esc(p.imageId || p.image?.id || '-')}</div></div>
+      <div class="stat"><div class="k">스펙 · ${esc(sourceLabel(p.specSource))}</div><div class="v sm mono">${esc(p.specId || p.spec?.id || '-')}</div></div>
+      <div class="stat"><div class="k">이미지 · ${esc(sourceLabel(p.imageSource))}</div><div class="v sm mono">${esc(p.imageId || p.image?.id || '-')}</div></div>
       <div class="stat"><div class="k">가속기</div><div class="v sm">${esc(p.acceleratorSummary || '-')}</div></div>
     </div>
     <div class="grid g3" style="margin-top:12px">
       <div class="stat"><div class="k">시간당 비용</div><div class="v sm">${esc(p.estimatedCost || '검토 후 산출')}</div></div>
+      ${(p.requirements || []).length ? `<div class="stat"><div class="k">연결된 모델 서비스</div><div class="v sm mono">${
+        p.requirements.map((q) => esc(q.appId + ' → ' + q.infraId)).join('<br>')}</div></div>` : ''}
     </div>
     <div class="note" style="margin-top:12px">클라우드에 <b>아무것도 만들지 않았습니다.</b>
       계획만 세운 것이고 전체 응답은 아래 접이식에서 볼 수 있습니다.</div>`;
 }
 
-async function runSpecs() {
-  const appId = $('dp-app').value;
-  if (!appId) return;
-
-  const r = await api('GET', '/apps/' + encodeURIComponent(appId) + '/specs');
-  wire($('dp-spec-wire'), r);
-
-  if (!r.ok) { $('dp-spec-out').innerHTML = failNote(r) + platformNote(r); return; }
-
-  const rows = Array.isArray(r.data) ? r.data : (r.data && r.data.specs) || [];
-  if (!rows.length) { $('dp-spec-out').innerHTML = '<div class="empty">조건에 맞는 스펙이 없습니다.</div>'; return; }
-
-  $('dp-spec-out').innerHTML = `<table>
-    <tr><th>스펙</th><th>가속기</th><th>vCPU / 메모리</th><th>시간당</th></tr>
-    ${rows.map((s) => `<tr>
-      <td class="mono" style="font-size:12px">${esc(s.id || s.specId || '')}</td>
-      <td>${esc(s.acceleratorModel || s.acceleratorType || '-')}
-          ${s.acceleratorCount ? ` x${esc(s.acceleratorCount)}` : ''}
-          ${s.acceleratorMemoryGB ? ` · ${esc(s.acceleratorMemoryGB)}GB` : ''}</td>
-      <td>${esc(s.vCPU || '-')} / ${esc(s.memoryGiB || '-')}GiB</td>
-      <td>${esc(s.costPerHour ?? s.cost ?? '-')}</td>
-    </tr>`).join('')}
-  </table>
-  <div class="note" style="margin-top:12px">
-    <b>요청에 CSP 이름이 없습니다.</b> 응용이 말한 가속기 조건만 보냈고, 어느 클라우드의 어느
-    인스턴스가 나올지는 결과입니다.</div>`;
+/* goEngineDeploy carries the plan form over to the engine deploy workflow. */
+function goEngineDeploy() {
+  show('engine');
+  $('en-wf').value = 'deploy';
+  engineForm();
+  $('en-app').value = $('dp-app').value;
+  $('en-app').dataset.touched = '1';
+  $('en-name').value = $('dp-name').value;
+  $('en-ns').value = $('dp-ns').value;
 }
 
 async function loadDeployments() {
@@ -1091,7 +1498,8 @@ async function loadDeployments() {
 
   if (!r.ok) { $('dp-list').innerHTML = failNote(r) + platformNote(r); return; }
 
-  const rows = (r.data && (r.data.deployments || r.data.records)) || (Array.isArray(r.data) ? r.data : []);
+  const rows = deploymentRows(r);
+  fillDeploymentIds(rows);
   if (!rows.length) { $('dp-list').innerHTML = '<div class="empty">배포가 없습니다.</div>'; return; }
 
   $('dp-list').innerHTML = `<table>
@@ -1099,25 +1507,46 @@ async function loadDeployments() {
     ${rows.map((d) => `<tr>
       <td class="mono" style="font-size:12px">${esc(d.infraId || d.id || d.name || '')}</td>
       <td>${esc(d.status || '-')}</td>
-      <td>${esc(d.appId || '-')}</td>
+      <td>${esc(d.appId || (d.label && d.label['ai-mcmp.app-id']) || '-')}</td>
     </tr>`).join('')}</table>`;
 }
 
-async function runProbe() {
-  const ns = $('dp-ns').value || 'default';
-  const infra = $('dp-infra').value;
-  if (!infra) { $('dp-probe-out').innerHTML = '<div class="note">배포 이름을 넣어 주세요.</div>'; return; }
+function deploymentRows(r) {
+  return (r.data && (r.data.deployments || r.data.records)) || (Array.isArray(r.data) ? r.data : []);
+}
 
-  $('dp-probe-out').innerHTML = '<div class="spin">노드에 묻는 중...</div>';
+function fillDeploymentIds(rows) {
+  $('dep-ids').innerHTML = rows.map((d) =>
+    `<option value="${esc(d.infraId || d.id || d.name || '')}"></option>`).join('');
+}
+
+/* ---------- 모니터링 ---------- */
+async function loadMonitorTargets() {
+  const ns = $('mo-ns').value || 'default';
+  $('mo-list-msg').textContent = '부르는 중...';
+  const r = await api('GET', `/ns/${encodeURIComponent(ns)}/deployments`);
+  if (!r.ok) { $('mo-list-msg').innerHTML = failNote(r) + platformNote(r); return; }
+  const rows = deploymentRows(r);
+  fillDeploymentIds(rows);
+  $('mo-list-msg').textContent = rows.length
+    ? `배포 ${rows.length} 건을 불러왔습니다. 배포 이름 칸에서 고르세요.` : '배포가 없습니다.';
+}
+
+async function runProbe() {
+  const ns = $('mo-ns').value || 'default';
+  const infra = $('mo-infra').value;
+  if (!infra) { $('mo-probe-out').innerHTML = '<div class="note">배포 이름을 넣어 주세요.</div>'; return; }
+
+  $('mo-probe-out').innerHTML = '<div class="spin">노드에 묻는 중...</div>';
   const r = await api('GET',
     `/ns/${encodeURIComponent(ns)}/deployments/${encodeURIComponent(infra)}/accelerator`);
-  wire($('dp-probe-wire'), r);
+  wire($('mo-probe-wire'), r);
 
-  if (!r.ok) { $('dp-probe-out').innerHTML = failNote(r) + platformNote(r); return; }
+  if (!r.ok) { $('mo-probe-out').innerHTML = failNote(r) + platformNote(r); return; }
 
   const p = r.data || {};
   const devs = p.devices || [];
-  $('dp-probe-out').innerHTML = `
+  $('mo-probe-out').innerHTML = `
     <div class="grid g3">
       <div class="stat"><div class="k">모드</div><div class="v sm">${esc(p.mode || '-')}</div></div>
       <div class="stat"><div class="k">답한 출처</div><div class="v sm mono">${esc((p.sources || []).join(', ') || '-')}</div></div>
@@ -1148,20 +1577,20 @@ async function runProbe() {
 }
 
 async function runHealth() {
-  const ns = $('dp-ns').value || 'default';
-  const infra = $('dp-health-infra').value;
-  if (!infra) { $('dp-health-out').innerHTML = '<div class="note">배포 이름을 넣어 주세요.</div>'; return; }
+  const ns = $('mo-ns').value || 'default';
+  const infra = $('mo-infra').value;
+  if (!infra) { $('mo-health-out').innerHTML = '<div class="note">배포 이름을 넣어 주세요.</div>'; return; }
 
-  $('dp-health-out').innerHTML = '<div class="spin">노드에 묻는 중...</div>';
+  $('mo-health-out').innerHTML = '<div class="spin">노드에 묻는 중...</div>';
   const r = await api('GET',
     `/ns/${encodeURIComponent(ns)}/deployments/${encodeURIComponent(infra)}/health`);
-  wire($('dp-health-wire'), r);
+  wire($('mo-health-wire'), r);
 
-  if (!r.ok) { $('dp-health-out').innerHTML = failNote(r) + platformNote(r); return; }
+  if (!r.ok) { $('mo-health-out').innerHTML = failNote(r) + platformNote(r); return; }
 
   const h = r.data || {};
   const nodes = h.nodes || [];
-  $('dp-health-out').innerHTML = `
+  $('mo-health-out').innerHTML = `
     <div class="grid g3">
       <div class="stat"><div class="k">상태</div><div class="v sm">${h.ready
         ? '<span class="b b-off">준비됨</span>' : '<span class="b b-on">안 됨</span>'}</div></div>
@@ -1193,19 +1622,240 @@ function platformNote(r) {
     <code>AIAPP_TUMBLEBUG_BASE_URL</code> 을 주면 열립니다.</div>`;
 }
 
+/* ---------- 도구 ---------- */
+const GRADE_NOTE = {
+  read: '조회만 합니다. 게이트에 걸리지 않고 항상 실행됩니다.',
+  review: '아무것도 만들지 않고 가능 여부와 비용만 돌려줍니다.',
+  write: '자원을 만들거나 상태를 바꿉니다. dry-run 이 켜져 있으면 막힙니다.',
+  destructive: '되돌릴 수 없습니다. dry-run 이 켜져 있으면 막힙니다.'
+};
+const GRADE_ORDER = ['read', 'review', 'write', 'destructive'];
+
+async function loadTools() {
+  const r = await api('GET', '/tools');
+  wire($('tl-wire'), r);
+
+  if (!r.ok) { $('tl-gate').innerHTML = failNote(r); $('tl-list').innerHTML = ''; return; }
+
+  const dry = r.data.dryRun;
+  const list = r.data.tools || [];
+  $('tl-count').textContent = list.length + ' 개';
+
+  $('tl-gate').innerHTML = dry
+    ? `<div class="note"><b>dry-run 켜짐.</b> <code>write</code> 와 <code>destructive</code> 도구는
+       계획과 사전 검증까지만 하고 멈춥니다. 아래에서 <span class="b b-on">걸림</span> 이 붙은 것들입니다.<br><br>
+       이것은 <b>요청 파라미터가 아니라 서비스 설정</b>입니다. 자동화 엔진이 부르든 API 를 직접 부르든 도구 계층에서 막고,
+       엔진은 막힌 단계를 <span class="b b-st-blocked">blocked</span> 로 기록합니다.</div>`
+    : `<div class="note bad"><b>dry-run 꺼짐.</b> 쓰기 도구가 실제로 실행되고 과금됩니다.</div>`;
+
+  $('tl-list').innerHTML = GRADE_ORDER.map((g) => {
+    const items = list.filter((t) => t.grade === g);
+    if (!items.length) return '';
+    return `
+      <div style="margin-bottom:20px">
+        <div style="margin-bottom:6px">
+          <span class="b b-${g}">${g}</span>
+          <span style="font-size:12px;color:var(--ink-2);margin-left:8px">${esc(GRADE_NOTE[g] || '')}</span>
+        </div>
+        <table>
+          <tr><th style="width:230px">도구</th><th>하는 일</th><th style="width:78px">게이트</th></tr>
+          ${items.map((t) => `<tr>
+            <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b>
+              <details class="wire" style="margin-top:6px;border:0;padding:0">
+                <summary style="font-size:11px">입력 스키마</summary>
+                <pre class="json" style="margin-top:6px;font-size:11px">${esc(JSON.stringify(t.inputSchema, null, 2))}</pre>
+              </details>
+            </td>
+            <td style="font-size:12.5px;color:var(--ink-2)">${esc(t.description)}</td>
+            <td>${t.guardedByDryRun ? '<span class="b b-on">걸림</span>' : '<span class="b b-mut">없음</span>'}</td>
+          </tr>`).join('')}
+        </table>
+      </div>`;
+  }).join('');
+}
+
+/* ---------- 협력 기관 · 자연어 지시 ---------- */
+async function runIntent() {
+  const intent = $('in-q').value;
+  const ns = $('in-ns').value || 'default';
+
+  $('in-btn').disabled = true;
+  $('in-result').innerHTML = '';
+  const t0 = Date.now();
+  const tick = () => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('in-msg').textContent = `모델 응답 대기 ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}
+      (모의 에이전트의 LLM 이 엔진 도구 호출을 반복하므로 시간이 걸릴 수 있습니다)`;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+
+  const r = await api('POST', `/partner/nl/ns/${encodeURIComponent(ns)}/intents`, { intent });
+  clearInterval(timer);
+  wire($('in-wire'), r);
+
+  $('in-btn').disabled = false;
+  $('in-msg').textContent = '';
+
+  if (!r.ok) {
+    let extra = '';
+    const msg = (r.data && r.data.message) || '';
+    if (r.status === 502) {
+      extra = `<div class="note">자연어 에이전트(모의)가 응답하지 않습니다. 지시는 AI-App 서비스를 거쳐
+        에이전트(<code>AIAPP_MOCK_NL_URL</code>)로 넘어가므로, 에이전트가 떠 있는지 확인해 주세요.</div>`;
+    } else if (r.status === 503 && /tool server/i.test(msg)) {
+      extra = `<div class="note">에이전트가 자동화 엔진의 MCP 서버(<code>AIAPP_MOCK_NL_ENGINE_MCP_URL</code>)에 닿지 못했습니다.
+        엔진이 뜨면 다음 지시부터 다시 붙습니다.</div>`;
+    } else if (r.status === 503) {
+      extra = `<div class="note">모의 에이전트의 LLM 이 설정되지 않았습니다. <code>AIAPP_LLM_API_KEY</code> 를 주면
+        이 경로가 열립니다. <b>이노그리드 구현(AI-App, 자동화 엔진)은 이것과 무관하게 전부 동작합니다</b> -
+        엔진은 자동화 엔진 화면에서 구조화된 요청으로 직접 실행할 수 있습니다.</div>`;
+    }
+    $('in-result').innerHTML = failNote(r) + extra;
+    return;
+  }
+
+  const d = r.data || {};
+  const steps = d.steps || [];
+  $('in-result').innerHTML = `
+    <div class="stat mock" style="margin-bottom:12px">
+      <div class="k">에이전트의 답 · ${esc(d.runId || '')}</div>
+      <div class="v sm">${esc(d.answer || '')}</div>
+    </div>
+    ${steps.length ? `<table>
+      <tr><th style="width:34px">#</th><th>엔진 도구</th><th style="width:96px">등급</th>
+          <th style="width:86px">실행</th><th style="width:200px">엔진 실행</th><th>인자</th></tr>
+      ${steps.map((s, i) => `<tr>
+        <td>${i + 1}</td>
+        <td class="mono" style="font-size:12px">${esc(s.tool || s.name || '')}</td>
+        <td><span class="b b-${esc(s.grade || 'mut')}">${esc(s.grade || '?')}</span></td>
+        <td>${s.error
+              ? '<span class="b b-mut">실패</span>'
+              : s.executed === false
+                ? '<span class="b b-on">막힘</span>'
+                : '<span class="b b-off">실행됨</span>'}</td>
+        <td>${s.engineRunId
+              ? `<a class="link mono" style="font-size:12px" onclick="openEngineRun('${esc(s.engineRunId)}')">${esc(s.engineRunId)}</a>
+                 ${s.engineStatus ? stBadge(s.engineStatus) : ''}`
+              : '<span class="b b-mut">없음</span>'}</td>
+        <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre>
+          ${s.error ? `<div class="err" style="font-size:12px">${esc(s.error)}</div>` : ''}</td>
+      </tr>`).join('')}
+    </table>` : '<div class="empty">도구 호출이 없었습니다.</div>'}
+    ${steps.some((s) => s.executed === false && !s.error)
+      ? `<div class="note warn" style="margin-top:12px"><b>게이트가 막은 호출이 있습니다.</b>
+         엔진 실행 ID 를 누르면 어느 단계가 막혔는지 봅니다.</div>` : ''}
+    ${steps.some((s) => s.error)
+      ? `<div class="note" style="margin-top:12px"><b>실패한 호출이 있습니다.</b>
+         게이트와 무관하게 도구가 오류를 냈고, 서버가 낸 메시지를 그대로 보여 줍니다.</div>` : ''}`;
+}
+
+/* ---------- 협력 기관 · 인프라 추천 ---------- */
+async function loadRecommendPage() {
+  await ensureApps();
+  fillAppSelect();
+  const ms = APPS.find((a) => a.kind !== 'application');
+  if (ms) $('rc-app').value = ms.id;
+  runSpecs();
+}
+
+async function runSpecs() {
+  const appId = $('rc-app').value;
+  if (!appId) return;
+
+  $('rc-spec-out').innerHTML = '<div class="spin">추천 API 를 부르는 중...</div>';
+  const r = await api('GET', '/apps/' + encodeURIComponent(appId) + '/specs');
+  wire($('rc-spec-wire'), r);
+
+  if (!r.ok) {
+    const extra = r.status === 422
+      ? `<div class="note info"><b>추천 API 가 설정되지 않았습니다.</b>
+         AI-App 의 <code>AIAPP_RECOMMENDER_URL</code> 이 비어 있어 추천을 부를 곳이 없습니다.
+         이 경우 배포 요청에 <code>specId</code> 와 <code>imageId</code> 를 직접 지정해야 합니다.</div>`
+      : r.status === 502
+        ? `<div class="note">추천 API 가 실패했거나 닿지 않았습니다. AI-App 은 그 응답을 그대로 실패로 돌려줍니다.</div>` : '';
+    $('rc-spec-out').innerHTML = failNote(r) + extra + platformNote(r);
+    return;
+  }
+
+  const rows = Array.isArray(r.data) ? r.data : (r.data && r.data.specs) || [];
+  if (!rows.length) { $('rc-spec-out').innerHTML = '<div class="empty">조건에 맞는 스펙이 없습니다.</div>'; return; }
+
+  $('rc-spec-out').innerHTML = `
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">
+      출처 <span class="b b-mock">협력 기관 추천 API(모의)</span>
+      AI-App 이 <code>AIAPP_RECOMMENDER_URL</code> 로 부른 결과 · 후보 ${rows.length} 건</div>
+    <table>
+    <tr><th>스펙</th><th>CSP · 리전</th><th>가속기</th><th>vCPU / 메모리</th><th>시간당</th></tr>
+    ${rows.map((s) => `<tr>
+      <td class="mono" style="font-size:12px">${esc(s.id || s.specId || '')}</td>
+      <td style="font-size:12px">${esc(s.providerName || '-')} · ${esc(s.regionName || '-')}</td>
+      <td>${esc(s.acceleratorModel || s.acceleratorType || '-')}
+          ${s.acceleratorCount ? ` x${esc(s.acceleratorCount)}` : ''}
+          ${s.acceleratorMemoryGB ? ` · ${esc(s.acceleratorMemoryGB)}GB` : ''}</td>
+      <td>${esc(s.vCPU || '-')} / ${esc(s.memoryGiB || '-')}GiB</td>
+      <td>${esc(s.costPerHour ?? s.cost ?? '-')}</td>
+    </tr>`).join('')}
+  </table>
+  <div class="note" style="margin-top:12px">
+    <b>요청에 CSP 이름이 없습니다.</b> AI-App 은 응용의 AppSpec 을 그대로 보냈고, 어느 클라우드의 어느
+    인스턴스가 나올지는 추천 API 의 결과입니다.</div>`;
+}
+
+/* runSourceCheck plans the chosen application once, without creating anything,
+   to show which plan values the recommender API decided. */
+async function runSourceCheck() {
+  const appId = $('rc-app').value;
+  if (!appId) return;
+  $('rc-src-out').innerHTML = '<div class="spin">계획을 만드는 중...</div>';
+  const r = await api('POST', '/ns/default/deployments/plan', { appId, infraName: 'recommend-check' });
+  wire($('rc-src-wire'), r, '출처 확인에 부른 계획 요청과 응답');
+
+  if (!r.ok) {
+    const app = APPS.find((a) => a.id === appId) || {};
+    const extra = r.status === 409 && app.kind === 'application'
+      ? `<div class="note info">AI 응용은 모델 서비스가 먼저 떠 있어야 계획이 나옵니다. 모델 서비스를 골라 확인해 주세요.</div>`
+      : r.status === 422 ? `<div class="note info"><b>추천 API 가 설정되지 않았습니다.</b></div>` : '';
+    $('rc-src-out').innerHTML = failNote(r) + extra + platformNote(r);
+    return;
+  }
+  const p = r.data || {};
+  $('rc-src-out').innerHTML = `<table>
+    <tr><th style="width:90px">값</th><th>정한 것</th><th>출처 (plan 응답 그대로)</th><th>근거</th></tr>
+    <tr><td>스펙</td><td class="mono" style="font-size:12px">${esc(p.specId || '-')}</td>
+      <td>${/:remote$/.test(p.specSource || '') ? '<span class="b b-mock">협력 기관 추천 API(모의)</span>' : esc(sourceLabel(p.specSource))}
+        <span class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(p.specSource || '')}</span></td><td></td></tr>
+    <tr><td>이미지</td><td class="mono" style="font-size:12px">${esc(p.imageId || '-')}</td>
+      <td>${/:remote$/.test(p.imageSource || '') ? '<span class="b b-mock">협력 기관 추천 API(모의)</span>' : esc(sourceLabel(p.imageSource))}
+        <span class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(p.imageSource || '')}</span></td>
+      <td style="font-size:12px;color:var(--ink-2)">${esc(p.imageReason || '')}</td></tr>
+  </table>`;
+}
+
 /* ---------- 아카이브 ---------- */
-/* Two processes keep two archives: deploy and control calls live in the AI-App
-   service, intent runs in the partner agent mock. Both are read and merged by
-   start time, and each row remembers where it came from so its detail is read
-   from the same place. The AI-App listing is { records }, the agent's { runs }. */
+/* Three processes keep three archives: deploy and control calls in the AI-App
+   service, workflow runs in the engine, intent runs in the partner agent mock.
+   All are read and merged by start time, and each row remembers where it came
+   from so its detail is read from the same place. The AI-App listing is
+   { records }, the other two { runs }. */
 const ARCHIVES = [
-  { path: '/archive', label: '배포 호출', key: 'records' },
-  { path: '/partner/nl/runs', label: '지시 실행 (모의)', key: 'runs' }
+  { path: '/archive', label: 'AI-App 배포 호출', key: 'records', mock: false },
+  { path: '/engine/runs', label: '자동화 엔진', key: 'runs', mock: false, engine: true },
+  { path: '/partner/nl/runs', label: '자연어 지시', key: 'runs', mock: true }
 ];
+
+/* targetOf names what a record was about: an instruction, or the application
+   or deployment the input named. */
+function targetOf(x) {
+  if (x.intent) return x.intent;
+  const i = x.input || (x.steps && x.steps[0] && x.steps[0].input) || {};
+  const parts = [i.appId, i.deploymentName || i.deploymentId || i.infraName || i.infraId, i.action].filter(Boolean);
+  return parts.join(' · ');
+}
 
 async function loadArchive() {
   const results = await Promise.all(ARCHIVES.map((a) => api('GET', a.path)));
-  wire($('ar-wire'), results[1], 'GET /archive 와 GET /partner/nl/runs 를 불렀습니다 (아래는 partner/nl/runs)');
+  wire($('ar-wire'), results[1], 'GET /archive, GET /engine/runs, GET /partner/nl/runs 를 불렀습니다 (아래는 engine/runs)');
 
   let notes = '';
   const rows = [];
@@ -1218,39 +1868,50 @@ async function loadArchive() {
   });
   rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
 
-  $('ar-count').textContent = rows.length + ' 건';
+  const bySrc = ARCHIVES.map((a, i) => `${a.label} ${rows.filter((x) => x._src === i).length}`).join(' · ');
+  $('ar-count').textContent = rows.length + ' 건 (' + bySrc + ')';
 
   if (!rows.length) {
     $('ar-list').innerHTML = notes + `<div class="empty">아직 기록이 없습니다.
-      자연어 지시를 실행하거나 배포를 부르면 여기에 쌓입니다.</div>`;
+      엔진 워크플로를 실행하거나 배포를 부르면 여기에 쌓입니다.</div>`;
     return;
   }
 
   $('ar-list').innerHTML = notes + `<table>
-    <tr><th style="width:190px">실행 ID</th><th style="width:96px">출처</th><th style="width:96px">종류</th>
-        <th>지시 / 대상</th><th style="width:150px">시각</th></tr>
-    ${rows.map((x) => `<tr class="click" onclick="showRun(${x._src}, '${esc(x.runId || x.id || '')}')">
+    <tr><th style="width:170px">실행 ID</th><th style="width:170px">출처</th><th style="width:90px">종류</th>
+        <th style="width:96px">상태</th><th>지시 / 대상</th><th style="width:170px">시각</th></tr>
+    ${rows.map((x) => {
+      const src = ARCHIVES[x._src];
+      const status = x.status ? stBadge(x.status)
+        : x.error ? '<span class="b b-st-failed">failed</span>' : '<span class="b b-mut">-</span>';
+      return `<tr class="click" onclick="showRun(${x._src}, '${esc(x.runId || x.id || '')}')">
       <td class="mono" style="font-size:12px">${esc(x.runId || x.id || '')}</td>
-      <td style="font-size:12px">${esc(ARCHIVES[x._src].label)}</td>
-      <td><span class="b b-mut">${esc(x.kind || '-')}</span></td>
-      <td>${esc(x.intent || x.infraName || x.appId || '')}</td>
-      <td style="font-size:12px;color:var(--ink-3)">${esc(x.startedAt || x.at || '')}</td>
-    </tr>`).join('')}</table>`;
+      <td style="font-size:12px">${src.mock
+        ? `<span class="b b-mock">협력 기관 · 모의</span> ${esc(src.label)}` : esc(src.label)}</td>
+      <td><span class="b b-mut">${esc(x.workflow || x.kind || '-')}</span></td>
+      <td>${status}</td>
+      <td style="font-size:12.5px">${esc(targetOf(x))}</td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(x.startedAt || x.at))}</td>
+    </tr>`;
+    }).join('')}</table>`;
 }
 
 async function showRun(src, id) {
   if (!id) return;
   const r = await api('GET', ARCHIVES[src].path + '/' + encodeURIComponent(id));
   $('ar-detail-panel').style.display = '';
-  $('ar-detail-id').textContent = id;
+  $('ar-detail-id').textContent = ARCHIVES[src].label + ' · ' + id;
+  $('ar-detail-run').innerHTML = ARCHIVES[src].engine && r.ok ? renderRun(r.data || {}) : '';
   $('ar-detail').textContent = r.data ? JSON.stringify(r.data, null, 2) : r.raw;
   wire($('ar-detail-wire'), r);
   $('ar-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ---------- boot ---------- */
+$('en-app').addEventListener('change', () => { $('en-app').dataset.touched = '1'; });
 renderToken();
 resetNewApp();
+engineForm();
 const start = (location.hash || '#overview').slice(1);
 show(loaders.hasOwnProperty(start) ? start : 'overview');
 </script>
