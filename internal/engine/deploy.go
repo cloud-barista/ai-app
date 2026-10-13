@@ -50,8 +50,9 @@ func (t target) label() string {
 // Deploy deploys an AI application. For an application, every model service
 // it requires that is not running in the namespace is deployed first, under a
 // name derived from DeploymentName. Each deployment is planned, reviewed,
-// deployed and, unless the dry-run gate held the deployment, checked until it
-// answers.
+// deployed and checked until it answers. Every deployment records all four
+// steps: one the dry-run gate keeps from running is recorded as waiting, one
+// an earlier failure keeps from running as skipped.
 func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run, error) {
 	switch {
 	case in.AppID == "":
@@ -65,7 +66,7 @@ func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run,
 	}
 
 	var app model.AppSpec
-	if _, ok := r.call(ctx, "read application "+in.AppID, "get_ai_app", map[string]string{"appId": in.AppID}, &app); !ok {
+	if _, ok := r.call(ctx, "read application "+in.AppID, toolGetApp, map[string]string{"appId": in.AppID}, &app); !ok {
 		return r.finish(), nil
 	}
 
@@ -75,7 +76,7 @@ func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run,
 		var list struct {
 			Deployments []tumblebug.InfraInfo `json:"deployments"`
 		}
-		step, ok := r.call(ctx, "find running model services", "list_deployments", map[string]string{}, &list)
+		step, ok := r.call(ctx, "find running model services", toolListDeployments, map[string]string{}, &list)
 		if !ok {
 			return r.finish(), nil
 		}
@@ -114,15 +115,28 @@ func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome 
 	args := deployArgs{AppID: t.appID, InfraName: t.name, SpecID: t.specID, ImageID: t.imageID}
 	label := t.label()
 	pending := []struct{ name, tool string }{
-		{"plan " + label, "plan_deployment"},
-		{"review " + label, "review_deployment"},
-		{"deploy " + label, "deploy_ai_app"},
+		{"plan " + label, toolPlanDeployment},
+		{"review " + label, toolReviewDeployment},
+		{"deploy " + label, toolDeployApp},
+	}
+	healthName := "check " + label + " answers"
+	healthArgs := healthInput(t.name, t.appID)
+	// waitHealth records the health check as held back because the
+	// deployment it checks was not provisioned.
+	waitHealth := func() {
+		r.add(healthName, toolCheckServingHealth, healthArgs, StepWaiting,
+			fmt.Sprintf("waits for %s to be provisioned (blocked by dry run)", t.name))
+	}
+	// skipFrom records pending[from:] and the health check as skipped.
+	skipFrom := func(from int) {
+		for _, p := range pending[from:] {
+			r.add(p.name, p.tool, args, StepSkipped, r.skipMessage())
+		}
+		r.add(healthName, toolCheckServingHealth, healthArgs, StepSkipped, r.skipMessage())
 	}
 
 	if r.failed {
-		for _, p := range pending {
-			r.add(p.name, p.tool, args, StepSkipped, r.skipMessage())
-		}
+		skipFrom(0)
 		return StepSkipped
 	}
 
@@ -137,13 +151,14 @@ func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome 
 		for _, p := range pending {
 			r.add(p.name, p.tool, args, StepWaiting, message)
 		}
+		waitHealth()
 		return StepWaiting
 	}
 
 	var plan model.DeploymentPlan
 	step, ok := r.call(ctx, pending[0].name, pending[0].tool, args, &plan)
 	if !ok {
-		r.skipRest(pending[1:], args)
+		skipFrom(1)
 		return StepFailed
 	}
 	// The rest of this deployment uses what the plan chose, so a recommender
@@ -157,7 +172,7 @@ func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome 
 	}
 	step, ok = r.call(ctx, pending[1].name, pending[1].tool, args, &reviewed)
 	if !ok {
-		r.skipRest(pending[2:], args)
+		skipFrom(2)
 		return StepFailed
 	}
 	if reviewed.Review == nil || !reviewed.Review.CreationViable {
@@ -167,7 +182,7 @@ func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome 
 				reviewed.Review.OverallStatus, reviewed.Review.OverallMessage)
 		}
 		r.fail(step, reason)
-		r.skipRest(pending[2:], args)
+		skipFrom(2)
 		return StepFailed
 	}
 	step.Message = fmt.Sprintf("creation viable, estimated cost %s", reviewed.Review.EstimatedCost)
@@ -175,26 +190,31 @@ func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome 
 	var result model.DeploymentResult
 	step, ok = r.call(ctx, pending[2].name, pending[2].tool, args, &result)
 	if !ok {
+		skipFrom(3)
 		return StepFailed
 	}
 	if result.DryRun {
 		step.Status = StepBlocked
 		step.Message = result.Message
+		waitHealth()
 		return StepBlocked
 	}
 	step.Message = result.Message
 
-	if !r.waitHealthy(ctx, "check "+label+" answers", t.name, t.appID) {
+	if !r.waitHealthy(ctx, healthName, t.name, t.appID) {
 		return StepFailed
 	}
 	return StepSucceeded
 }
 
-// skipRest records the steps of pending as skipped after a failure.
-func (r *runner) skipRest(pending []struct{ name, tool string }, args deployArgs) {
-	for _, p := range pending {
-		r.add(p.name, p.tool, args, StepSkipped, r.skipMessage())
+// healthInput is the check_serving_health input for a deployment. An empty
+// appID leaves the application to the one the deployment was created with.
+func healthInput(infraID, appID string) map[string]string {
+	input := map[string]string{"infraId": infraID}
+	if appID != "" {
+		input["appId"] = appID
 	}
+	return input
 }
 
 // waitHealthy records one check_serving_health step that asks until the
@@ -202,11 +222,8 @@ func (r *runner) skipRest(pending []struct{ name, tool string }, args deployArgs
 // fails is asked again too: right after provisioning a node may not take
 // remote commands yet. It reports whether the deployment answered.
 func (r *runner) waitHealthy(ctx context.Context, name, infraID, appID string) bool {
-	input := map[string]string{"infraId": infraID}
-	if appID != "" {
-		input["appId"] = appID
-	}
-	step := r.add(name, "check_serving_health", input, StepSucceeded, "")
+	input := healthInput(infraID, appID)
+	step := r.add(name, toolCheckServingHealth, input, StepSucceeded, "")
 	started := time.Now().UTC()
 	step.StartedAt = &started
 
@@ -215,7 +232,7 @@ func (r *runner) waitHealthy(ctx context.Context, name, infraID, appID string) b
 	var lastErr error
 	for {
 		attempts++
-		raw, err := r.invoke(ctx, "check_serving_health", input)
+		raw, err := r.invoke(ctx, toolCheckServingHealth, input)
 		step.Output = raw
 		lastErr = err
 		if err == nil {

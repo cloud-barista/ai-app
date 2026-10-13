@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	clientName    = "ai-mcmp-ai-agent"
+	clientName    = "ai-mcmp-mcp-client"
 	clientVersion = "0.1.0"
 
 	// connectTimeout bounds a connection attempt made outside of a run, where

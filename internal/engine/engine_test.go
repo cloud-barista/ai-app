@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,9 @@ type fakeApp struct {
 	ns    []string
 	// specs records the specId every review and deploy call carried.
 	specs []string
+	// updateNodes is whether each node of an update succeeded. Nil answers
+	// one node that succeeded.
+	updateNodes []bool
 }
 
 func (f *fakeApp) record(nsID, tool string, input json.RawMessage) error {
@@ -167,7 +171,22 @@ func (f *fakeApp) registry() *tools.Registry {
 		return model.ServingHealth{InfraID: a.InfraID, AppID: a.AppID, Ready: ready, Message: message}, nil
 	}))
 	registry.Add(f.tool("update_deployment", tools.GradeWrite, func(string, json.RawMessage) (any, error) {
-		return model.ProvisionResult{DryRun: f.dryRun, Message: "update applied"}, nil
+		if f.dryRun {
+			return model.ProvisionResult{DryRun: true, Message: "update planned"}, nil
+		}
+		outcomes := f.updateNodes
+		if outcomes == nil {
+			outcomes = []bool{true}
+		}
+		nodes := make([]model.NodeUpdate, 0, len(outcomes))
+		for i, ok := range outcomes {
+			node := model.NodeUpdate{NodeID: fmt.Sprintf("n%d", i+1), Succeeded: ok}
+			if !ok {
+				node.Error = "exit status 1"
+			}
+			nodes = append(nodes, node)
+		}
+		return model.ProvisionResult{Nodes: nodes, Message: "update applied"}, nil
 	}))
 	registry.Add(f.tool("control_deployment", tools.GradeWrite, func(string, json.RawMessage) (any, error) {
 		return model.ControlResult{DryRun: f.dryRun, Message: "control planned"}, nil
@@ -189,6 +208,10 @@ func (f *fakeApp) registry() *tools.Registry {
 		}
 		_ = json.Unmarshal(input, &a)
 		return map[string]any{"candidates": []string{applicationID}, "query": a.Query, "limit": a.Limit}, nil
+	}))
+	// The engine never calls this one, so its card must not list it.
+	registry.Add(f.tool("delete_ai_app", tools.GradeDestructive, func(string, json.RawMessage) (any, error) {
+		return map[string]any{}, nil
 	}))
 	return registry
 }
@@ -238,15 +261,23 @@ func expectShape(t *testing.T, run *Run, want string) {
 	}
 }
 
-func TestDeployModelServiceDryRunBlocksDeployAndSkipsHealth(t *testing.T) {
+func TestDeployModelServiceDryRunBlocksDeployAndHoldsHealth(t *testing.T) {
 	fake := &fakeApp{dryRun: true}
 	e, _ := newEngine(t, fake)
 
 	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: modelServiceID, DeploymentName: "demo-vllm"})
 
-	expectShape(t, run, "get_ai_app:succeeded plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked")
-	if run.Status != RunBlocked || !run.DryRun {
-		t.Errorf("run status = %s dryRun = %t, want blocked under dry run", run.Status, run.DryRun)
+	expectShape(t, run, "get_ai_app:succeeded plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked "+
+		"check_serving_health:waiting")
+	if run.Status != RunBlocked || !run.DryRun || !strings.Contains(run.Message, "1 later steps wait") {
+		t.Errorf("run status = %s dryRun = %t message %q, want blocked under dry run", run.Status, run.DryRun, run.Message)
+	}
+	health := run.Steps[4]
+	if health.Message != "waits for demo-vllm to be provisioned (blocked by dry run)" || health.StartedAt != nil {
+		t.Errorf("health step message = %q started = %v, want it held and not run", health.Message, health.StartedAt)
+	}
+	if in := health.Input.(map[string]string); in["infraId"] != "demo-vllm" || in["appId"] != modelServiceID {
+		t.Errorf("health step input = %v", in)
 	}
 	for _, call := range fake.calledTools() {
 		if strings.HasPrefix(call, "check_serving_health") {
@@ -274,14 +305,14 @@ func TestDeployApplicationDeploysMissingModelServiceFirst(t *testing.T) {
 	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
 
 	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
-		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked "+
-		"plan_deployment:waiting review_deployment:waiting deploy_ai_app:waiting")
+		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked check_serving_health:waiting "+
+		"plan_deployment:waiting review_deployment:waiting deploy_ai_app:waiting check_serving_health:waiting")
 	modelPlan := run.Steps[2].Input.(deployArgs)
 	if modelPlan.AppID != modelServiceID || modelPlan.InfraName != "demo-webui-"+modelServiceID {
 		t.Errorf("model service plan input = %+v, want %s as demo-webui-%s", modelPlan, modelServiceID, modelServiceID)
 	}
 	want := "waits for model service " + modelServiceID + " to be running (blocked by dry run)"
-	for _, step := range run.Steps[5:] {
+	for _, step := range run.Steps[6:9] {
 		if step.Message != want || step.StartedAt != nil {
 			t.Errorf("step %d message = %q started = %v, want %q and not run", step.Index, step.Message, step.StartedAt, want)
 		}
@@ -289,12 +320,24 @@ func TestDeployApplicationDeploysMissingModelServiceFirst(t *testing.T) {
 			t.Errorf("step %d input = %+v, want the application", step.Index, step.Input)
 		}
 	}
+	healthWant := map[int]string{
+		5: "waits for demo-webui-" + modelServiceID + " to be provisioned (blocked by dry run)",
+		9: "waits for demo-webui to be provisioned (blocked by dry run)",
+	}
+	for i, want := range healthWant {
+		if step := run.Steps[i]; step.Message != want || step.StartedAt != nil {
+			t.Errorf("step %d message = %q started = %v, want %q and not run", step.Index, step.Message, step.StartedAt, want)
+		}
+	}
 	for _, call := range fake.calledTools() {
 		if strings.HasSuffix(call, ":"+applicationID) && !strings.HasPrefix(call, "get_ai_app") {
 			t.Errorf("application step reached the AI-App service: %s", call)
 		}
+		if strings.HasPrefix(call, "check_serving_health") {
+			t.Errorf("health was checked under dry run: %s", call)
+		}
 	}
-	if run.Status != RunBlocked || !strings.Contains(run.Message, "3 later steps wait") {
+	if run.Status != RunBlocked || !strings.Contains(run.Message, "5 later steps wait") {
 		t.Errorf("run = %s %q", run.Status, run.Message)
 	}
 }
@@ -311,7 +354,7 @@ func TestDeployApplicationUsesRunningModelService(t *testing.T) {
 	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui", SpecID: "pinned-spec"})
 
 	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
-		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked")
+		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked check_serving_health:waiting")
 	if got := run.Steps[1].Message; got != "model service "+modelServiceID+" runs as vllm-01" {
 		t.Errorf("list step message = %q", got)
 	}
@@ -343,12 +386,12 @@ func TestDeployFailureSkipsEveryLaterStep(t *testing.T) {
 	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
 
 	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
-		"plan_deployment:failed review_deployment:skipped deploy_ai_app:skipped "+
-		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped")
+		"plan_deployment:failed review_deployment:skipped deploy_ai_app:skipped check_serving_health:skipped "+
+		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped check_serving_health:skipped")
 	if run.Status != RunFailed || !strings.Contains(run.Steps[2].Error, "refused by the fake AI-App") {
 		t.Errorf("run = %s, failed step error %q", run.Status, run.Steps[2].Error)
 	}
-	if got := run.Steps[7].Message; got != "not run because step 3 failed" {
+	if got := run.Steps[9].Message; got != "not run because step 3 failed" {
 		t.Errorf("skipped message = %q", got)
 	}
 	if calls := fake.calledTools(); len(calls) != 3 {
@@ -365,7 +408,7 @@ func TestDeployHealthNeverReadyFails(t *testing.T) {
 
 	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
 		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:succeeded check_serving_health:failed "+
-		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped")
+		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped check_serving_health:skipped")
 }
 
 func TestHealReadyEndsAfterOneStep(t *testing.T) {
@@ -392,6 +435,57 @@ func TestHealNotReadyUpdatesOnceAndChecksAgain(t *testing.T) {
 	}
 	if run.Status != RunSucceeded {
 		t.Errorf("run = %s %q", run.Status, run.Message)
+	}
+}
+
+func TestHealUpdateOnNoNodeFails(t *testing.T) {
+	fake := &fakeApp{dryRun: false, ready: []bool{false}, updateNodes: []bool{false, false}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01", AppID: modelServiceID})
+
+	expectShape(t, run, "check_serving_health:succeeded update_deployment:failed check_serving_health:skipped")
+	if got := run.Steps[1].Error; got != "applied on 0 of 2 nodes" {
+		t.Errorf("update error = %q, want applied on 0 of 2 nodes", got)
+	}
+	if run.Status != RunFailed || !strings.Contains(run.Message, "applied on 0 of 2 nodes") {
+		t.Errorf("run = %s %q", run.Status, run.Message)
+	}
+	healthCalls := 0
+	for _, call := range fake.calledTools() {
+		if strings.HasPrefix(call, "check_serving_health") {
+			healthCalls++
+		}
+	}
+	if healthCalls != 1 {
+		t.Errorf("health checked %d times, want only before the update", healthCalls)
+	}
+}
+
+func TestHealPartialUpdateSaysSo(t *testing.T) {
+	const partial = "applied on 1 of 2 nodes (partial success, failed on n2)"
+
+	fake := &fakeApp{dryRun: false, ready: []bool{false, true}, updateNodes: []bool{true, false}}
+	e, _ := newEngine(t, fake)
+	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01", AppID: modelServiceID})
+
+	expectShape(t, run, "check_serving_health:succeeded update_deployment:succeeded check_serving_health:succeeded")
+	if got := run.Steps[1].Message; !strings.HasPrefix(got, partial) {
+		t.Errorf("update message = %q, want it to start with %q", got, partial)
+	}
+	if run.Status != RunSucceeded || !strings.Contains(run.Message, partial) {
+		t.Errorf("run = %s %q, want succeeded naming %q", run.Status, run.Message, partial)
+	}
+
+	fake = &fakeApp{dryRun: false, ready: []bool{false}, updateNodes: []bool{true, false}}
+	e, _ = newEngine(t, fake)
+	e.healthTimeout = 20 * time.Millisecond
+	run = execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01", AppID: modelServiceID})
+
+	expectShape(t, run, "check_serving_health:succeeded update_deployment:succeeded check_serving_health:failed")
+	if run.Status != RunFailed || !strings.HasPrefix(run.Message, "step 3 ") ||
+		!strings.HasSuffix(run.Message, "; the update "+partial) {
+		t.Errorf("run = %s %q, want the health failure and the partial update", run.Status, run.Message)
 	}
 }
 
@@ -473,7 +567,7 @@ func TestRunsAreArchived(t *testing.T) {
 		t.Fatalf("ListRuns = %d runs, err %v, want the two runs newest first", len(runs), err)
 	}
 	got, err := e.GetRun(first.RunID)
-	if err != nil || got.Workflow != WorkflowDeploy || len(got.Steps) != 4 || got.Steps[3].Status != StepBlocked {
+	if err != nil || got.Workflow != WorkflowDeploy || len(got.Steps) != 5 || got.Steps[3].Status != StepBlocked {
 		t.Fatalf("GetRun = %+v, %v", got, err)
 	}
 	if len(got.Steps[2].Output) == 0 || !strings.Contains(string(got.Steps[2].Output), recommendedSpec) {
@@ -603,8 +697,21 @@ func TestCardSaysNoLLM(t *testing.T) {
 		card.ServesFramework != "AI-App" || !card.DryRun {
 		t.Errorf("card identity = %+v", card)
 	}
-	if !card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 12 || len(card.Tools.Uses) != 12 {
+	// The fake AI-App publishes 13 tools; the engine calls 12 of them.
+	if !card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 13 || len(card.Tools.Uses) != len(appToolsUsed) {
 		t.Errorf("card mcp = %+v, uses %d", card.MCP, len(card.Tools.Uses))
+	}
+	for i, tool := range card.Tools.Uses {
+		if tool.Name != appToolsUsed[i] || tool.Grade == "" {
+			t.Errorf("uses[%d] = %+v, want %s with its grade", i, tool, appToolsUsed[i])
+		}
+		if tool.Name == "delete_ai_app" {
+			t.Errorf("card lists %s, which the engine never calls", tool.Name)
+		}
+		if guarded := tool.Name == toolDeployApp || tool.Name == toolUpdateDeployment ||
+			tool.Name == toolControlDeployment; tool.GuardedByDryRun != guarded {
+			t.Errorf("uses %s guardedByDryRun = %t", tool.Name, tool.GuardedByDryRun)
+		}
 	}
 	if len(card.Tools.Exposed) != 5 || len(card.Workflows) != 4 {
 		t.Errorf("card exposes %d tools and %d workflows, want 5 and 4", len(card.Tools.Exposed), len(card.Workflows))
@@ -631,4 +738,64 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 	return t.base.RoundTrip(req)
+}
+
+func TestCardListsUsedToolsWithoutGradesWhenNotConnected(t *testing.T) {
+	runs, _ := archive.NewLog[Run](t.TempDir())
+	e := New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), runs)
+
+	card := NewCardBuilder(e, NewRegistry(e), nil).Build()
+
+	if card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 0 || !card.DryRun {
+		t.Errorf("card mcp = %+v dryRun %t, want disconnected and gated", card.MCP, card.DryRun)
+	}
+	if len(card.Tools.Uses) != len(appToolsUsed) {
+		t.Fatalf("uses %d tools, want %d", len(card.Tools.Uses), len(appToolsUsed))
+	}
+	for i, tool := range card.Tools.Uses {
+		if tool.Name != appToolsUsed[i] || tool.Grade != "" || tool.GuardedByDryRun {
+			t.Errorf("uses[%d] = %+v, want %s without a grade", i, tool, appToolsUsed[i])
+		}
+	}
+}
+
+func TestAppToolsUsedCoversEveryCall(t *testing.T) {
+	used := map[string]bool{}
+	for _, name := range appToolsUsed {
+		used[name] = true
+	}
+	if !sort.StringsAreSorted(appToolsUsed) || len(used) != len(appToolsUsed) {
+		t.Errorf("appToolsUsed = %v, want sorted and unique", appToolsUsed)
+	}
+
+	fake := &fakeApp{dryRun: false, ready: []bool{false, true}}
+	e, _ := newEngine(t, fake)
+	execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
+	// Not ready first, so the heal goes on to the update.
+	fake.mu.Lock()
+	fake.ready = []bool{false, true}
+	fake.mu.Unlock()
+	execute(t, e, WorkflowHeal, HealInput{DeploymentID: "demo-webui"})
+	execute(t, e, WorkflowControl, ControlInput{DeploymentID: "demo-webui", Action: "reboot"})
+	execute(t, e, WorkflowStatus, StatusInput{DeploymentID: "demo-webui"})
+	registry := NewRegistry(e)
+	for _, input := range []string{`{}`, `{"query":"chat"}`} {
+		if _, err := registry.Call(context.Background(), "ns-test", ToolApplications, json.RawMessage(input)); err != nil {
+			t.Fatalf("lookup %s: %v", input, err)
+		}
+	}
+
+	called := map[string]bool{}
+	for _, call := range fake.calledTools() {
+		name, _, _ := strings.Cut(call, ":")
+		called[name] = true
+		if !used[name] {
+			t.Errorf("the engine called %s, which appToolsUsed does not list", name)
+		}
+	}
+	for name := range used {
+		if !called[name] {
+			t.Errorf("appToolsUsed lists %s, which no workflow or lookup called", name)
+		}
+	}
 }

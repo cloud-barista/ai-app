@@ -104,8 +104,10 @@ definitions:
           $ref: '#/definitions/model.AgentCardTool'
         type: array
       uses:
-        description: Uses is empty when the engine is not connected to the AI-App
-          service.
+        description: |-
+          Uses names the AI-App tools the engine calls, whether or not it is
+          connected. A tool carries its grade only while the engine is connected
+          to an AI-App service that publishes it.
         items:
           $ref: '#/definitions/model.AgentCardTool'
         type: array

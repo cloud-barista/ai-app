@@ -158,13 +158,13 @@ func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQu
 	}
 	query := strings.TrimSpace(in.Query)
 	if query == "" {
-		return callApp(ctx, e.app, nsID, "list_ai_apps", map[string]any{})
+		return callApp(ctx, e.app, nsID, toolListApps, map[string]any{})
 	}
 	args := map[string]any{"query": query}
 	if in.Limit > 0 {
 		args["limit"] = in.Limit
 	}
-	return callApp(ctx, e.app, nsID, "find_ai_apps", args)
+	return callApp(ctx, e.app, nsID, toolFindApps, args)
 }
 
 // ListRuns reads the most recent runs, newest first.
@@ -220,6 +220,9 @@ type runner struct {
 	failedIndex int
 	// message overrides the run message derived from the step outcomes.
 	message string
+	// note is added to a derived run message. It does not apply when message
+	// is set.
+	note string
 }
 
 // call runs one AI-App tool as a step and decodes its result into out, when
@@ -344,6 +347,9 @@ func (r *runner) finish() *Run {
 	default:
 		run.Status = RunSucceeded
 		run.Message = fmt.Sprintf("all %d steps succeeded", len(run.Steps))
+	}
+	if r.note != "" {
+		run.Message += "; " + r.note
 	}
 	if r.message != "" {
 		run.Message = r.message

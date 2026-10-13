@@ -1426,7 +1426,7 @@ const docTemplate = `{
                     }
                 },
                 "uses": {
-                    "description": "Uses is empty when the engine is not connected to the AI-App service.",
+                    "description": "Uses names the AI-App tools the engine calls, whether or not it is\nconnected. A tool carries its grade only while the engine is connected\nto an AI-App service that publishes it.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.AgentCardTool"

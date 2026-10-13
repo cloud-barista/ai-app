@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"sort"
-
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/registration"
@@ -67,7 +65,9 @@ type CardMCPServer struct {
 // calls.
 type CardToolGroup struct {
 	Exposed []model.AgentCardTool `json:"exposed"`
-	// Uses is empty when the engine is not connected to the AI-App service.
+	// Uses names the AI-App tools the engine calls, whether or not it is
+	// connected. A tool carries its grade only while the engine is connected
+	// to an AI-App service that publishes it.
 	Uses []model.AgentCardTool `json:"uses"`
 }
 
@@ -107,7 +107,7 @@ func (b *CardBuilder) Subject() registration.Subject {
 
 func (b *CardBuilder) describe() Card {
 	grades, dryRun, connected := b.engine.app.Cached()
-	uses := gradedTools(grades)
+	uses := usedTools(grades, connected)
 
 	exposed := make([]model.AgentCardTool, 0, len(b.exposed.Names()))
 	for _, name := range b.exposed.Names() {
@@ -138,26 +138,24 @@ func (b *CardBuilder) describe() Card {
 		MCP: CardMCP{AppServer: CardMCPServer{
 			URL:       redact.URL(b.engine.app.Endpoint()),
 			Connected: connected,
-			ToolCount: len(uses),
+			ToolCount: len(grades),
 		}},
 		Tools:  CardToolGroup{Exposed: exposed, Uses: uses},
 		DryRun: dryRun,
 	}
 }
 
-func gradedTools(grades map[string]tools.Grade) []model.AgentCardTool {
-	names := make([]string, 0, len(grades))
-	for name := range grades {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := make([]model.AgentCardTool, 0, len(names))
-	for _, name := range names {
-		out = append(out, model.AgentCardTool{
-			Name:            name,
-			Grade:           string(grades[name]),
-			GuardedByDryRun: grades[name].GuardedByDryRun(),
-		})
+// usedTools lists the AI-App tools the engine calls, with the grades the
+// AI-App service gives them when connected.
+func usedTools(grades map[string]tools.Grade, connected bool) []model.AgentCardTool {
+	out := make([]model.AgentCardTool, 0, len(appToolsUsed))
+	for _, name := range appToolsUsed {
+		tool := model.AgentCardTool{Name: name}
+		if grade, ok := grades[name]; connected && ok {
+			tool.Grade = string(grade)
+			tool.GuardedByDryRun = grade.GuardedByDryRun()
+		}
+		out = append(out, tool)
 	}
 	return out
 }
