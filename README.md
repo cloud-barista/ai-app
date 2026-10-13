@@ -538,7 +538,7 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | GET | `/aiapp/api/*` | Swagger UI |
 | GET | `/aiapp/apps` | 등록된 AI 응용 목록 |
 | POST | `/aiapp/apps` | AI 응용 등록 (같은 id 면 새 버전으로 교체) |
-| GET | `/aiapp/apps/search?q=` | **자연어로 AI 응용 후보 순위 조회** (규칙 매처, 근거 신호 포함) |
+| GET | `/aiapp/apps/search?q=` | **검색어로 AI 응용 후보 순위 조회** (규칙 매처, LLM 미사용, 근거 신호 포함) |
 | GET | `/aiapp/apps/{appId}` | AI 응용 조회 |
 | DELETE | `/aiapp/apps/{appId}` | AI 응용 삭제 |
 | GET | `/aiapp/apps/{appId}/specs` | 가속기 요구사항에 맞는 스펙을 추천 API 에 물음. 추천 API 가 없으면 `422` |
