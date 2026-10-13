@@ -2,8 +2,9 @@
 // deployment and lifecycle through CB-Tumblebug, the tools as an MCP server, the
 // operator console and the deploy and control archive.
 //
-// The automation agent runs as cmd/ai-agent and reaches the tools over MCP. Its
-// routes are forwarded from here so that the console keeps one address.
+// The automation engine runs as cmd/ai-automation-engine and the automation
+// agent as cmd/ai-agent; both reach the tools over MCP. Their routes are
+// forwarded from here so that the console keeps one address.
 package main
 
 import (
@@ -109,7 +110,7 @@ func main() {
 
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
-			Int("tools", len(registry.Names())).Str("agentUrl", cfg.Agent.URL).
+			Int("tools", len(registry.Names())).Str("engineUrl", cfg.Engine.URL).Str("agentUrl", cfg.Agent.URL).
 			Msg("Starting server")
 		if err := server.Start(); err != nil {
 			log.Error().Err(err).Msg("Server stopped unexpectedly")

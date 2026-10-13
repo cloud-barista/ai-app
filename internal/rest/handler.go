@@ -9,6 +9,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
@@ -25,6 +26,9 @@ type Handler struct {
 	archive *archive.Store
 	tools   *tools.Registry
 	card    *agentcard.Card
+
+	engine     *engine.Engine
+	engineCard *engine.CardBuilder
 }
 
 // statusCodeFor maps a failure to the status this API returns.

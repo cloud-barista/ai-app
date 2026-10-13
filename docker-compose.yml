@@ -1,12 +1,12 @@
-# Runs the AI-App service, the AI application automation agent and the partner
-# recommender mock.
+# Runs the AI-App service, the AI application automation engine, the AI
+# application automation agent and the partner recommender mock.
 #
 # All services come from one image and differ only in the command. The partner
 # recommender mock stands in for the partner institution's infrastructure
-# recommendation API; it is not part of this prototype. The agent
-# reaches the tools through the AI-App MCP server, and the AI-App service
-# forwards intent and agent routes to the agent, so the console needs only the
-# AI-App address.
+# recommendation API; it is not part of this prototype. The engine and the
+# agent reach the tools through the AI-App MCP server, and the AI-App service
+# forwards engine, intent and agent routes to them, so the console needs only
+# the AI-App address.
 #
 # CB-Tumblebug is deliberately not a service here. It brings cb-spider and a
 # database with it, and including them would turn "bring this prototype up" into
@@ -61,8 +61,11 @@ services:
       AIAPP_PROVISIONER_URL: "${AIAPP_PROVISIONER_URL:-}"
       AIAPP_PROVISIONER_TOKEN: "${AIAPP_PROVISIONER_TOKEN:-}"
 
+      # Where engine routes (/aiapp/engine/*) are forwarded, path unchanged.
+      AIAPP_ENGINE_URL: "http://ai-automation-engine:8091"
+
       # Where intent and agent routes are forwarded.
-      AIAPP_AGENT_URL: "http://ai-agent:8091"
+      AIAPP_AGENT_URL: "http://ai-agent:8093"
 
       # Empty leaves authentication off. The agent gets the same token because
       # forwarded routes carry the caller's Authorization header unchanged.
@@ -86,6 +89,54 @@ services:
       retries: 5
       start_period: 10s
 
+  # The automatic deploy and control engine. It runs fixed workflows as ordered
+  # AI-App tool calls and uses no LLM.
+  ai-automation-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: ai-automation-engine
+    command: ["/usr/local/bin/ai-automation-engine"]
+    restart: unless-stopped
+    # Every workflow step is an AI-App tool call, so it starts once that
+    # server answers.
+    depends_on:
+      ai-app-server:
+        condition: service_healthy
+    ports:
+      - "${AIAPP_ENGINE_PORT:-8091}:8091"
+    environment:
+      AIAPP_ENGINE_PORT: "8091"
+
+      # The tools, their grades and the dry-run state all come from here.
+      AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
+
+      # The same token as the AI-App service, both to accept and to send.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+
+      # How long a deploy or heal step waits for the application to answer
+      # after it was deployed or updated, and how often it asks.
+      AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
+      AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
+
+      AIAPP_ENGINE_ARCHIVE_DIR: "/app/data/engine-archive"
+
+      # Agent registry the engine card is posted to at startup. Empty leaves it off.
+      AIAPP_ENGINE_REGISTRY_URL: "${AIAPP_ENGINE_REGISTRY_URL:-}"
+      AIAPP_ENGINE_REGISTRY_TOKEN: "${AIAPP_ENGINE_REGISTRY_TOKEN:-}"
+
+    volumes:
+      - engine-archive:/app/data/engine-archive
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8091/aiapp/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   ai-agent:
     build:
       context: .
@@ -100,9 +151,9 @@ services:
       ai-app-server:
         condition: service_healthy
     ports:
-      - "${AIAPP_AGENT_PORT:-8091}:8091"
+      - "${AIAPP_AGENT_PORT:-8093}:8093"
     environment:
-      AIAPP_AGENT_PORT: "8091"
+      AIAPP_AGENT_PORT: "8093"
 
       # The tools, their grades and the dry-run state all come from here.
       AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
@@ -125,7 +176,7 @@ services:
       - agent-archive:/app/data/agent-archive
 
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8091/aiapp/readyz"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8093/aiapp/readyz"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -161,4 +212,5 @@ services:
 
 volumes:
   archive:
+  engine-archive:
   agent-archive:

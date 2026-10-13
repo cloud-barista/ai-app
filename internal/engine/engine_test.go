@@ -1,0 +1,580 @@
+package engine
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
+)
+
+const (
+	modelServiceID   = "vllm-llama31-8b"
+	applicationID    = "open-webui-llama31"
+	recommendedSpec  = "aws+us-west-2+g6.xlarge"
+	recommendedImage = "ubuntu22.04-gpu"
+)
+
+// fakeApp is an AI-App MCP server whose tool answers the test controls.
+type fakeApp struct {
+	mu          sync.Mutex
+	dryRun      bool
+	deployments []tumblebug.InfraInfo
+	// ready is the answer of each check_serving_health call in turn; the last
+	// one repeats.
+	ready []bool
+	// fail names a tool, optionally with the appId it fails for as
+	// "tool:appId", that answers with an error.
+	fail  string
+	calls []string
+	ns    []string
+	// specs records the specId every review and deploy call carried.
+	specs []string
+}
+
+func (f *fakeApp) record(nsID, tool string, input json.RawMessage) error {
+	var args struct {
+		AppID  string `json:"appId"`
+		SpecID string `json:"specId"`
+	}
+	_ = json.Unmarshal(input, &args)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, tool+":"+args.AppID)
+	f.ns = append(f.ns, nsID)
+	if tool == "review_deployment" || tool == "deploy_ai_app" {
+		f.specs = append(f.specs, args.SpecID)
+	}
+	if f.fail == tool || f.fail == tool+":"+args.AppID {
+		return fmt.Errorf("%s refused by the fake AI-App", tool)
+	}
+	return nil
+}
+
+func (f *fakeApp) calledTools() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.calls...)
+}
+
+func (f *fakeApp) nextReady() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.ready) == 0 {
+		return false
+	}
+	ready := f.ready[0]
+	if len(f.ready) > 1 {
+		f.ready = f.ready[1:]
+	}
+	return ready
+}
+
+func (f *fakeApp) tool(name string, grade tools.Grade, handle func(nsID string, input json.RawMessage) (any, error)) tools.Tool {
+	return tools.Tool{
+		Name:        name,
+		Grade:       grade,
+		Description: "fake " + name,
+		InputSchema: map[string]any{"type": "object"},
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			if err := f.record(nsID, name, input); err != nil {
+				return nil, err
+			}
+			return handle(nsID, input)
+		},
+	}
+}
+
+func (f *fakeApp) registry() *tools.Registry {
+	registry := tools.NewRegistry(f.dryRun)
+	apps := map[string]model.AppSpec{
+		modelServiceID: {ID: modelServiceID, Kind: model.KindModelService},
+		applicationID: {ID: applicationID, Kind: model.KindApplication,
+			Requires: []model.AppRequirement{{AppID: modelServiceID, Env: "OPENAI_API_BASE_URL"}}},
+	}
+	args := func(input json.RawMessage) deployArgs {
+		var a deployArgs
+		_ = json.Unmarshal(input, &a)
+		return a
+	}
+	planOf := func(input json.RawMessage) *model.DeploymentPlan {
+		a := args(input)
+		plan := &model.DeploymentPlan{AppID: a.AppID, InfraName: a.InfraName, SpecID: a.SpecID, ImageID: a.ImageID,
+			SpecSource: "requested", ImageSource: "requested"}
+		if plan.SpecID == "" {
+			plan.SpecID, plan.SpecSource = recommendedSpec, "recommended"
+		}
+		if plan.ImageID == "" {
+			plan.ImageID, plan.ImageSource = recommendedImage, "resolved"
+		}
+		return plan
+	}
+
+	registry.Add(f.tool("get_ai_app", tools.GradeRead, func(_ string, input json.RawMessage) (any, error) {
+		app, ok := apps[args(input).AppID]
+		if !ok {
+			return nil, errors.New("application not found")
+		}
+		return app, nil
+	}))
+	registry.Add(f.tool("list_deployments", tools.GradeRead, func(string, json.RawMessage) (any, error) {
+		return map[string]any{"deployments": f.deployments}, nil
+	}))
+	registry.Add(f.tool("plan_deployment", tools.GradeRead, func(_ string, input json.RawMessage) (any, error) {
+		return planOf(input), nil
+	}))
+	registry.Add(f.tool("review_deployment", tools.GradeReview, func(_ string, input json.RawMessage) (any, error) {
+		return map[string]any{"plan": planOf(input), "review": model.ReviewSummary{
+			CreationViable: true, OverallStatus: "Ready", EstimatedCost: "$0.80/hour"}}, nil
+	}))
+	registry.Add(f.tool("deploy_ai_app", tools.GradeWrite, func(_ string, input json.RawMessage) (any, error) {
+		if f.dryRun {
+			return model.DeploymentResult{Plan: planOf(input), DryRun: true, Message: "Dry run: request planned but not sent"}, nil
+		}
+		return model.DeploymentResult{Plan: planOf(input), Message: "Deployed"}, nil
+	}))
+	registry.Add(f.tool("check_serving_health", tools.GradeRead, func(_ string, input json.RawMessage) (any, error) {
+		var a struct {
+			InfraID string `json:"infraId"`
+			AppID   string `json:"appId"`
+		}
+		_ = json.Unmarshal(input, &a)
+		if a.AppID == "" {
+			a.AppID = modelServiceID
+		}
+		ready := f.nextReady()
+		message := "0 of 1 nodes answer on port 8000"
+		if ready {
+			message = "1 of 1 nodes answer on port 8000"
+		}
+		return model.ServingHealth{InfraID: a.InfraID, AppID: a.AppID, Ready: ready, Message: message}, nil
+	}))
+	registry.Add(f.tool("update_deployment", tools.GradeWrite, func(string, json.RawMessage) (any, error) {
+		return model.ProvisionResult{DryRun: f.dryRun, Message: "update applied"}, nil
+	}))
+	registry.Add(f.tool("control_deployment", tools.GradeWrite, func(string, json.RawMessage) (any, error) {
+		return model.ControlResult{DryRun: f.dryRun, Message: "control planned"}, nil
+	}))
+	registry.Add(f.tool("get_deployment_status", tools.GradeRead, func(string, json.RawMessage) (any, error) {
+		return tumblebug.InfraStatusView{ID: "d1", Status: "Running:1 (R:1/1)",
+			StatusCount: tumblebug.StatusCountInfo{CountTotal: 1, CountRunning: 1}}, nil
+	}))
+	registry.Add(f.tool("probe_accelerator", tools.GradeRead, func(string, json.RawMessage) (any, error) {
+		return model.AcceleratorReport{Probed: true, Message: "1 GPU found"}, nil
+	}))
+	return registry
+}
+
+// newEngine serves fake over MCP and returns an engine calling it.
+func newEngine(t *testing.T, fake *fakeApp) (*Engine, string) {
+	t.Helper()
+	srv := httptest.NewServer(mcpserver.NewHandler(fake.registry()))
+	t.Cleanup(srv.Close)
+
+	client := mcpclient.New(srv.URL, "")
+	t.Cleanup(func() { _ = client.Close() })
+	dir := t.TempDir()
+	runs, err := archive.NewLog[Run](dir)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	return New(client, runs, WithHealthWait(time.Second, time.Millisecond)), dir
+}
+
+func execute(t *testing.T, e *Engine, workflow string, input any) *Run {
+	t.Helper()
+	body, _ := json.Marshal(input)
+	run, err := e.Execute(context.Background(), "ns-test", workflow, body)
+	if err != nil {
+		t.Fatalf("Execute %s: %v", workflow, err)
+	}
+	return run
+}
+
+// shape renders the steps as "tool:status" for comparison.
+func shape(run *Run) string {
+	parts := make([]string, 0, len(run.Steps))
+	for _, step := range run.Steps {
+		parts = append(parts, step.Tool+":"+string(step.Status))
+	}
+	return strings.Join(parts, " ")
+}
+
+func expectShape(t *testing.T, run *Run, want string) {
+	t.Helper()
+	if got := shape(run); got != want {
+		t.Errorf("steps =\n  %s\nwant\n  %s", got, want)
+		for _, step := range run.Steps {
+			t.Logf("  %d %s %s %s err=%q msg=%q", step.Index, step.Name, step.Tool, step.Status, step.Error, step.Message)
+		}
+	}
+}
+
+func TestDeployModelServiceDryRunBlocksDeployAndSkipsHealth(t *testing.T) {
+	fake := &fakeApp{dryRun: true}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: modelServiceID, DeploymentName: "demo-vllm"})
+
+	expectShape(t, run, "get_ai_app:succeeded plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked")
+	if run.Status != RunBlocked || !run.DryRun {
+		t.Errorf("run status = %s dryRun = %t, want blocked under dry run", run.Status, run.DryRun)
+	}
+	for _, call := range fake.calledTools() {
+		if strings.HasPrefix(call, "check_serving_health") {
+			t.Errorf("health was checked under dry run: %v", fake.calledTools())
+		}
+	}
+	// The review and the deployment use what the plan chose.
+	if len(fake.specs) != 2 || fake.specs[0] != recommendedSpec || fake.specs[1] != recommendedSpec {
+		t.Errorf("review and deploy specId = %v, want the planned %s", fake.specs, recommendedSpec)
+	}
+	if run.Steps[3].StartedAt == nil || run.Steps[3].Message == "" {
+		t.Errorf("blocked step = %+v, want it run and explained", run.Steps[3])
+	}
+	for _, ns := range fake.ns {
+		if ns != "ns-test" {
+			t.Errorf("namespace header = %q, want ns-test", ns)
+		}
+	}
+}
+
+func TestDeployApplicationDeploysMissingModelServiceFirst(t *testing.T) {
+	fake := &fakeApp{dryRun: true}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
+
+	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
+		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked "+
+		"plan_deployment:waiting review_deployment:waiting deploy_ai_app:waiting")
+	modelPlan := run.Steps[2].Input.(deployArgs)
+	if modelPlan.AppID != modelServiceID || modelPlan.InfraName != "demo-webui-"+modelServiceID {
+		t.Errorf("model service plan input = %+v, want %s as demo-webui-%s", modelPlan, modelServiceID, modelServiceID)
+	}
+	want := "waits for model service " + modelServiceID + " to be running (blocked by dry run)"
+	for _, step := range run.Steps[5:] {
+		if step.Message != want || step.StartedAt != nil {
+			t.Errorf("step %d message = %q started = %v, want %q and not run", step.Index, step.Message, step.StartedAt, want)
+		}
+		if step.Input.(deployArgs).AppID != applicationID {
+			t.Errorf("step %d input = %+v, want the application", step.Index, step.Input)
+		}
+	}
+	for _, call := range fake.calledTools() {
+		if strings.HasSuffix(call, ":"+applicationID) && !strings.HasPrefix(call, "get_ai_app") {
+			t.Errorf("application step reached the AI-App service: %s", call)
+		}
+	}
+	if run.Status != RunBlocked || !strings.Contains(run.Message, "3 later steps wait") {
+		t.Errorf("run = %s %q", run.Status, run.Message)
+	}
+}
+
+func TestDeployApplicationUsesRunningModelService(t *testing.T) {
+	fake := &fakeApp{dryRun: true, deployments: []tumblebug.InfraInfo{
+		{ID: "other", Status: "Running:1 (R:1/1)", Label: map[string]string{appIDLabel: "something-else"},
+			Node: []tumblebug.NodeInfo{{PublicIP: "203.0.113.9", Status: "Running"}}},
+		{ID: "vllm-01", Status: "Running:1 (R:1/1)", Label: map[string]string{appIDLabel: modelServiceID},
+			Node: []tumblebug.NodeInfo{{PublicIP: "203.0.113.10", Status: "Running"}}},
+	}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui", SpecID: "pinned-spec"})
+
+	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
+		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:blocked")
+	if got := run.Steps[1].Message; got != "model service "+modelServiceID+" runs as vllm-01" {
+		t.Errorf("list step message = %q", got)
+	}
+	if args := run.Steps[2].Input.(deployArgs); args.AppID != applicationID || args.InfraName != "demo-webui" || args.SpecID != "pinned-spec" {
+		t.Errorf("plan input = %+v", args)
+	}
+}
+
+func TestDeployChecksHealthWhenNotDryRun(t *testing.T) {
+	fake := &fakeApp{dryRun: false, ready: []bool{false, true}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: modelServiceID, DeploymentName: "demo-vllm"})
+
+	expectShape(t, run, "get_ai_app:succeeded plan_deployment:succeeded review_deployment:succeeded "+
+		"deploy_ai_app:succeeded check_serving_health:succeeded")
+	if run.Status != RunSucceeded || run.DryRun {
+		t.Errorf("run = %s dryRun %t", run.Status, run.DryRun)
+	}
+	if got := run.Steps[4].Message; !strings.HasPrefix(got, "ready after 2 checks") {
+		t.Errorf("health message = %q, want ready after 2 checks", got)
+	}
+}
+
+func TestDeployFailureSkipsEveryLaterStep(t *testing.T) {
+	fake := &fakeApp{dryRun: true, fail: "plan_deployment:" + modelServiceID}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
+
+	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
+		"plan_deployment:failed review_deployment:skipped deploy_ai_app:skipped "+
+		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped")
+	if run.Status != RunFailed || !strings.Contains(run.Steps[2].Error, "refused by the fake AI-App") {
+		t.Errorf("run = %s, failed step error %q", run.Status, run.Steps[2].Error)
+	}
+	if got := run.Steps[7].Message; got != "not run because step 3 failed" {
+		t.Errorf("skipped message = %q", got)
+	}
+	if calls := fake.calledTools(); len(calls) != 3 {
+		t.Errorf("AI-App calls = %v, want get_ai_app, list_deployments and the failed plan only", calls)
+	}
+}
+
+func TestDeployHealthNeverReadyFails(t *testing.T) {
+	fake := &fakeApp{dryRun: false, ready: []bool{false}}
+	e, _ := newEngine(t, fake)
+	e.healthTimeout = 20 * time.Millisecond
+
+	run := execute(t, e, WorkflowDeploy, DeployInput{AppID: applicationID, DeploymentName: "demo-webui"})
+
+	expectShape(t, run, "get_ai_app:succeeded list_deployments:succeeded "+
+		"plan_deployment:succeeded review_deployment:succeeded deploy_ai_app:succeeded check_serving_health:failed "+
+		"plan_deployment:skipped review_deployment:skipped deploy_ai_app:skipped")
+}
+
+func TestHealReadyEndsAfterOneStep(t *testing.T) {
+	fake := &fakeApp{dryRun: false, ready: []bool{true}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01"})
+
+	expectShape(t, run, "check_serving_health:succeeded")
+	if run.Status != RunSucceeded || !strings.Contains(run.Message, "nothing to heal") {
+		t.Errorf("run = %s %q", run.Status, run.Message)
+	}
+}
+
+func TestHealNotReadyUpdatesOnceAndChecksAgain(t *testing.T) {
+	fake := &fakeApp{dryRun: false, ready: []bool{false, true}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01"})
+
+	expectShape(t, run, "check_serving_health:succeeded update_deployment:succeeded check_serving_health:succeeded")
+	if args := run.Steps[1].Input.(map[string]string); args["appId"] != modelServiceID {
+		t.Errorf("update input = %v, want the appId the health check reported", args)
+	}
+	if run.Status != RunSucceeded {
+		t.Errorf("run = %s %q", run.Status, run.Message)
+	}
+}
+
+func TestHealUnderDryRunBlocksUpdate(t *testing.T) {
+	fake := &fakeApp{dryRun: true, ready: []bool{false}}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "vllm-01", AppID: modelServiceID})
+
+	expectShape(t, run, "check_serving_health:succeeded update_deployment:blocked check_serving_health:waiting")
+	if run.Status != RunBlocked {
+		t.Errorf("run = %s", run.Status)
+	}
+}
+
+func TestControlAndStatus(t *testing.T) {
+	fake := &fakeApp{dryRun: true, ready: []bool{true}, fail: "probe_accelerator"}
+	e, _ := newEngine(t, fake)
+
+	run := execute(t, e, WorkflowControl, ControlInput{DeploymentID: "vllm-01", Action: "suspend"})
+	expectShape(t, run, "control_deployment:blocked")
+
+	if _, err := e.Execute(context.Background(), "ns", WorkflowControl,
+		json.RawMessage(`{"deploymentId":"vllm-01","action":"delete"}`)); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("control with action delete: err = %v, want invalid input", err)
+	}
+
+	run = execute(t, e, WorkflowStatus, StatusInput{DeploymentID: "vllm-01"})
+	expectShape(t, run, "get_deployment_status:succeeded check_serving_health:succeeded probe_accelerator:failed")
+	if run.Status != RunFailed || !strings.Contains(run.Message, "serving: ready=true") ||
+		!strings.Contains(run.Message, "accelerator: probe_accelerator refused") {
+		t.Errorf("status run = %s %q", run.Status, run.Message)
+	}
+}
+
+func TestExecuteRejectsBadRequests(t *testing.T) {
+	e, _ := newEngine(t, &fakeApp{dryRun: true})
+	cases := map[string]struct {
+		workflow string
+		input    string
+		want     error
+	}{
+		"unknown":       {"rollout", `{}`, ErrUnknownWorkflow},
+		"no app":        {WorkflowDeploy, `{"deploymentName":"x"}`, ErrInvalidInput},
+		"no name":       {WorkflowDeploy, `{"appId":"x"}`, ErrInvalidInput},
+		"malformed":     {WorkflowHeal, `{"deploymentId":`, ErrInvalidInput},
+		"no deployment": {WorkflowStatus, `{}`, ErrInvalidInput},
+	}
+	for name, tc := range cases {
+		if _, err := e.Execute(context.Background(), "ns", tc.workflow, json.RawMessage(tc.input)); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
+		}
+	}
+}
+
+func TestUnreachableAppServerRunsNothing(t *testing.T) {
+	runs, _ := archive.NewLog[Run](t.TempDir())
+	client := mcpclient.New("http://127.0.0.1:1/aiapp/mcp", "")
+	e := New(client, runs)
+
+	_, err := e.Execute(context.Background(), "ns", WorkflowStatus, json.RawMessage(`{"deploymentId":"x"}`))
+	if !errors.Is(err, mcpclient.ErrUnavailable) {
+		t.Errorf("err = %v, want unavailable", err)
+	}
+	if !e.DryRun(context.Background()) {
+		t.Error("DryRun with no AI-App service = false, want true")
+	}
+}
+
+func TestRunsAreArchived(t *testing.T) {
+	fake := &fakeApp{dryRun: true, ready: []bool{true}}
+	e, dir := newEngine(t, fake)
+
+	first := execute(t, e, WorkflowDeploy, DeployInput{AppID: modelServiceID, DeploymentName: "demo-vllm"})
+	second := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "demo-vllm"})
+
+	runs, err := e.ListRuns(0)
+	if err != nil || len(runs) != 2 || runs[0].RunID != second.RunID || runs[1].RunID != first.RunID {
+		t.Fatalf("ListRuns = %d runs, err %v, want the two runs newest first", len(runs), err)
+	}
+	got, err := e.GetRun(first.RunID)
+	if err != nil || got.Workflow != WorkflowDeploy || len(got.Steps) != 4 || got.Steps[3].Status != StepBlocked {
+		t.Fatalf("GetRun = %+v, %v", got, err)
+	}
+	if len(got.Steps[2].Output) == 0 || !strings.Contains(string(got.Steps[2].Output), recommendedSpec) {
+		t.Errorf("archived review output = %s, want the tool result", got.Steps[2].Output)
+	}
+	if _, err := e.GetRun("eng-missing"); !errors.Is(err, ErrRunNotFound) {
+		t.Errorf("GetRun missing: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "runs.jsonl"))
+	if err != nil || strings.Count(string(raw), "\n") != 2 {
+		t.Errorf("runs.jsonl = %d bytes, err %v, want two lines", len(raw), err)
+	}
+}
+
+func TestEngineMCPPublishesFourToolsWithGrades(t *testing.T) {
+	fake := &fakeApp{dryRun: true, ready: []bool{true}}
+	e, _ := newEngine(t, fake)
+	srv := httptest.NewServer(mcpserver.NewNamedHandler(MCPServerName, NewRegistry(e)))
+	t.Cleanup(srv.Close)
+
+	header := http.Header{mcpserver.NamespaceHeader: []string{"ns-mcp"}}
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   srv.URL,
+		HTTPClient: &http.Client{Transport: headerTransport{header: header, base: http.DefaultTransport}},
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).
+		Connect(context.Background(), transport, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	init := session.InitializeResult()
+	if init.ServerInfo.Name != MCPServerName || init.Meta[mcpserver.MetaDryRun] != true {
+		t.Errorf("initialize = %s, dryRun %v", init.ServerInfo.Name, init.Meta[mcpserver.MetaDryRun])
+	}
+
+	res, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	want := map[string]string{ToolDeploy: "write", ToolHeal: "write", ToolControl: "write", ToolStatus: "read"}
+	if len(res.Tools) != len(want) {
+		t.Fatalf("tools/list returned %d tools, want 4", len(res.Tools))
+	}
+	for _, tool := range res.Tools {
+		if got := tool.Meta[mcpserver.MetaGrade]; got != want[tool.Name] {
+			t.Errorf("%s grade = %v, want %s", tool.Name, got, want[tool.Name])
+		}
+		if guarded := tool.Meta[mcpserver.MetaGuardedByDryRun]; guarded != (want[tool.Name] == "write") {
+			t.Errorf("%s guardedByDryRun = %v", tool.Name, guarded)
+		}
+	}
+
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: ToolStatus, Arguments: map[string]any{"deploymentId": "vllm-01"}})
+	if err != nil || result.IsError {
+		t.Fatalf("tools/call %s: %v %+v", ToolStatus, err, result)
+	}
+	var run Run
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &run); err != nil {
+		t.Fatalf("decode run: %v", err)
+	}
+	if run.Workflow != WorkflowStatus || run.Namespace != "ns-mcp" || len(run.Steps) != 3 {
+		t.Errorf("run over MCP = %s in %s with %d steps", run.Workflow, run.Namespace, len(run.Steps))
+	}
+	for _, ns := range fake.ns {
+		if ns != "ns-mcp" {
+			t.Errorf("AI-App saw namespace %q, want ns-mcp", ns)
+		}
+	}
+}
+
+func TestCardSaysNoLLM(t *testing.T) {
+	fake := &fakeApp{dryRun: true}
+	e, _ := newEngine(t, fake)
+	if err := e.app.Prepare(context.Background()); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	card := NewCardBuilder(e, NewRegistry(e), nil).Build()
+
+	if card.UsesLLM || card.Name != CardName || card.Owner != "innogrid" || card.Framework != "AI-Ops" ||
+		card.ServesFramework != "AI-App" || !card.DryRun {
+		t.Errorf("card identity = %+v", card)
+	}
+	if !card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 10 || len(card.Tools.Uses) != 10 {
+		t.Errorf("card mcp = %+v, uses %d", card.MCP, len(card.Tools.Uses))
+	}
+	if len(card.Tools.Exposed) != 4 || len(card.Workflows) != 4 {
+		t.Errorf("card exposes %d tools and %d workflows, want 4 and 4", len(card.Tools.Exposed), len(card.Workflows))
+	}
+	if card.Registration == nil || card.Registration.Status != "disabled" ||
+		card.Registration.Message != RegistryEnv+" is not set" {
+		t.Errorf("registration = %+v", card.Registration)
+	}
+	body, _ := json.Marshal(card)
+	if !strings.Contains(string(body), `"usesLLM":false`) {
+		t.Errorf("card JSON has no usesLLM false: %s", body)
+	}
+}
+
+// headerTransport adds fixed headers to every request.
+type headerTransport struct {
+	header http.Header
+	base   http.RoundTripper
+}
+
+func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	for k, v := range t.header {
+		req.Header[k] = v
+	}
+	return t.base.RoundTrip(req)
+}

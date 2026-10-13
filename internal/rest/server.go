@@ -18,6 +18,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
@@ -56,9 +57,9 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		tools:   deps.Tools,
 	}
 
-	// The agent readiness is open here as the agent's own is there: the
-	// console overview asks for it before anyone has entered a token.
-	e := newEcho(cfg.Auth.Token, agentPrefix+"/readyz")
+	// The agent and engine readiness are open here as their own are there:
+	// the console overview asks for them before anyone has entered a token.
+	e := newEcho(cfg.Auth.Token, agentPrefix+"/readyz", enginePrefix+"/readyz")
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/api/*", echoSwagger.WrapHandler)
@@ -99,6 +100,10 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.POST("/ns/:nsId/intents", proxy)
 	g.Any("/agent/*", proxy)
 
+	// The automation engine runs in its own process too. Its routes keep their
+	// path, MCP endpoint included.
+	g.Any("/engine/*", echo.WrapHandler(newEngineProxy(cfg.Engine.URL)))
+
 	// Deploy and control archive.
 	g.GET("/archive", handler.RestGetArchive)
 	g.GET("/archive/:runId", handler.RestGetArchiveRun)
@@ -130,6 +135,41 @@ func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
 	g.GET("/agent/card", handler.RestGetAgentCard)
 
 	return &Server{echo: e, port: cfg.Agent.Port}
+}
+
+// EngineDependencies are the service layer objects the engine routes are built on.
+type EngineDependencies struct {
+	Engine *engine.Engine
+	Card   *engine.CardBuilder
+	// Tools are the workflows as MCP tools.
+	Tools *tools.Registry
+}
+
+// NewEngineServer builds the automation engine service: workflows over REST and
+// MCP, the engine run archive and the engine card.
+func NewEngineServer(cfg *config.Config, deps EngineDependencies) *Server {
+	handler := &Handler{
+		engine:     deps.Engine,
+		engineCard: deps.Card,
+	}
+
+	// The engine readiness is also served under the engine prefix, the path the
+	// AI-App service forwards unchanged.
+	e := newEcho(cfg.Auth.Token, enginePrefix+"/readyz")
+	g := e.Group(BasePath)
+	g.GET("/readyz", RestGetReadyz)
+	g.GET("/engine/readyz", RestGetReadyz)
+
+	g.POST("/engine/workflows/:workflow", handler.RestPostEngineWorkflow)
+	g.GET("/engine/runs", handler.RestGetEngineRuns)
+	g.GET("/engine/runs/:runId", handler.RestGetEngineRun)
+	g.GET("/engine/card", handler.RestGetEngineCard)
+
+	// The workflows as MCP tools over Streamable HTTP. The namespace comes from
+	// the namespace header, as on the AI-App MCP server.
+	g.Any("/engine/mcp", echo.WrapHandler(mcpserver.NewNamedHandler(engine.MCPServerName, deps.Tools)))
+
+	return &Server{echo: e, port: cfg.Engine.Port}
 }
 
 // newEcho builds an Echo instance that requires token on every route but the

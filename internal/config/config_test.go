@@ -144,3 +144,29 @@ func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
 		t.Errorf("Load error = %v, want one naming the health interval", err)
 	}
 }
+
+func TestEngineAndAgentPortDefaults(t *testing.T) {
+	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_AGENT_PORT", "AIAPP_AGENT_URL"} {
+		t.Setenv(env, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Engine.Port != 8091 || cfg.Engine.URL != "http://127.0.0.1:8091" || cfg.Engine.ArchiveDir != "./data/engine-archive" {
+		t.Errorf("engine = %+v, want port 8091 and its archive", cfg.Engine)
+	}
+	if cfg.Agent.Port != 8093 || cfg.Agent.URL != "http://127.0.0.1:8093" {
+		t.Errorf("agent = %+v, want port 8093", cfg.Agent)
+	}
+
+	t.Setenv("AIAPP_ENGINE_REGISTRY_URL", "http://registry.example/api/")
+	t.Setenv("AIAPP_ENGINE_REGISTRY_TOKEN", "secret")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Engine.RegistryURL != "http://registry.example/api" || cfg.Engine.RegistryToken != "secret" {
+		t.Errorf("engine registry = %q, %q", cfg.Engine.RegistryURL, cfg.Engine.RegistryToken)
+	}
+}

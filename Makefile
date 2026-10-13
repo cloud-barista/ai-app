@@ -1,21 +1,28 @@
 APP    := ai-app-server
+ENGINE := ai-automation-engine
 AGENT  := ai-agent
 MOCK_RECOMMENDER := mock-partner-recommender
 GOBIN  := $(shell go env GOPATH)/bin
 IMAGE  := ai-agent-proto:local
 
-.PHONY: build run-app run-agent run-mock-recommender test swag fmt lint verify docker-build docker-up docker-down docker-logs
+.PHONY: build run-app run-engine run-agent run-mock-recommender test swag fmt lint verify docker-build docker-up docker-down docker-logs
 
 build:
 	go build -o bin/$(APP) ./cmd/$(APP)
+	go build -o bin/$(ENGINE) ./cmd/$(ENGINE)
 	go build -o bin/$(AGENT) ./cmd/$(AGENT)
 	go build -o bin/$(MOCK_RECOMMENDER) ./mock/partner/recommender/cmd/recommender
 
-# Both start with no configuration at all. Settings come from conf/setup.env when
+# All start with no configuration at all. Settings come from conf/setup.env when
 # that file exists and from built-in defaults otherwise, so a fresh checkout
 # runs and serves everything that does not touch a cloud.
 run-app:
 	go run ./cmd/$(APP)
+
+# The automation engine, :8091. It runs its workflows through the AI-App MCP
+# server and uses no LLM; start run-app too.
+run-engine:
+	go run ./cmd/$(ENGINE)
 
 # The agent reaches the tools through the AI-App MCP server; start run-app too.
 run-agent:
