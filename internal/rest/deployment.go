@@ -31,7 +31,7 @@ var allowedActions = map[string]bool{
 // RestPostDeploymentPlan godoc
 // @ID PostDeploymentPlan
 // @Summary Plan a deployment
-// @Description Build the provisioning request for an AI application without contacting any cloud. Leave specId empty to select the cheapest spec matching the accelerator requirement
+// @Description Build the provisioning request for an AI application without contacting any cloud. Leave specId or imageId empty to take them from the partner recommender API (AIAPP_RECOMMENDER_URL); without one both must be pinned
 // @Tags [Deploy] AI Application Deployment
 // @Accept json
 // @Produce json
@@ -41,6 +41,7 @@ var allowedActions = map[string]bool{
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete request"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 409 {object} model.SimpleMsg "A model service the application requires is not deployed"
+// @Failure 422 {object} model.SimpleMsg "No recommender configured: pin specId and imageId"
 // @Failure 500 {object} model.SimpleMsg "Deployment planning failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth
@@ -76,6 +77,7 @@ func (h *Handler) RestPostDeploymentPlan(c echo.Context) error {
 // @Failure 400 {object} model.SimpleMsg "Malformed request or request not viable"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
 // @Failure 409 {object} model.SimpleMsg "Deployment name already in use, or a model service the application requires is not deployed"
+// @Failure 422 {object} model.SimpleMsg "No recommender configured: pin specId and imageId"
 // @Failure 500 {object} model.SimpleMsg "Deployment failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth

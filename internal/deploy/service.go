@@ -44,7 +44,8 @@ var ErrNotViable = errors.New("provisioning request is not viable")
 type Service struct {
 	tumblebug *tumblebug.Client
 	catalog   *catalog.Store
-	// recommender picks the spec and image of a plan.
+	// recommender picks the spec and image of a plan. Nil means no recommender
+	// API is configured and a plan must pin both.
 	recommender Recommender
 	// provisioner reviews, creates and updates Infras.
 	provisioner Provisioner
@@ -61,7 +62,7 @@ type Service struct {
 // Option replaces a default of a Service.
 type Option func(*Service)
 
-// WithRecommender replaces the local CB-Tumblebug recommender.
+// WithRecommender sets the recommender API a plan asks for its spec and image.
 func WithRecommender(recommender Recommender) Option {
 	return func(s *Service) { s.recommender = recommender }
 }
@@ -71,18 +72,12 @@ func WithProvisioner(provisioner Provisioner) Option {
 	return func(s *Service) { s.provisioner = provisioner }
 }
 
-// NewService builds a Service. Without options it recommends and provisions
-// through CB-Tumblebug directly.
+// NewService builds a Service. Without options it has no recommender, so a plan
+// must pin its spec and image, and it provisions through CB-Tumblebug directly.
 func NewService(client *tumblebug.Client, store *catalog.Store, cfg config.TumblebugConfig, opts ...Option) *Service {
 	s := &Service{
-		tumblebug: client,
-		catalog:   store,
-		recommender: &localRecommender{
-			tumblebug:      client,
-			imageNamespace: cfg.ImageNamespace,
-			specNamespace:  cfg.SpecNamespace,
-			defaultOSType:  cfg.DefaultOSType,
-		},
+		tumblebug:      client,
+		catalog:        store,
 		provisioner:    &localProvisioner{tumblebug: client},
 		dryRun:         cfg.DryRun,
 		healthTimeout:  defaultHealthTimeout,
@@ -100,12 +95,16 @@ func (s *Service) DryRun() bool { return s.dryRun }
 // Plan turns a deployment request into the CB-Tumblebug request it would send.
 //
 // Planning never changes anything, so it runs regardless of the dry-run guard.
-// When the caller did not pin a spec, the accelerator requirement drives a
-// recommendation and the cheapest match is taken.
+// When the caller did not pin a spec, the recommender API is asked and its
+// first candidate is taken. Without a recommender API both the spec and the
+// image must be pinned.
 func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq) (*model.DeploymentPlan, error) {
 	app, err := s.catalog.Get(ctx, req.AppID)
 	if err != nil {
 		return nil, err
+	}
+	if s.recommender == nil && (req.SpecID == "" || req.ImageID == "") {
+		return nil, ErrNoRecommender
 	}
 	// Checked before any spec is recommended: an application whose model
 	// service is missing cannot run wherever it is placed.
@@ -125,7 +124,7 @@ func (s *Service) Plan(ctx context.Context, nsID string, req *model.DeployAppReq
 		if len(candidates) == 0 {
 			return nil, fmt.Errorf("no node spec satisfies the accelerator requirement of %q", app.ID)
 		}
-		// RecommendSpecs orders by cost, so the first candidate is the cheapest match.
+		// The recommender orders its candidates, so the first one is its pick.
 		specID = candidates[0].ID
 		specSource = sourceOf("recommended", s.recommender)
 		acceleratorSummary = summarizeAccelerator(candidates[0])

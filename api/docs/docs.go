@@ -260,7 +260,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Find node specs across every connected cloud that satisfy the accelerator requirement, cheapest first",
+                "description": "Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node specs that satisfy the accelerator requirement. Without a recommender API this answers 422.",
                 "produces": [
                     "application/json"
                 ],
@@ -298,6 +298,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "No recommender configured",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -523,6 +529,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
                     },
+                    "422": {
+                        "description": "No recommender configured: pin specId and imageId",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
                     "500": {
                         "description": "Deployment failed",
                         "schema": {
@@ -545,7 +557,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Build the provisioning request for an AI application without contacting any cloud. Leave specId empty to select the cheapest spec matching the accelerator requirement",
+                "description": "Build the provisioning request for an AI application without contacting any cloud. Leave specId or imageId empty to take them from the partner recommender API (AIAPP_RECOMMENDER_URL); without one both must be pinned",
                 "consumes": [
                     "application/json"
                 ],
@@ -597,6 +609,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "A model service the application requires is not deployed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "No recommender configured: pin specId and imageId",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1729,7 +1747,7 @@ const docTemplate = `{
                     "example": "vllm-llama31-8b"
                 },
                 "imageId": {
-                    "description": "ImageID pins the node image. Empty asks CB-Tumblebug to select one.",
+                    "description": "ImageID pins the node image. Empty asks the partner recommender API.",
                     "type": "string",
                     "example": "ubuntu22.04"
                 },
@@ -1749,7 +1767,7 @@ const docTemplate = `{
                     "example": "sg-usecase-web"
                 },
                 "specId": {
-                    "description": "SpecID pins the node spec. Empty asks for a recommendation first.",
+                    "description": "SpecID pins the node spec. Empty asks the partner recommender API.",
                     "type": "string",
                     "example": "aws+us-west-2+g6.xlarge"
                 }

@@ -35,3 +35,12 @@ func TestRequirementNotDeployedIsConflictWithItsOwnMessage(t *testing.T) {
 		t.Errorf("message = %q, want %q", got, want)
 	}
 }
+
+func TestNoRecommenderIsUnprocessableWithItsOwnMessage(t *testing.T) {
+	if got := statusCodeFor(deploy.ErrNoRecommender); got != http.StatusUnprocessableEntity {
+		t.Errorf("no recommender mapped to %d, want 422", got)
+	}
+	if got := messageFor(deploy.ErrNoRecommender, "Deployment planning failed"); got != "no recommender configured: pin specId and imageId" {
+		t.Errorf("message = %q", got)
+	}
+}

@@ -98,13 +98,13 @@ func seededCatalog(t *testing.T) *catalog.Store {
 func TestRemoteRecommenderDrivesPlan(t *testing.T) {
 	fake, srv := newFakePlacement(t, map[string]fakeReply{
 		"/recommendations/specs": {http.StatusOK, `{"candidates":[
-			{"id":"khu+gpu+a100","providerName":"khu","regionName":"seoul","acceleratorType":"gpu",
+			{"id":"partner+gpu+a100","providerName":"partner","regionName":"seoul","acceleratorType":"gpu",
 			 "acceleratorModel":"A100","acceleratorCount":1,"acceleratorMemoryGB":80,"vCPU":16,
 			 "memoryGiB":128,"costPerHour":1.5},
-			{"id":"khu+gpu+t4","acceleratorType":"gpu","acceleratorCount":1}],
+			{"id":"partner+gpu+t4","acceleratorType":"gpu","acceleratorCount":1}],
 			"reason":"cheapest with enough memory"}`},
 		"/recommendations/image": {http.StatusOK,
-			`{"imageId":"khu-ubuntu22-cuda12","source":"khu-catalog","reason":"ships the CUDA 12 driver"}`},
+			`{"imageId":"partner-ubuntu22-cuda12","source":"partner-catalog","reason":"ships the CUDA 12 driver"}`},
 	})
 
 	// No CB-Tumblebug client at all: planning with a remote recommender must not
@@ -118,10 +118,10 @@ func TestRemoteRecommenderDrivesPlan(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	if plan.SpecID != "khu+gpu+a100" {
+	if plan.SpecID != "partner+gpu+a100" {
 		t.Errorf("SpecID = %q, want the first remote candidate", plan.SpecID)
 	}
-	if plan.ImageID != "khu-ubuntu22-cuda12" {
+	if plan.ImageID != "partner-ubuntu22-cuda12" {
 		t.Errorf("ImageID = %q, want the remote image", plan.ImageID)
 	}
 	if plan.SpecSource != "recommended:remote" {
@@ -137,7 +137,7 @@ func TestRemoteRecommenderDrivesPlan(t *testing.T) {
 		t.Errorf("AcceleratorSummary = %q", plan.AcceleratorSummary)
 	}
 	infraReq, ok := plan.Request.(*tumblebug.InfraDynamicReq)
-	if !ok || infraReq.NodeGroups[0].SpecID != "khu+gpu+a100" || infraReq.NodeGroups[0].ImageID != "khu-ubuntu22-cuda12" {
+	if !ok || infraReq.NodeGroups[0].SpecID != "partner+gpu+a100" || infraReq.NodeGroups[0].ImageID != "partner-ubuntu22-cuda12" {
 		t.Errorf("provisioning request does not carry the remote spec and image: %+v", plan.Request)
 	}
 
@@ -153,7 +153,7 @@ func TestRemoteRecommenderDrivesPlan(t *testing.T) {
 	}
 
 	image := fake.request(t, "POST /recommendations/image")
-	if image.Body["specId"] != "khu+gpu+a100" {
+	if image.Body["specId"] != "partner+gpu+a100" {
 		t.Errorf("image body specId = %v", image.Body["specId"])
 	}
 	if app, _ := image.Body["app"].(map[string]any); app["id"] != "vllm-llama31-8b" {
@@ -192,13 +192,13 @@ func testPlan() *model.DeploymentPlan {
 		AppID:     "vllm-llama31-8b",
 		Namespace: "default",
 		InfraName: "vllm-lab-01",
-		SpecID:    "khu+gpu+a100",
+		SpecID:    "partner+gpu+a100",
 		ImageID:   "img-1",
 		NodeCount: 1,
 		Request: &tumblebug.InfraDynamicReq{
 			Name: "vllm-lab-01",
 			NodeGroups: []tumblebug.CreateNodeGroupDynamicReq{{
-				Name: "serving", NodeGroupSize: 1, SpecID: "khu+gpu+a100", ImageID: "img-1",
+				Name: "serving", NodeGroupSize: 1, SpecID: "partner+gpu+a100", ImageID: "img-1",
 			}},
 			PostCommands: []tumblebug.PostCommandReq{{Command: []string{"echo install"}}},
 		},
@@ -211,7 +211,7 @@ func TestRemoteProvisionerContract(t *testing.T) {
 			"overallMessage":"ok","estimatedCost":"$1.50/hour","totalNodeCount":1,"recommendations":["none"]}`},
 		"/provisions": {http.StatusOK, `{"infraId":"vllm-lab-01","message":"created",
 			"infra":{"id":"vllm-lab-01","name":"vllm-lab-01","status":"Running",
-			"node":[{"id":"serving-1","publicIP":"203.0.113.10","specId":"khu+gpu+a100"}]}}`},
+			"node":[{"id":"serving-1","publicIP":"203.0.113.10","specId":"partner+gpu+a100"}]}}`},
 		"/provisions/vllm-lab-01/update": {http.StatusOK, `{"infraId":"vllm-lab-01","appId":"vllm-llama31-8b",
 			"appVersion":"0.2.0","nodes":[{"nodeId":"serving-1","succeeded":true}],"message":"updated"}`},
 	})
@@ -278,7 +278,7 @@ func TestRemoteProvisionerContract(t *testing.T) {
 func assertPlanBody(t *testing.T, call string, raw any) {
 	t.Helper()
 	plan, _ := raw.(map[string]any)
-	if plan["infraName"] != "vllm-lab-01" || plan["specId"] != "khu+gpu+a100" || plan["nsId"] != "default" {
+	if plan["infraName"] != "vllm-lab-01" || plan["specId"] != "partner+gpu+a100" || plan["nsId"] != "default" {
 		t.Errorf("%s plan = %v", call, raw)
 		return
 	}
@@ -413,29 +413,22 @@ func TestServiceUpdateRefusesAnotherApplication(t *testing.T) {
 	}
 }
 
-func TestServiceDefaultsToLocalBackends(t *testing.T) {
+func TestServiceDefaultsToNoRecommender(t *testing.T) {
 	cfg := config.TumblebugConfig{ImageNamespace: "system", SpecNamespace: "system", DefaultOSType: "ubuntu 22.04"}
 	client := tumblebug.NewClient(cfg)
 
 	service := NewService(client, catalog.NewStore(), cfg)
-	recommender, ok := service.recommender.(*localRecommender)
-	if !ok {
-		t.Fatalf("recommender = %T, want *localRecommender", service.recommender)
-	}
-	if recommender.tumblebug != client || recommender.imageNamespace != "system" || recommender.defaultOSType != "ubuntu 22.04" {
-		t.Errorf("local recommender = %+v", recommender)
+	if service.recommender != nil {
+		t.Fatalf("recommender = %T, want none", service.recommender)
 	}
 	if _, ok := service.provisioner.(*localProvisioner); !ok {
 		t.Fatalf("provisioner = %T, want *localProvisioner", service.provisioner)
 	}
 
+	none := config.BackendConfig{Kind: config.BackendNone}
 	local := config.BackendConfig{Kind: config.BackendLocal}
-	if opts := OptionsFromConfig(local, local); len(opts) != 0 {
-		t.Errorf("local settings produced %d options, want none", len(opts))
-	}
-	service = NewService(client, catalog.NewStore(), cfg, OptionsFromConfig(local, local)...)
-	if _, ok := service.recommender.(*localRecommender); !ok {
-		t.Errorf("recommender = %T with local settings", service.recommender)
+	if opts := OptionsFromConfig(none, local); len(opts) != 0 {
+		t.Errorf("default settings produced %d options, want none", len(opts))
 	}
 
 	remote := remoteBackend("http://placement.invalid", "")
@@ -450,7 +443,44 @@ func TestServiceDefaultsToLocalBackends(t *testing.T) {
 	if got := sourceOf("recommended", service.recommender); got != "recommended:remote" {
 		t.Errorf("remote source = %q", got)
 	}
-	if got := sourceOf("recommended", &localRecommender{}); got != "recommended" {
-		t.Errorf("local source = %q, want the unqualified value", got)
+}
+
+func TestPlanWithoutRecommenderNeedsSpecAndImage(t *testing.T) {
+	// No CB-Tumblebug client: a refused plan must fail before reaching it.
+	service := NewService(nil, seededCatalog(t), config.TumblebugConfig{DryRun: true})
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name   string
+		specID string
+		image  string
+	}{
+		{"neither", "", ""},
+		{"spec only", "aws+us-east-1+g6.2xlarge", ""},
+		{"image only", "", "ubuntu22.04"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := service.Plan(ctx, "default", &model.DeployAppReq{
+				AppID: "vllm-llama31-8b", InfraName: "x", SpecID: tc.specID, ImageID: tc.image,
+			})
+			if !errors.Is(err, ErrNoRecommender) {
+				t.Errorf("Plan error = %v, want ErrNoRecommender", err)
+			}
+		})
+	}
+
+	if _, err := service.Deploy(ctx, "default", &model.DeployAppReq{AppID: "vllm-llama31-8b", InfraName: "x"}); !errors.Is(err, ErrNoRecommender) {
+		t.Errorf("Deploy error = %v, want ErrNoRecommender", err)
+	}
+
+	app, err := seededCatalog(t).Get(ctx, "vllm-llama31-8b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RecommendSpecs(ctx, app, 3); !errors.Is(err, ErrNoRecommender) {
+		t.Errorf("RecommendSpecs error = %v, want ErrNoRecommender", err)
+	}
+	if _, err := service.ResolveImage(ctx, app, "s"); !errors.Is(err, ErrNoRecommender) {
+		t.Errorf("ResolveImage error = %v, want ErrNoRecommender", err)
 	}
 }

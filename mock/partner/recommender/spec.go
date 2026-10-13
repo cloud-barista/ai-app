@@ -1,5 +1,12 @@
-// Package deploy turns AI application metadata into CB-Tumblebug requests.
-package deploy
+// Package recommender is a mock of the infrastructure recommendation API.
+//
+// Requirement analysis and infrastructure recommendation are the partner
+// institution's area. This code is a mock kept only to exercise the integration
+// point the AI-App service calls; it is not part of the Innogrid prototype. It
+// carries the first-year recommendation logic (accelerator requirement to a
+// CB-Tumblebug spec filter, cheapest first, vendor matched images) so that the
+// AI-App service has something real to call until the partner API exists.
+package recommender
 
 import (
 	"context"
@@ -8,6 +15,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
@@ -28,11 +36,32 @@ const (
 // reason about without paging through hundreds of near identical specs.
 const defaultSpecCandidates = 5
 
+// Recommender recommends from the CB-Tumblebug spec and image catalogs.
+type Recommender struct {
+	tumblebug *tumblebug.Client
+	// imageNamespace holds the shared image catalog images are searched in.
+	imageNamespace string
+	// specNamespace holds the shared spec catalog specs are read from.
+	specNamespace string
+	// defaultOSType is the image family used when an application does not name one.
+	defaultOSType string
+}
+
+// New builds a Recommender over a CB-Tumblebug client.
+func New(client *tumblebug.Client, cfg config.TumblebugConfig) *Recommender {
+	return &Recommender{
+		tumblebug:      client,
+		imageNamespace: cfg.ImageNamespace,
+		specNamespace:  cfg.SpecNamespace,
+		defaultOSType:  cfg.DefaultOSType,
+	}
+}
+
 // RecommendSpecs asks CB-Tumblebug for node specs that satisfy an application.
 //
 // The accelerator requirement maps field for field onto the spec filter, so a
 // new accelerator vendor needs a catalog entry rather than code here.
-func (r *localRecommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, limit int) ([]model.SpecCandidate, error) {
+func (r *Recommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, limit int) ([]model.SpecCandidate, error) {
 	if limit <= 0 {
 		limit = defaultSpecCandidates
 	}

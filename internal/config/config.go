@@ -27,10 +27,14 @@ const DefaultTumblebugBaseURL = "http://localhost:1323/tumblebug"
 
 // Backend kinds of the recommender and the provisioner.
 const (
-	// BackendLocal works against CB-Tumblebug directly.
+	// BackendLocal works against CB-Tumblebug directly. Only the provisioner
+	// has a local implementation.
 	BackendLocal = "local"
 	// BackendRemote calls an external placement service over HTTP.
 	BackendRemote = "remote"
+	// BackendNone means no recommender API is configured, so a plan must pin
+	// its spec and image.
+	BackendNone = "none"
 )
 
 // recommenderTimeout bounds a remote recommendation. A recommendation reads
@@ -47,7 +51,9 @@ type Config struct {
 	Archive   ArchiveConfig
 	Auth      AuthConfig
 	Health    HealthConfig
-	// Recommender selects who picks the spec and image of a plan.
+	// Recommender is the partner recommender API that picks the spec and image
+	// of a plan. Its kind is remote when AIAPP_RECOMMENDER_URL is set and none
+	// otherwise; infrastructure recommendation is not done in this service.
 	Recommender BackendConfig
 	// Provisioner selects who reviews, creates and updates Infras.
 	Provisioner BackendConfig
@@ -56,7 +62,7 @@ type Config struct {
 // BackendConfig selects the local or a remote implementation of one AI-App
 // placement step.
 type BackendConfig struct {
-	// Kind is BackendLocal or BackendRemote.
+	// Kind is BackendLocal, BackendRemote or, for the recommender, BackendNone.
 	Kind string
 	// URL is the base URL of the remote service. Unused when Kind is local.
 	URL string
@@ -181,7 +187,6 @@ func Load() (*Config, error) {
 	v.SetDefault("archive.dir", "./data/archive")
 	v.SetDefault("health.timeout", 15*time.Minute)
 	v.SetDefault("health.interval", 20*time.Second)
-	v.SetDefault("placement.recommender", BackendLocal)
 	v.SetDefault("placement.provisioner", BackendLocal)
 
 	// AutomaticEnv only resolves keys that viper already knows about.
@@ -219,10 +224,10 @@ func Load() (*Config, error) {
 		}
 	}
 	// The backend variables are bound by name. Nesting them under a
-	// "recommender" key would not work: a set AIAPP_RECOMMENDER shadows every
-	// key below "recommender" and they all read empty.
+	// "provisioner" key would not work: a set AIAPP_PROVISIONER shadows every
+	// key below "provisioner" and they all read empty. AIAPP_RECOMMENDER is no
+	// longer read: the recommender is remote exactly when its URL is set.
 	for key, env := range map[string]string{
-		"placement.recommender":       envPrefix + "_RECOMMENDER",
 		"placement.recommender_url":   envPrefix + "_RECOMMENDER_URL",
 		"placement.recommender_token": envPrefix + "_RECOMMENDER_TOKEN",
 		"placement.provisioner":       envPrefix + "_PROVISIONER",
@@ -282,8 +287,7 @@ func Load() (*Config, error) {
 			Interval: v.GetDuration("health.interval"),
 		},
 		Recommender: BackendConfig{
-			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.recommender"))),
-			URL:     strings.TrimRight(v.GetString("placement.recommender_url"), "/"),
+			URL:     strings.TrimRight(strings.TrimSpace(v.GetString("placement.recommender_url")), "/"),
 			Token:   v.GetString("placement.recommender_token"),
 			Timeout: recommenderTimeout,
 		},
@@ -293,6 +297,11 @@ func Load() (*Config, error) {
 			Token:   v.GetString("placement.provisioner_token"),
 			Timeout: v.GetDuration("tumblebug.timeout"),
 		},
+	}
+
+	cfg.Recommender.Kind = BackendNone
+	if cfg.Recommender.URL != "" {
+		cfg.Recommender.Kind = BackendRemote
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -355,9 +364,6 @@ func (c *Config) validate() error {
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("invalid health interval: %s", c.Health.Interval)
-	}
-	if err := c.Recommender.validate(envPrefix + "_RECOMMENDER"); err != nil {
-		return err
 	}
 	if err := c.Provisioner.validate(envPrefix + "_PROVISIONER"); err != nil {
 		return err

@@ -251,3 +251,43 @@ func TestPostDeploymentWaitHealthy(t *testing.T) {
 		})
 	}
 }
+
+func TestNoRecommenderIsUnprocessable(t *testing.T) {
+	s := newHealthServer(t, &sentCommands{})
+	const want = "no recommender configured: pin specId and imageId"
+
+	for _, tc := range []struct {
+		name string
+		rec  *httptest.ResponseRecorder
+	}{
+		{"specs", do(s, http.MethodGet, "/aiapp/apps/vllm-llama31-8b/specs", "")},
+		{"plan without spec", postJSON(s, "/aiapp/ns/default/deployments/plan",
+			`{"appId":"vllm-llama31-8b","infraName":"vllm-lab-02"}`)},
+		{"plan with spec only", postJSON(s, "/aiapp/ns/default/deployments/plan",
+			`{"appId":"vllm-llama31-8b","infraName":"vllm-lab-02","specId":"aws+us-east-1+g6.2xlarge"}`)},
+		{"deploy without spec", postJSON(s, "/aiapp/ns/default/deployments",
+			`{"appId":"vllm-llama31-8b","infraName":"vllm-lab-02"}`)},
+	} {
+		if tc.rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: status = %d, want 422; body %s", tc.name, tc.rec.Code, tc.rec.Body)
+			continue
+		}
+		var msg model.SimpleMsg
+		if err := json.Unmarshal(tc.rec.Body.Bytes(), &msg); err != nil || msg.Message != want {
+			t.Errorf("%s: body = %s, want message %q", tc.name, tc.rec.Body, want)
+		}
+	}
+
+	rec := postJSON(s, "/aiapp/ns/default/deployments/plan",
+		`{"appId":"vllm-llama31-8b","infraName":"vllm-lab-02","specId":"aws+us-east-1+g6.2xlarge","imageId":"ubuntu22.04"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pinned plan: status = %d, body %s", rec.Code, rec.Body)
+	}
+	var plan model.DeploymentPlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.SpecSource != "requested" || plan.ImageSource != "requested" {
+		t.Errorf("pinned plan sources = %q, %q", plan.SpecSource, plan.ImageSource)
+	}
+}

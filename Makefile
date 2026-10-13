@@ -1,13 +1,15 @@
 APP    := ai-app-server
 AGENT  := ai-agent
+MOCK_RECOMMENDER := mock-partner-recommender
 GOBIN  := $(shell go env GOPATH)/bin
 IMAGE  := ai-agent-proto:local
 
-.PHONY: build run-app run-agent test swag fmt lint verify docker-build docker-up docker-down docker-logs
+.PHONY: build run-app run-agent run-mock-recommender test swag fmt lint verify docker-build docker-up docker-down docker-logs
 
 build:
 	go build -o bin/$(APP) ./cmd/$(APP)
 	go build -o bin/$(AGENT) ./cmd/$(AGENT)
+	go build -o bin/$(MOCK_RECOMMENDER) ./mock/partner/recommender/cmd/recommender
 
 # Both start with no configuration at all. Settings come from conf/setup.env when
 # that file exists and from built-in defaults otherwise, so a fresh checkout
@@ -18,6 +20,11 @@ run-app:
 # The agent reaches the tools through the AI-App MCP server; start run-app too.
 run-agent:
 	go run ./cmd/$(AGENT)
+
+# Partner institution recommender (mock implementation), not part of this
+# prototype. Point AIAPP_RECOMMENDER_URL of run-app at http://127.0.0.1:8092.
+run-mock-recommender:
+	go run ./mock/partner/recommender/cmd/recommender
 
 test:
 	go test ./...

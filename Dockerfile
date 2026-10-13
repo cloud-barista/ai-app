@@ -15,9 +15,11 @@ COPY . .
 
 # CGO is off so the binary runs on a base image with no libc, and the build is
 # stripped because the symbol table is only useful where the source is too.
-# Both services come from one image; the compose file picks the command.
+# Every service comes from one image; the compose file picks the command. The
+# partner recommender mock is built alongside, apart from the prototype binaries.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-app-server ./cmd/ai-app-server && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-agent ./cmd/ai-agent
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-agent ./cmd/ai-agent && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mock-partner-recommender ./mock/partner/recommender/cmd/recommender
 
 # Runtime stage.
 #
@@ -36,9 +38,10 @@ RUN mkdir -p /app/data/archive /app/data/agent-archive && chown -R aiapp:aiapp /
 
 COPY --from=build /out/ai-app-server /usr/local/bin/ai-app-server
 COPY --from=build /out/ai-agent /usr/local/bin/ai-agent
+COPY --from=build /out/mock-partner-recommender /usr/local/bin/mock-partner-recommender
 
 USER aiapp
-EXPOSE 8090 8091
+EXPOSE 8090 8091 8092
 
 # No settings file is baked in. Every setting has a default, so the container
 # starts and serves the catalog, the matcher, the tools and the archive with

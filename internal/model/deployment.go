@@ -13,9 +13,9 @@ type DeployAppReq struct {
 	AppID string `json:"appId" validate:"required" example:"vllm-llama31-8b"`
 	// InfraName becomes the CB-Tumblebug Infra ID and is the idempotency key.
 	InfraName string `json:"infraName" validate:"required" example:"vllm-lab-01"`
-	// SpecID pins the node spec. Empty asks for a recommendation first.
+	// SpecID pins the node spec. Empty asks the partner recommender API.
 	SpecID string `json:"specId,omitempty" example:"aws+us-west-2+g6.xlarge"`
-	// ImageID pins the node image. Empty asks CB-Tumblebug to select one.
+	// ImageID pins the node image. Empty asks the partner recommender API.
 	ImageID string `json:"imageId,omitempty" example:"ubuntu22.04"`
 	// NodeCount is how many serving nodes to provision.
 	NodeCount int `json:"nodeCount,omitempty" example:"1"`

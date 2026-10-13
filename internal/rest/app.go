@@ -125,13 +125,14 @@ func (h *Handler) RestDeleteApp(c echo.Context) error {
 // RestGetAppSpecs godoc
 // @ID GetAppSpecs
 // @Summary Recommend accelerator specs for an AI application
-// @Description Find node specs across every connected cloud that satisfy the accelerator requirement, cheapest first
+// @Description Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node specs that satisfy the accelerator requirement. Without a recommender API this answers 422.
 // @Tags [App] AI Application Catalog
 // @Produce json
 // @Param appId path string true "AI application ID" default(vllm-llama31-8b)
 // @Param limit query int false "How many candidates to return" default(5)
 // @Success 200 {array} model.SpecCandidate "Matching node specs"
 // @Failure 404 {object} model.SimpleMsg "AI application not found"
+// @Failure 422 {object} model.SimpleMsg "No recommender configured"
 // @Failure 500 {object} model.SimpleMsg "Spec recommendation failed"
 // @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
 // @Security BearerAuth
@@ -154,7 +155,7 @@ func (h *Handler) RestGetAppSpecs(c echo.Context) error {
 	candidates, err := h.deploy.RecommendSpecs(ctx, spec, limit)
 	if err != nil {
 		log.Error().Err(err).Str("appId", appID).Msg("Failed to recommend specs")
-		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: "Spec recommendation failed"})
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Spec recommendation failed")})
 	}
 	return c.JSON(http.StatusOK, candidates)
 }

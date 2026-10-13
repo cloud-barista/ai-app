@@ -116,31 +116,6 @@ func TestPlanModelServiceSkipsRequirementLookup(t *testing.T) {
 	}
 }
 
-func TestSpecRequestWithoutAcceleratorFiltersOnlyCPUAndMemory(t *testing.T) {
-	app, err := seededCatalog(t).Get(context.Background(), "open-webui-llama31")
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := buildSpecRequest(app, 5)
-	metrics := map[string]string{}
-	for _, cond := range req.Filter.Policy {
-		metrics[cond.Metric] = cond.Condition[0].Operand
-	}
-	for _, metric := range []string{metricAcceleratorType, metricAcceleratorCount, metricAcceleratorModel, metricAcceleratorMemory} {
-		if _, ok := metrics[metric]; ok {
-			t.Errorf("filter carries %s for an application without an accelerator", metric)
-		}
-	}
-	if metrics[metricVCPU] != "2" || metrics[metricMemoryGiB] != "4" || len(metrics) != 2 {
-		t.Errorf("filter = %v, want vCPU>=2 and memoryGiB>=4 only", metrics)
-	}
-
-	gpu, _ := seededCatalog(t).Get(context.Background(), "vllm-llama31-8b")
-	if buildSpecRequest(gpu, 5).Filter.Policy[0].Metric != metricAcceleratorType {
-		t.Error("a model service lost its accelerator type filter")
-	}
-}
-
 func TestShellQuote(t *testing.T) {
 	cases := map[string]string{
 		"http://203.0.113.10:8000/v1": "http://203.0.113.10:8000/v1",

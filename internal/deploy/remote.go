@@ -91,7 +91,7 @@ func (c *remoteClient) post(ctx context.Context, path string, body, out any) err
 	return nil
 }
 
-// remoteRecommender asks an external service where an application goes.
+// remoteRecommender asks the partner recommender API where an application goes.
 type remoteRecommender struct {
 	client *remoteClient
 }
@@ -209,7 +209,8 @@ func (p *remoteProvisioner) Update(ctx context.Context, nsID, infraID string, ap
 }
 
 // OptionsFromConfig turns the recommender and provisioner settings into
-// Service options. Local settings add nothing, so the defaults stay in place.
+// Service options. A recommender that is not remote adds nothing, which leaves
+// the Service without one; a local provisioner keeps the CB-Tumblebug default.
 func OptionsFromConfig(recommender, provisioner config.BackendConfig) []Option {
 	var opts []Option
 	if recommender.Kind == config.BackendRemote {

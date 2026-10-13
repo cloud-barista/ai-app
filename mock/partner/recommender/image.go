@@ -1,4 +1,4 @@
-package deploy
+package recommender
 
 import (
 	"context"
@@ -54,9 +54,6 @@ type ImageChoice struct {
 	GPUImage bool   `json:"gpuImage"`
 	// Vendor is the accelerator vendor the image was matched against, when known.
 	Vendor string `json:"vendor,omitempty"`
-	// Source is where a remote recommender says the image came from. The local
-	// recommender leaves it empty.
-	Source string `json:"source,omitempty"`
 	// Reason explains the pick so an agent can report it and an operator can argue with it.
 	Reason string `json:"reason"`
 }
@@ -69,7 +66,7 @@ type ImageChoice struct {
 // actually carries; a mismatch is worse than a plain image, since the node comes
 // up looking ready while the driver never binds. Falling back is not silent:
 // the reason says which case applied.
-func (r *localRecommender) ResolveImage(ctx context.Context, app *model.AppSpec, specID string) (*ImageChoice, error) {
+func (r *Recommender) ResolveImage(ctx context.Context, app *model.AppSpec, specID string) (*ImageChoice, error) {
 	osType := app.Install.OSType
 	if osType == "" {
 		osType = r.defaultOSType
@@ -132,7 +129,7 @@ func (r *localRecommender) ResolveImage(ctx context.Context, app *model.AppSpec,
 // The application requirement is the first source because it is what the author
 // asked for; the spec is consulted when the requirement names no model, which is
 // the common case for a requirement written as "any GPU".
-func (r *localRecommender) acceleratorVendor(ctx context.Context, app *model.AppSpec, specID string) acceleratorVendor {
+func (r *Recommender) acceleratorVendor(ctx context.Context, app *model.AppSpec, specID string) acceleratorVendor {
 	if vendor := vendorOf(app.Accelerator.Model); vendor != vendorUnknown {
 		return vendor
 	}
@@ -149,7 +146,7 @@ func (r *localRecommender) acceleratorVendor(ctx context.Context, app *model.App
 }
 
 // chose builds an ImageChoice and logs the pick.
-func (r *localRecommender) chose(app *model.AppSpec, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
+func (r *Recommender) chose(app *model.AppSpec, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
 	log.Info().Str("appId", app.ID).Str("specId", specID).Str("imageId", image.ID).
 		Bool("gpuImage", image.IsGPUImage).Msg("Resolved node image")
 

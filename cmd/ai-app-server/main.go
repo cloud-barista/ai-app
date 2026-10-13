@@ -82,9 +82,16 @@ func main() {
 		log.Info().Str("url", cfg.Tumblebug.BaseURL).Str("source", "environment").
 			Msg("Using CB-Tumblebug")
 	}
-	log.Info().Str("recommender", cfg.Recommender.Kind).Str("recommenderUrl", cfg.Recommender.URL).
+	recommender := cfg.Recommender.URL
+	if recommender == "" {
+		recommender = config.BackendNone
+	}
+	log.Info().Str("recommender", recommender).
 		Str("provisioner", cfg.Provisioner.Kind).Str("provisionerUrl", cfg.Provisioner.URL).
 		Msg("Placement backends")
+	if cfg.Recommender.URL == "" {
+		log.Warn().Msg("AIAPP_RECOMMENDER_URL is not set: no partner recommender API, so every plan must pin specId and imageId")
+	}
 	if cfg.Tumblebug.DryRun {
 		log.Warn().Msg("Dry run is on: deploy, control, update and delete calls are planned but never sent to the cloud; direct API calls are archived here, MCP calls by the calling agent")
 	}

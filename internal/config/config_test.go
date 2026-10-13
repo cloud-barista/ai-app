@@ -17,20 +17,35 @@ func clearBackendEnv(t *testing.T) {
 	}
 }
 
-func TestBackendsDefaultToLocal(t *testing.T) {
+func TestBackendsDefault(t *testing.T) {
 	clearBackendEnv(t)
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Recommender.Kind != BackendLocal || cfg.Provisioner.Kind != BackendLocal {
-		t.Errorf("kinds = %q, %q, want local", cfg.Recommender.Kind, cfg.Provisioner.Kind)
+	if cfg.Recommender.Kind != BackendNone || cfg.Provisioner.Kind != BackendLocal {
+		t.Errorf("kinds = %q, %q, want none and local", cfg.Recommender.Kind, cfg.Provisioner.Kind)
+	}
+}
+
+func TestRecommenderKindIgnoresTheOldSetting(t *testing.T) {
+	for _, kind := range []string{"local", "remote"} {
+		t.Run(kind, func(t *testing.T) {
+			clearBackendEnv(t)
+			t.Setenv("AIAPP_RECOMMENDER", kind)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Recommender.Kind != BackendNone {
+				t.Errorf("kind = %q without a URL, want none", cfg.Recommender.Kind)
+			}
+		})
 	}
 }
 
 func TestRemoteBackendReadsURLAndToken(t *testing.T) {
 	clearBackendEnv(t)
-	t.Setenv("AIAPP_RECOMMENDER", "remote")
 	t.Setenv("AIAPP_RECOMMENDER_URL", "http://placement.example/api/")
 	t.Setenv("AIAPP_RECOMMENDER_TOKEN", "secret")
 	t.Setenv("AIAPP_PROVISIONER", "Remote")
@@ -49,22 +64,18 @@ func TestRemoteBackendReadsURLAndToken(t *testing.T) {
 	}
 }
 
-func TestRemoteBackendWithoutURLFails(t *testing.T) {
-	for _, name := range []string{"AIAPP_RECOMMENDER", "AIAPP_PROVISIONER"} {
-		t.Run(name, func(t *testing.T) {
-			clearBackendEnv(t)
-			t.Setenv(name, "remote")
-			_, err := Load()
-			if err == nil || !strings.Contains(err.Error(), name+"_URL") {
-				t.Errorf("Load error = %v, want one naming %s_URL", err, name)
-			}
-		})
+func TestRemoteProvisionerWithoutURLFails(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_PROVISIONER", "remote")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "AIAPP_PROVISIONER_URL") {
+		t.Errorf("Load error = %v, want one naming AIAPP_PROVISIONER_URL", err)
 	}
 }
 
 func TestUnknownBackendFails(t *testing.T) {
 	clearBackendEnv(t)
-	t.Setenv("AIAPP_PROVISIONER", "khu")
+	t.Setenv("AIAPP_PROVISIONER", "partner")
 	if _, err := Load(); err == nil {
 		t.Error("Load accepted an unknown provisioner kind")
 	}

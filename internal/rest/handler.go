@@ -47,6 +47,8 @@ func statusCodeFor(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, deploy.ErrRequirementNotDeployed):
 		return http.StatusConflict
+	case errors.Is(err, deploy.ErrNoRecommender):
+		return http.StatusUnprocessableEntity
 	case errors.Is(err, llm.ErrDisabled):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, mcpclient.ErrUnavailable):
@@ -74,9 +76,9 @@ func statusCodeFor(err error) int {
 
 // messageFor picks the caller-facing text for a failure.
 //
-// A validation error and a missing model service already carry text written for
-// the caller; anything else falls back to the handler's own wording so that
-// library and driver strings never reach the response body.
+// A validation error, a missing model service and a missing recommender already
+// carry text written for the caller; anything else falls back to the handler's
+// own wording so that library and driver strings never reach the response body.
 func messageFor(err error, fallback string) string {
 	if message := model.ValidationMessage(err); message != "" {
 		return message
@@ -84,6 +86,9 @@ func messageFor(err error, fallback string) string {
 	var requirementErr *deploy.RequirementError
 	if errors.As(err, &requirementErr) {
 		return requirementErr.Error()
+	}
+	if errors.Is(err, deploy.ErrNoRecommender) {
+		return deploy.ErrNoRecommender.Error()
 	}
 	return fallback
 }

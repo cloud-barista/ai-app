@@ -1,6 +1,9 @@
-# Runs the AI-App service and the AI application automation agent.
+# Runs the AI-App service, the AI application automation agent and the partner
+# recommender mock.
 #
-# Both services come from one image and differ only in the command. The agent
+# All services come from one image and differ only in the command. The partner
+# recommender mock stands in for the partner institution's infrastructure
+# recommendation API; it is not part of this prototype. The agent
 # reaches the tools through the AI-App MCP server, and the AI-App service
 # forwards intent and agent routes to the agent, so the console needs only the
 # AI-App address.
@@ -47,11 +50,13 @@ services:
       AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
       AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
 
-      # Recommendation and provisioning stay on CB-Tumblebug unless pointed at
-      # an external service.
-      AIAPP_RECOMMENDER: "${AIAPP_RECOMMENDER:-local}"
-      AIAPP_RECOMMENDER_URL: "${AIAPP_RECOMMENDER_URL:-}"
+      # Spec and image recommendation come from the partner recommender API,
+      # here its mock. Set AIAPP_RECOMMENDER_URL empty in .env to run without a
+      # recommender; every plan then has to pin specId and imageId.
+      AIAPP_RECOMMENDER_URL: "${AIAPP_RECOMMENDER_URL-http://mock-partner-recommender:8092}"
       AIAPP_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+
+      # Provisioning stays on CB-Tumblebug unless pointed at an external service.
       AIAPP_PROVISIONER: "${AIAPP_PROVISIONER:-local}"
       AIAPP_PROVISIONER_URL: "${AIAPP_PROVISIONER_URL:-}"
       AIAPP_PROVISIONER_TOKEN: "${AIAPP_PROVISIONER_TOKEN:-}"
@@ -125,6 +130,34 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # Partner institution recommender (mock implementation). It answers the
+  # proposed recommendation contract from the CB-Tumblebug spec and image
+  # catalogs, so it reads the same CB-Tumblebug settings as the AI-App service.
+  mock-partner-recommender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: mock-partner-recommender
+    command: ["/usr/local/bin/mock-partner-recommender"]
+    restart: unless-stopped
+    ports:
+      - "${AIAPP_MOCK_RECOMMENDER_PORT:-8092}:8092"
+    environment:
+      AIAPP_MOCK_RECOMMENDER_PORT: "8092"
+      # The same token the AI-App service sends.
+      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+
+      AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
+      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
+      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
+      AIAPP_TUMBLEBUG_IMAGE_NAMESPACE: "${AIAPP_TUMBLEBUG_IMAGE_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE: "${AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE:-ubuntu 22.04}"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   archive:

@@ -113,8 +113,9 @@ func recommendSpecTool(apps *catalog.Store, service *deploy.Service) Tool {
 	return Tool{
 		Name:  "recommend_accelerator_spec",
 		Grade: GradeRead,
-		Description: "Find node specs across every connected cloud that satisfy the accelerator requirement of an " +
-			"AI application. Results are ordered cheapest first and include the accelerator model, count and memory.",
+		Description: "Find node specs that satisfy the accelerator requirement of an AI application. " +
+			"The recommendation comes from the partner recommender API; without one configured this fails " +
+			"and specId and imageId have to be pinned. Results include the accelerator model, count and memory.",
 		InputSchema: object(map[string]any{
 			"appId": stringProp("Identifier of the registered AI application"),
 			"limit": integerProp("How many candidates to return. Defaults to 5"),
@@ -145,7 +146,7 @@ func resolveImageTool(apps *catalog.Store, service *deploy.Service) Tool {
 		Name:  "resolve_node_image",
 		Grade: GradeRead,
 		Description: "Pick the node image an AI application should boot on a given spec. " +
-			"An accelerator image is preferred because it ships the vendor driver. " +
+			"The recommendation comes from the partner recommender API; without one configured this fails. " +
 			"Only call this when you want to explain or override the image; deploying resolves it on its own.",
 		InputSchema: object(map[string]any{
 			"appId":  stringProp("Identifier of the registered AI application"),
@@ -282,7 +283,8 @@ func planDeploymentTool(service *deploy.Service) Tool {
 		Name:  "plan_deployment",
 		Grade: GradeRead,
 		Description: "Build the provisioning request for an AI application without contacting any cloud. " +
-			"Leave specId empty to let the accelerator requirement pick the cheapest matching spec. " +
+			"Leave specId or imageId empty to have them recommended; the recommendation comes from the " +
+			"partner recommender API, and without one configured both must be pinned. " +
 			requiresNote,
 		InputSchema: deployInputSchema(),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
@@ -426,8 +428,8 @@ func deployInputSchema() map[string]any {
 	return object(map[string]any{
 		"appId":        stringProp("Identifier of the registered AI application"),
 		"infraName":    stringProp("Name for the deployment. It is also the idempotency key"),
-		"specId":       stringProp("Node spec to pin. Leave empty to pick the cheapest matching spec"),
-		"imageId":      stringProp("Node image to pin. Leave empty for the default"),
+		"specId":       stringProp("Node spec to pin. Leave empty to ask the partner recommender API"),
+		"imageId":      stringProp("Node image to pin. Leave empty to ask the partner recommender API"),
 		"sgTemplateId": stringProp("Security group template to start from. Leave empty for the cloud manager default, which opens every port"),
 		"nodeCount":    integerProp("How many serving nodes to provision. Defaults to 1"),
 	}, "appId", "infraName")
