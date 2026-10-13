@@ -1749,14 +1749,20 @@ function mdLite(src) {
   let list = null;
   const flush = () => {
     if (para.length) out.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
-    if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${mdInline(x)}</li>`).join('')}</${list.tag}>`);
+    if (list) {
+      // A model numbers items across blank lines and nested lists, so an
+      // ordered list keeps the number it started at instead of restarting at 1.
+      const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+      out.push(`<${list.tag}${start}>${list.items.map((x) => `<li>${mdInline(x.text)}${x.sub.length
+        ? `<ul>${x.sub.map((y) => `<li>${mdInline(y)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${list.tag}>`);
+    }
     para = [];
     list = null;
   };
-  const item = (tag, text) => {
+  const item = (tag, text, start) => {
     if (para.length || (list && list.tag !== tag)) flush();
-    if (!list) list = { tag, items: [] };
-    list.items.push(text);
+    if (!list) list = { tag, items: [], start: start || 1 };
+    list.items.push({ text, sub: [] });
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -1781,8 +1787,10 @@ function mdLite(src) {
       continue;
     }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push('<hr>'); continue; }
+    // An indented bullet under an existing item is that item's sub-list.
+    if (list && (m = /^\s{2,}[-*+]\s+(.*)$/.exec(l))) { list.items[list.items.length - 1].sub.push(m[1]); continue; }
     if ((m = /^\s*[-*+]\s+(.*)$/.exec(l))) { item('ul', m[1]); continue; }
-    if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(l))) { item('ol', m[1]); continue; }
+    if ((m = /^\s*(\d+)[.)]\s+(.*)$/.exec(l))) { item('ol', m[2], Number(m[1])); continue; }
     if (list) flush();
     para.push(l.trim());
   }
