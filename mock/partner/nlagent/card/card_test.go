@@ -1,4 +1,4 @@
-package agentcard
+package card
 
 import (
 	"context"
@@ -13,14 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
-	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
-	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
+	"github.com/ish-hcc/ai-agent-proto/mock/partner/nlagent/llm"
 )
 
 var _ ToolCache = (*mcpclient.Client)(nil)
@@ -28,7 +26,7 @@ var _ ToolCache = (*mcpclient.Client)(nil)
 // testLLM carries userinfo, a path and a query on purpose: the card must keep
 // only the scheme and host. The URL is assembled rather than written out so the
 // fixture does not read as a leaked credential.
-var testLLM = config.LLMConfig{
+var testLLM = llm.Config{
 	BaseURL: (&url.URL{
 		Scheme:   "https",
 		User:     url.UserPassword("user", "pass"),
@@ -40,12 +38,31 @@ var testLLM = config.LLMConfig{
 	Model:  "glm-4.7-flash",
 }
 
-// newRegistry builds the AI-App tool registry with the dry-run guard on.
+// toolCount is how many tools newRegistry holds.
+const toolCount = 5
+
+// newRegistry builds a stand-in for the engine tool registry, with the
+// engine's tool names and grades and the dry-run gate on.
 func newRegistry() *tools.Registry {
-	cfg := config.TumblebugConfig{DryRun: true}
-	apps := catalog.NewStore()
-	registry := tools.NewRegistry(cfg.DryRun)
-	tools.Register(registry, apps, deploy.NewService(tumblebug.NewClient(cfg), apps, cfg))
+	registry := tools.NewRegistry(true)
+	grades := map[string]tools.Grade{
+		engine.ToolDeploy:       tools.GradeWrite,
+		engine.ToolHeal:         tools.GradeWrite,
+		engine.ToolControl:      tools.GradeWrite,
+		engine.ToolStatus:       tools.GradeRead,
+		engine.ToolApplications: tools.GradeRead,
+	}
+	for name, grade := range grades {
+		registry.Add(tools.Tool{
+			Name:        name,
+			Description: "stand-in " + name,
+			Grade:       grade,
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+			Handle: func(context.Context, string, json.RawMessage) (any, error) {
+				return map[string]string{"tool": name}, nil
+			},
+		})
+	}
 	return registry
 }
 
@@ -102,11 +119,11 @@ func TestCardWhenConnected(t *testing.T) {
 		t.Errorf("identity = %+v", card)
 	}
 	if len(card.MCPServers) != 1 || card.MCPServers[0].URL != client.Endpoint() ||
-		!card.MCPServers[0].Connected || card.MCPServers[0].ToolCount != 15 {
+		!card.MCPServers[0].Connected || card.MCPServers[0].ToolCount != toolCount {
 		t.Errorf("mcpServers = %+v", card.MCPServers)
 	}
-	if len(card.Tools) != 15 {
-		t.Fatalf("tools = %d, want 15", len(card.Tools))
+	if len(card.Tools) != toolCount {
+		t.Fatalf("tools = %d, want %d", len(card.Tools), toolCount)
 	}
 	want := map[string]model.ToolDescriptor{}
 	for _, d := range registry.Descriptors() {
@@ -122,8 +139,8 @@ func TestCardWhenConnected(t *testing.T) {
 			t.Errorf("%s = %s/%v, want %s/%v", tool.Name, tool.Grade, tool.GuardedByDryRun, d.Grade, d.GuardedByDryRun)
 		}
 	}
-	if !card.DryRun {
-		t.Errorf("dryRun = false, want the AI-App setting true")
+	if !card.DryRun || !card.Mock {
+		t.Errorf("dryRun = %v, mock = %v, want both true", card.DryRun, card.Mock)
 	}
 	if card.LLM.BaseURL != "https://llm.example:8443" || card.LLM.Model != "glm-4.7-flash" ||
 		strings.Join(card.LLM.Requires, ",") != "tool_use,anthropic-messages" {
@@ -141,7 +158,7 @@ func TestCardWhenConnected(t *testing.T) {
 }
 
 func TestCardWhenNotConnected(t *testing.T) {
-	client := mcpclient.New("http://127.0.0.1:1/aiapp/mcp", "")
+	client := mcpclient.New("http://127.0.0.1:1/aiapp/engine/mcp", "")
 
 	card := New(client, testLLM, nil).Build()
 
@@ -171,11 +188,11 @@ func TestRegisterPostsCardWithToken(t *testing.T) {
 	if fake.calls() != 1 || fake.paths[0] != "POST /agents" || fake.auths[0] != "Bearer reg-token" {
 		t.Fatalf("registry saw %v with %v", fake.paths, fake.auths)
 	}
-	var sent model.AgentCard
+	var sent AgentCard
 	if err := json.Unmarshal(fake.bodies[0], &sent); err != nil {
 		t.Fatalf("decode sent card: %v", err)
 	}
-	if sent.Name != Name || len(sent.Tools) != 15 || !sent.MCPServers[0].Connected || sent.Registration != nil {
+	if sent.Name != Name || len(sent.Tools) != toolCount || !sent.MCPServers[0].Connected || sent.Registration != nil {
 		t.Errorf("sent card = %+v", sent)
 	}
 
@@ -193,7 +210,7 @@ func TestRegisterFailsAfterThreeAttempts(t *testing.T) {
 
 	registrar := NewRegistrar(srv.URL, "")
 	registrar.SetInterval(time.Millisecond)
-	card := New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), testLLM, registrar)
+	card := New(mcpclient.New("http://127.0.0.1:1/aiapp/engine/mcp", ""), testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
 
@@ -227,7 +244,7 @@ func TestCardAndRegistrationCarryNoURLSecrets(t *testing.T) {
 	registry := newRegistry()
 	mcpSrv := httptest.NewServer(mcpserver.NewHandler(registry))
 	defer mcpSrv.Close()
-	mcpURL := secretURL(t, mcpSrv.URL+"/aiapp/mcp", "mu", "mpw", "token=mtok")
+	mcpURL := secretURL(t, mcpSrv.URL+"/aiapp/engine/mcp", "mu", "mpw", "token=mtok")
 	client := mcpclient.New(mcpURL, "")
 	defer func() { _ = client.Close() }()
 
@@ -264,7 +281,7 @@ func TestCardAndRegistrationCarryNoURLSecrets(t *testing.T) {
 			t.Errorf("card carries %q: %s", secret, raw)
 		}
 	}
-	if built.MCPServers[0].URL != mcpSrv.URL+"/aiapp/mcp" {
+	if built.MCPServers[0].URL != mcpSrv.URL+"/aiapp/engine/mcp" {
 		t.Errorf("mcpServers[0].url = %q", built.MCPServers[0].URL)
 	}
 	state := built.Registration
@@ -276,7 +293,7 @@ func TestCardAndRegistrationCarryNoURLSecrets(t *testing.T) {
 
 func TestRegistryNotSetIsDisabled(t *testing.T) {
 	registrar := NewRegistrar("", "")
-	card := New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), testLLM, registrar)
+	card := New(mcpclient.New("http://127.0.0.1:1/aiapp/engine/mcp", ""), testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
 
@@ -300,7 +317,7 @@ func (c *countingClient) Prepare(ctx context.Context) error {
 }
 
 func TestRegisterWaitsForLateMCPServer(t *testing.T) {
-	// The AI-App MCP server answers 503 during the first two connection
+	// The engine MCP server answers 503 during the first two connection
 	// attempts, as one that is still starting does.
 	client := &countingClient{}
 	mcpHandler := mcpserver.NewHandler(newRegistry())
@@ -331,11 +348,11 @@ func TestRegisterWaitsForLateMCPServer(t *testing.T) {
 	if fake.calls() != 1 {
 		t.Fatalf("registry called %d times, want 1", fake.calls())
 	}
-	var sent model.AgentCard
+	var sent AgentCard
 	if err := json.Unmarshal(fake.bodies[0], &sent); err != nil {
 		t.Fatalf("decode sent card: %v", err)
 	}
-	if !sent.MCPServers[0].Connected || sent.MCPServers[0].ToolCount != 15 || len(sent.Tools) != 15 {
+	if !sent.MCPServers[0].Connected || sent.MCPServers[0].ToolCount != toolCount || len(sent.Tools) != toolCount {
 		t.Errorf("sent card mcpServers = %+v, tools = %d", sent.MCPServers, len(sent.Tools))
 	}
 }
@@ -345,7 +362,7 @@ func TestRegisterWithoutMCPServerSendsUnconnectedCard(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 
-	client := &countingClient{Client: mcpclient.New("http://127.0.0.1:1/aiapp/mcp", "")}
+	client := &countingClient{Client: mcpclient.New("http://127.0.0.1:1/aiapp/engine/mcp", "")}
 	registrar := NewRegistrar(srv.URL, "")
 	registrar.SetInterval(time.Millisecond)
 	card := New(client, testLLM, registrar)
@@ -355,7 +372,7 @@ func TestRegisterWithoutMCPServerSendsUnconnectedCard(t *testing.T) {
 	if got := client.prepares.Load(); got != 3 {
 		t.Errorf("connection attempts = %d, want 3", got)
 	}
-	var sent model.AgentCard
+	var sent AgentCard
 	if fake.calls() != 1 || json.Unmarshal(fake.bodies[0], &sent) != nil {
 		t.Fatalf("registry called %d times", fake.calls())
 	}

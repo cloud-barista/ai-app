@@ -1,4 +1,6 @@
-// Package llm is the outbound adapter for the Anthropic Messages API.
+// Package llm is the outbound adapter for the Anthropic Messages API of the
+// partner institution's natural language agent; mock implementation for
+// integration, not part of the Innogrid prototype.
 //
 // It speaks the API over net/http rather than through the vendor SDK: the agent
 // only needs the tool_use round trip, and the project standard prefers the
@@ -14,10 +16,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
-
-	"github.com/ish-hcc/ai-agent-proto/internal/config"
 )
 
 const (
@@ -32,6 +33,15 @@ const (
 // endpoint needs the model.
 var ErrDisabled = errors.New("planning model is not configured")
 
+// Config holds the Messages API settings used for planning.
+type Config struct {
+	BaseURL   string
+	APIKey    string
+	Model     string
+	MaxTokens int
+	Timeout   time.Duration
+}
+
 // Client calls the Anthropic Messages API.
 type Client struct {
 	baseURL    string
@@ -42,7 +52,7 @@ type Client struct {
 }
 
 // NewClient builds a Client from configuration.
-func NewClient(cfg config.LLMConfig) *Client {
+func NewClient(cfg Config) *Client {
 	return &Client{
 		baseURL:    cfg.BaseURL,
 		apiKey:     cfg.APIKey,

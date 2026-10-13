@@ -16,11 +16,12 @@ COPY . .
 # CGO is off so the binary runs on a base image with no libc, and the build is
 # stripped because the symbol table is only useful where the source is too.
 # Every service comes from one image; the compose file picks the command. The
-# partner recommender mock is built alongside, apart from the prototype binaries.
+# partner recommender and natural language agent mocks are built alongside,
+# apart from the prototype binaries.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-app-server ./cmd/ai-app-server && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-automation-engine ./cmd/ai-automation-engine && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-agent ./cmd/ai-agent && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mock-partner-recommender ./mock/partner/recommender/cmd/recommender
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mock-partner-recommender ./mock/partner/recommender/cmd/recommender && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mock-partner-nl-agent ./mock/partner/nlagent/cmd/nl-agent
 
 # Runtime stage.
 #
@@ -35,12 +36,12 @@ RUN apk add --no-cache ca-certificates tzdata
 # to its own, so nothing needs to write anywhere else in the image.
 RUN adduser -D -u 10001 aiapp
 WORKDIR /app
-RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/agent-archive && chown -R aiapp:aiapp /app
+RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/partner-nl-archive && chown -R aiapp:aiapp /app
 
 COPY --from=build /out/ai-app-server /usr/local/bin/ai-app-server
 COPY --from=build /out/ai-automation-engine /usr/local/bin/ai-automation-engine
-COPY --from=build /out/ai-agent /usr/local/bin/ai-agent
 COPY --from=build /out/mock-partner-recommender /usr/local/bin/mock-partner-recommender
+COPY --from=build /out/mock-partner-nl-agent /usr/local/bin/mock-partner-nl-agent
 
 USER aiapp
 EXPOSE 8090 8091 8092 8093
@@ -49,6 +50,7 @@ EXPOSE 8090 8091 8092 8093
 # starts and serves the catalog, the matcher, the tools and the archive with
 # nothing supplied; the deployment path needs AIAPP_TUMBLEBUG_BASE_URL and says
 # so at startup when it is missing. The default command is the AI-App service;
-# run /usr/local/bin/ai-automation-engine for the automation engine and
-# /usr/local/bin/ai-agent for the automation agent.
+# run /usr/local/bin/ai-automation-engine for the automation engine. The
+# mock-partner-* binaries are partner institution mocks, not part of the
+# prototype.
 CMD ["/usr/local/bin/ai-app-server"]

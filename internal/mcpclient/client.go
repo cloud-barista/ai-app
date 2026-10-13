@@ -1,5 +1,5 @@
-// Package mcpclient lets the automation agent call the tools of the AI-App
-// service over MCP.
+// Package mcpclient calls the tools of an MCP server of this prototype: the
+// AI-App service, for the automation engine.
 //
 // The tool list and the dry-run state are read once per connection and cached:
 // they change only when the AI-App service restarts, and a restart drops the
@@ -19,7 +19,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog/log"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
@@ -34,8 +33,8 @@ const (
 	connectTimeout = 10 * time.Second
 )
 
-// ErrUnavailable is returned when the AI-App MCP server cannot be reached.
-var ErrUnavailable = errors.New("AI-App tool server is unavailable")
+// ErrUnavailable is returned when the MCP server cannot be reached.
+var ErrUnavailable = errors.New("MCP tool server is unavailable")
 
 type namespaceKey struct{}
 
@@ -68,7 +67,7 @@ func (t namespaceTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	return t.base.RoundTrip(req)
 }
 
-// Client is a ToolSource backed by the AI-App MCP server.
+// Client is a tool source backed by an MCP server of this prototype.
 type Client struct {
 	name       string
 	endpoint   string
@@ -77,7 +76,7 @@ type Client struct {
 
 	mu          sync.Mutex
 	session     *mcp.ClientSession
-	definitions []llm.ToolDef
+	definitions []tools.Definition
 	grades      map[string]tools.Grade
 	dryRun      bool
 }
@@ -111,14 +110,14 @@ func (c *Client) Prepare(ctx context.Context) error {
 		if err := c.session.Ping(ctx, nil); err == nil {
 			return nil
 		}
-		log.Warn().Str("endpoint", c.display).Msg("AI-App MCP session stopped answering, reconnecting")
+		log.Warn().Str("endpoint", c.display).Msg("MCP session stopped answering, reconnecting")
 		c.dropLocked()
 	}
 	return c.connectLocked(ctx)
 }
 
 // Definitions returns the cached tool list, connecting once if there is none.
-func (c *Client) Definitions() []llm.ToolDef {
+func (c *Client) Definitions() []tools.Definition {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -126,7 +125,7 @@ func (c *Client) Definitions() []llm.ToolDef {
 		ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 		defer cancel()
 		if err := c.connectLocked(ctx); err != nil {
-			log.Warn().Err(err).Str("endpoint", c.display).Msg("Failed to read the AI-App tool list")
+			log.Warn().Err(err).Str("endpoint", c.display).Msg("Failed to read the MCP tool list")
 			return nil
 		}
 	}
@@ -222,14 +221,14 @@ func (c *Client) connectLocked(ctx context.Context) error {
 		return fmt.Errorf("%w: connect %s: %s", ErrUnavailable, c.display, redact.Error(err, c.endpoint))
 	}
 
-	definitions := []llm.ToolDef{}
+	definitions := []tools.Definition{}
 	grades := map[string]tools.Grade{}
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			_ = session.Close()
 			return fmt.Errorf("%w: tools/list: %s", ErrUnavailable, redact.Error(err, c.endpoint))
 		}
-		definitions = append(definitions, llm.ToolDef{
+		definitions = append(definitions, tools.Definition{
 			Name:        tool.Name,
 			Description: tool.Description,
 			InputSchema: tool.InputSchema,
@@ -249,7 +248,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	c.dryRun = dryRun
 
 	log.Info().Str("endpoint", c.display).Int("tools", len(definitions)).Bool("dryRun", dryRun).
-		Msg("Connected to the AI-App MCP server")
+		Msg("Connected to the MCP server")
 	return nil
 }
 

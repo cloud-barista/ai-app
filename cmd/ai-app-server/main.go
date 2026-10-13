@@ -2,9 +2,11 @@
 // deployment and lifecycle through CB-Tumblebug, the tools as an MCP server, the
 // operator console and the deploy and control archive.
 //
-// The automation engine runs as cmd/ai-automation-engine and the automation
-// agent as cmd/ai-agent; both reach the tools over MCP. Their routes are
-// forwarded from here so that the console keeps one address.
+// The automation engine runs as cmd/ai-automation-engine and reaches the tools
+// over MCP. Natural language instructions are the partner institution's area;
+// its agent, a mock under mock/partner/nlagent until the real one exists, calls
+// the engine. Both are forwarded from here so that the console keeps one
+// address.
 package main
 
 import (
@@ -29,7 +31,7 @@ const shutdownTimeout = 10 * time.Second
 
 // @title AI-MCMP AI-App Service (Prototype)
 // @version 0.1.0
-// @description Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Natural language intents are forwarded to the automation agent.
+// @description Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /aiapp
@@ -110,7 +112,7 @@ func main() {
 
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
-			Int("tools", len(registry.Names())).Str("engineUrl", cfg.Engine.URL).Str("agentUrl", cfg.Agent.URL).
+			Int("tools", len(registry.Names())).Str("engineUrl", cfg.Engine.URL).Str("partnerNlUrl", cfg.PartnerNL.URL).
 			Msg("Starting server")
 		if err := server.Start(); err != nil {
 			log.Error().Err(err).Msg("Server stopped unexpectedly")

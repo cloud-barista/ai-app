@@ -109,3 +109,10 @@ type StatusInput struct {
 	// deployment was created with.
 	AppID string `json:"appId,omitempty"`
 }
+
+// CatalogQuery asks for the registered AI applications, ranked against Query
+// when it is set.
+type CatalogQuery struct {
+	Query string `json:"query,omitempty" example:"Open WebUI chatbot"`
+	Limit int    `json:"limit,omitempty" example:"5"`
+}

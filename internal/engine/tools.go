@@ -10,12 +10,14 @@ import (
 // MCPServerName is how the engine MCP server introduces itself.
 const MCPServerName = "ai-mcmp-app-automation-engine"
 
-// Names of the tools the engine publishes, one per workflow.
+// Names of the tools the engine publishes: one per workflow, and a catalog
+// lookup that runs no workflow.
 const (
-	ToolDeploy  = "deploy_application"
-	ToolHeal    = "heal_application"
-	ToolControl = "control_application"
-	ToolStatus  = "application_status"
+	ToolDeploy       = "deploy_application"
+	ToolHeal         = "heal_application"
+	ToolControl      = "control_application"
+	ToolStatus       = "application_status"
+	ToolApplications = "list_applications"
 )
 
 // gateNote tells a caller what a write workflow does under the dry-run gate.
@@ -23,7 +25,8 @@ const gateNote = " Write steps go through the AI-App dry-run gate; a held step i
 	"steps that need it as waiting, never as done."
 
 // NewRegistry builds the tool registry the engine publishes over MCP: one tool
-// per workflow. The dry-run state is the AI-App one, read when asked.
+// per workflow, and the catalog lookup a caller needs to name an appId. The
+// dry-run state is the AI-App one, read when asked.
 func NewRegistry(e *Engine) *tools.Registry {
 	registry := tools.NewRegistryFunc(func() bool { return e.DryRun(context.Background()) })
 	registry.Add(tools.Tool{
@@ -78,6 +81,26 @@ func NewRegistry(e *Engine) *tools.Registry {
 		}, "deploymentId"),
 		Handle: workflowHandler(e, WorkflowStatus),
 	})
+	registry.Add(tools.Tool{
+		Name:  ToolApplications,
+		Grade: tools.GradeRead,
+		Description: "Look up the registered AI applications, to choose the appId the other tools take. With query, " +
+			"ranks the applications against those words and returns the best candidates with the signals that " +
+			"matched; an empty result means nothing fits. Without query, lists every application in short form. " +
+			"Each entry carries its kind (model-service or application) and, for an application, the model " +
+			"services it requires. Runs no workflow and changes nothing.",
+		InputSchema: object(map[string]any{
+			"query": stringProp("The operator's own words describing the application. Leave empty to list every application"),
+			"limit": map[string]any{"type": "integer", "description": "How many candidates to return with query. Defaults to 5"},
+		}),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			var in CatalogQuery
+			if err := decodeInput(input, &in); err != nil {
+				return nil, err
+			}
+			return e.ListApplications(ctx, nsID, in)
+		},
+	})
 	return registry
 }
 
@@ -88,6 +111,9 @@ func workflowHandler(e *Engine, workflow string) tools.Handler {
 }
 
 func object(properties map[string]any, required ...string) map[string]any {
+	if required == nil {
+		required = []string{}
+	}
 	return map[string]any{
 		"type":       "object",
 		"properties": properties,

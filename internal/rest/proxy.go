@@ -12,31 +12,30 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
-// agentPrefix is where the AI-App service mounts the agent's own routes.
-const agentPrefix = BasePath + "/agent"
-
 // enginePrefix is where both the AI-App service and the automation engine
 // mount the engine routes, so they are forwarded with their path unchanged.
 const enginePrefix = BasePath + "/engine"
 
-// agentRenamed lists the agent routes that sit at the agent's root but are
-// reached under agentPrefix here, because the AI-App service has a route of the
-// same name: /aiapp/agent/archive is the agent's /aiapp/archive.
-var agentRenamed = []string{"/archive", "/readyz"}
-
-// newAgentProxy forwards intent and agent routes to the automation agent.
-//
-// Headers pass through unchanged, Authorization included, so the agent applies
-// the same credentials the caller sent here.
-func newAgentProxy(agentURL string) http.Handler {
-	return newForwardProxy("Automation agent", agentURL, agentPath)
-}
+// partnerNLPrefix is where both the AI-App service and the partner natural
+// language agent mount its routes.
+const partnerNLPrefix = BasePath + "/partner/nl"
 
 // newEngineProxy forwards engine routes to the automation engine with their
-// path unchanged, the same way newAgentProxy forwards agent routes.
+// path unchanged.
+//
+// Headers pass through unchanged, Authorization included, so the engine applies
+// the same credentials the caller sent here.
 func newEngineProxy(engineURL string) http.Handler {
-	return newForwardProxy("Automation engine", engineURL, func(path string) string { return path })
+	return newForwardProxy("Automation engine", engineURL, samePath)
 }
+
+// newPartnerNLProxy forwards the partner natural language agent routes, the
+// same way newEngineProxy forwards engine routes.
+func newPartnerNLProxy(agentURL string) http.Handler {
+	return newForwardProxy("Partner natural language agent", agentURL, samePath)
+}
+
+func samePath(path string) string { return path }
 
 // newForwardProxy forwards to the service called name at serviceURL, mapping
 // each path with mapPath.
@@ -62,20 +61,6 @@ func newForwardProxy(name, serviceURL string, mapPath func(string) string) http.
 			writeUnreachable(w, name)
 		},
 	}
-}
-
-// agentPath maps a path received here to the path on the agent.
-func agentPath(path string) string {
-	rest, ok := strings.CutPrefix(path, agentPrefix)
-	if !ok {
-		return path
-	}
-	for _, name := range agentRenamed {
-		if rest == name || strings.HasPrefix(rest, name+"/") {
-			return BasePath + rest
-		}
-	}
-	return path
 }
 
 func writeUnreachable(w http.ResponseWriter, name string) {

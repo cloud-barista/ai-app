@@ -666,8 +666,8 @@ function show(name) {
 /* ---------- 개요 ---------- */
 async function loadOverview() {
   const [ready, tools, agent, card] = await Promise.all([
-    api('GET', '/readyz'), api('GET', '/tools'), api('GET', '/agent/readyz'), api('GET', '/agent/card')]);
-  wire($('ov-wire'), tools, 'GET /readyz, GET /tools, GET /agent/readyz, GET /agent/card 를 불렀습니다 (아래는 tools)');
+    api('GET', '/readyz'), api('GET', '/tools'), api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card')]);
+  wire($('ov-wire'), tools, 'GET /readyz, GET /tools, GET /partner/nl/readyz, GET /partner/nl/card 를 불렀습니다 (아래는 tools)');
 
   const t = tools.data || {};
   const list = t.tools || [];
@@ -707,7 +707,7 @@ async function loadOverview() {
   let notes = '';
   if (!tools.ok) notes += failNote(tools);
   if (!agent.ok) {
-    notes += failNote(agent) + `<div class="note">자동화 에이전트가 응답하지 않습니다.
+    notes += failNote(agent) + `<div class="note">자연어 에이전트(협력 기관 담당 영역 · 모의 구현)가 응답하지 않습니다.
       자연어 지시와 지시 실행 기록은 에이전트가 뜰 때까지 쓸 수 없고, 나머지 화면은 그대로 동작합니다.</div>`;
   }
   if (dry === false) {
@@ -721,7 +721,7 @@ async function loadOverview() {
   $('ov-notes').innerHTML = notes;
 }
 
-/* cardSummary renders GET /agent/card as a few lines: name, model, MCP
+/* cardSummary renders GET /partner/nl/card as a few lines: name, model, MCP
    connection, tool count and registration. Any failure becomes one line. */
 function cardSummary(r) {
   const c = r.data;
@@ -955,7 +955,7 @@ async function runIntent() {
   $('in-msg').textContent = '모델에 묻는 중... (도구 호출을 반복하므로 시간이 걸릴 수 있습니다)';
   $('in-result').innerHTML = '';
 
-  const r = await api('POST', `/ns/${encodeURIComponent(ns)}/intents`, { intent });
+  const r = await api('POST', `/partner/nl/ns/${encodeURIComponent(ns)}/intents`, { intent });
   wire($('in-wire'), r);
 
   $('in-btn').disabled = false;
@@ -965,11 +965,11 @@ async function runIntent() {
     let extra = '';
     const msg = (r.data && r.data.message) || '';
     if (r.status === 502) {
-      extra = `<div class="note">자동화 에이전트가 응답하지 않습니다. 지시는 AI-App 서비스를 거쳐
-        에이전트(<code>AIAPP_AGENT_URL</code>)로 넘어가므로, 에이전트가 떠 있는지 확인해 주세요.</div>`;
+      extra = `<div class="note">자연어 에이전트(모의)가 응답하지 않습니다. 지시는 AI-App 서비스를 거쳐
+        에이전트(<code>AIAPP_MOCK_NL_URL</code>)로 넘어가므로, 에이전트가 떠 있는지 확인해 주세요.</div>`;
     } else if (r.status === 503 && /tool server/i.test(msg)) {
-      extra = `<div class="note">에이전트가 AI-App 의 MCP 서버(<code>AIAPP_APP_MCP_URL</code>)에 닿지 못했습니다.
-        AI-App 서비스가 뜨면 다음 지시부터 다시 붙습니다.</div>`;
+      extra = `<div class="note">에이전트가 자동화 엔진의 MCP 서버(<code>AIAPP_MOCK_NL_ENGINE_MCP_URL</code>)에 닿지 못했습니다.
+        엔진이 뜨면 다음 지시부터 다시 붙습니다.</div>`;
     } else if (r.status === 503) {
       extra = `<div class="note">계획 모델이 설정되지 않았습니다. <code>AIAPP_LLM_API_KEY</code> 를 주면
         이 경로가 열립니다. <b>나머지 엔드포인트는 이것과 무관하게 전부 동작합니다</b> -
@@ -1195,16 +1195,17 @@ function platformNote(r) {
 
 /* ---------- 아카이브 ---------- */
 /* Two processes keep two archives: deploy and control calls live in the AI-App
-   service, intent runs in the agent. Both are read and merged by start time, and
-   each row remembers where it came from so its detail is read from the same place. */
+   service, intent runs in the partner agent mock. Both are read and merged by
+   start time, and each row remembers where it came from so its detail is read
+   from the same place. The AI-App listing is { records }, the agent's { runs }. */
 const ARCHIVES = [
-  { path: '/archive', label: '배포 호출' },
-  { path: '/agent/archive', label: '지시 실행' }
+  { path: '/archive', label: '배포 호출', key: 'records' },
+  { path: '/partner/nl/runs', label: '지시 실행 (모의)', key: 'runs' }
 ];
 
 async function loadArchive() {
   const results = await Promise.all(ARCHIVES.map((a) => api('GET', a.path)));
-  wire($('ar-wire'), results[1], 'GET /archive 와 GET /agent/archive 를 불렀습니다 (아래는 agent/archive)');
+  wire($('ar-wire'), results[1], 'GET /archive 와 GET /partner/nl/runs 를 불렀습니다 (아래는 partner/nl/runs)');
 
   let notes = '';
   const rows = [];
@@ -1213,7 +1214,7 @@ async function loadArchive() {
       notes += `<div class="note bad"><b>${esc(ARCHIVES[i].label)} 기록을 못 읽었습니다.</b></div>` + failNote(r);
       return;
     }
-    ((r.data && r.data.records) || []).forEach((x) => rows.push({ ...x, _src: i }));
+    ((r.data && r.data[ARCHIVES[i].key]) || []).forEach((x) => rows.push({ ...x, _src: i }));
   });
   rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
 

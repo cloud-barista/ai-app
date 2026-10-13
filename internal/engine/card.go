@@ -18,7 +18,8 @@ const (
 	CardFramework   = "AI-Ops"
 	CardServes      = "AI-App"
 	CardDescription = "Runs fixed deploy, heal, control and status workflows as ordered AI-App tool calls over MCP, " +
-		"deciding each next step from the last result, and archives every run. Uses no LLM."
+		"deciding each next step from the last result, and archives every run. Also answers a catalog lookup " +
+		"so a caller can name the application. Uses no LLM."
 	// WorkflowEndpoint is the route a workflow is started on.
 	WorkflowEndpoint = "/aiapp/engine/workflows/{workflow}?ns={nsId}"
 	// MCPEndpoint is where the engine publishes its workflows as MCP tools.

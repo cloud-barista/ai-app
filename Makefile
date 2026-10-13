@@ -1,17 +1,17 @@
 APP    := ai-app-server
 ENGINE := ai-automation-engine
-AGENT  := ai-agent
 MOCK_RECOMMENDER := mock-partner-recommender
+MOCK_NL := mock-partner-nl-agent
 GOBIN  := $(shell go env GOPATH)/bin
 IMAGE  := ai-agent-proto:local
 
-.PHONY: build run-app run-engine run-agent run-mock-recommender test swag fmt lint verify docker-build docker-up docker-down docker-logs
+.PHONY: build run-app run-engine run-mock-recommender run-mock-nl test swag fmt lint verify docker-build docker-up docker-down docker-logs
 
 build:
 	go build -o bin/$(APP) ./cmd/$(APP)
 	go build -o bin/$(ENGINE) ./cmd/$(ENGINE)
-	go build -o bin/$(AGENT) ./cmd/$(AGENT)
 	go build -o bin/$(MOCK_RECOMMENDER) ./mock/partner/recommender/cmd/recommender
+	go build -o bin/$(MOCK_NL) ./mock/partner/nlagent/cmd/nl-agent
 
 # All start with no configuration at all. Settings come from conf/setup.env when
 # that file exists and from built-in defaults otherwise, so a fresh checkout
@@ -24,14 +24,16 @@ run-app:
 run-engine:
 	go run ./cmd/$(ENGINE)
 
-# The agent reaches the tools through the AI-App MCP server; start run-app too.
-run-agent:
-	go run ./cmd/$(AGENT)
-
 # Partner institution recommender (mock implementation), not part of this
 # prototype. Point AIAPP_RECOMMENDER_URL of run-app at http://127.0.0.1:8092.
 run-mock-recommender:
 	go run ./mock/partner/recommender/cmd/recommender
+
+# Partner institution natural language agent (mock implementation), not part of
+# this prototype. :8093; it calls the automation engine tools over MCP, so start
+# run-engine too. The AI-App service forwards /aiapp/partner/nl/* to it.
+run-mock-nl:
+	go run ./mock/partner/nlagent/cmd/nl-agent
 
 test:
 	go test ./...

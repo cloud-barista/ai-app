@@ -31,6 +31,193 @@ definitions:
           is not a probability and must not be compared across queries.
         type: integer
     type: object
+  engine.Card:
+    properties:
+      description:
+        type: string
+      displayName:
+        type: string
+      dryRun:
+        description: DryRun is the AI-App dry-run state, as of the current MCP session.
+        type: boolean
+      framework:
+        example: AI-Ops
+        type: string
+      mcp:
+        $ref: '#/definitions/engine.CardMCP'
+      mcpEndpoint:
+        type: string
+      name:
+        example: ai-mcmp-app-automation-engine
+        type: string
+      owner:
+        example: innogrid
+        type: string
+      registration:
+        allOf:
+        - $ref: '#/definitions/model.AgentRegistration'
+        description: |-
+          Registration is how the last registry registration went. It is left out
+          of the card sent to the registry.
+      servesFramework:
+        example: AI-App
+        type: string
+      tools:
+        $ref: '#/definitions/engine.CardToolGroup'
+      usesLLM:
+        description: 'UsesLLM is always false: the workflows are fixed.'
+        type: boolean
+      version:
+        example: 0.1.0
+        type: string
+      workflowEndpoint:
+        type: string
+      workflows:
+        example:
+        - deploy
+        - heal
+        - control
+        - status
+        items:
+          type: string
+        type: array
+    type: object
+  engine.CardMCP:
+    properties:
+      appServer:
+        $ref: '#/definitions/engine.CardMCPServer'
+    type: object
+  engine.CardMCPServer:
+    properties:
+      connected:
+        type: boolean
+      toolCount:
+        type: integer
+      url:
+        example: http://127.0.0.1:8090/aiapp/mcp
+        type: string
+    type: object
+  engine.CardToolGroup:
+    properties:
+      exposed:
+        items:
+          $ref: '#/definitions/model.AgentCardTool'
+        type: array
+      uses:
+        description: Uses is empty when the engine is not connected to the AI-App
+          service.
+        items:
+          $ref: '#/definitions/model.AgentCardTool'
+        type: array
+    type: object
+  engine.Run:
+    properties:
+      dryRun:
+        description: DryRun is the AI-App dry-run state the run executed under.
+        type: boolean
+      endedAt:
+        type: string
+      input: {}
+      message:
+        type: string
+      nsId:
+        example: default
+        type: string
+      runId:
+        example: eng-mbt3x2k1
+        type: string
+      startedAt:
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/engine.RunStatus'
+        enum:
+        - succeeded
+        - failed
+        - blocked
+        example: blocked
+      steps:
+        items:
+          $ref: '#/definitions/engine.Step'
+        type: array
+      workflow:
+        enum:
+        - deploy
+        - heal
+        - control
+        - status
+        example: deploy
+        type: string
+    type: object
+  engine.RunListResp:
+    properties:
+      runs:
+        items:
+          $ref: '#/definitions/engine.Run'
+        type: array
+    type: object
+  engine.RunStatus:
+    enum:
+    - succeeded
+    - failed
+    - blocked
+    type: string
+    x-enum-varnames:
+    - RunSucceeded
+    - RunFailed
+    - RunBlocked
+  engine.Step:
+    properties:
+      endedAt:
+        type: string
+      error:
+        type: string
+      index:
+        type: integer
+      input: {}
+      message:
+        description: |-
+          Message says why a step was blocked, waits or was skipped, or what its
+          result meant for the workflow.
+        type: string
+      name:
+        example: plan model service vllm-llama31-8b
+        type: string
+      output:
+        description: Output is the tool result as the AI-App service returned it.
+        type: object
+      startedAt:
+        description: StartedAt and EndedAt are absent on a step that was not run.
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/engine.StepStatus'
+        enum:
+        - succeeded
+        - failed
+        - blocked
+        - waiting
+        - skipped
+        example: succeeded
+      tool:
+        description: Tool is the AI-App MCP tool the step calls.
+        example: plan_deployment
+        type: string
+    type: object
+  engine.StepStatus:
+    enum:
+    - succeeded
+    - failed
+    - blocked
+    - waiting
+    - skipped
+    type: string
+    x-enum-varnames:
+    - StepSucceeded
+    - StepFailed
+    - StepBlocked
+    - StepWaiting
+    - StepSkipped
   model.AcceleratorDevice:
     properties:
       driverVersion:
@@ -159,72 +346,6 @@ definitions:
     - minCount
     - type
     type: object
-  model.AgentCard:
-    properties:
-      description:
-        type: string
-      displayName:
-        example: AI 응용 관리 자동화 에이전트
-        type: string
-      dryRun:
-        type: boolean
-      framework:
-        example: AI-Ops
-        type: string
-      intentEndpoint:
-        description: IntentEndpoint is where an instruction is handed to the agent.
-        example: /aiapp/ns/{nsId}/intents
-        type: string
-      llm:
-        $ref: '#/definitions/model.AgentCardLLM'
-      mcpServers:
-        items:
-          $ref: '#/definitions/model.AgentMCPServer'
-        type: array
-      name:
-        example: ai-mcmp-app-automation-agent
-        type: string
-      owner:
-        example: innogrid
-        type: string
-      registration:
-        allOf:
-        - $ref: '#/definitions/model.AgentRegistration'
-        description: |-
-          Registration is how the last registry registration went. It is left out
-          of the card sent to the registry.
-      servesFramework:
-        example: AI-App
-        type: string
-      tools:
-        description: |-
-          Tools is what the agent can call, as of its current MCP session. Empty
-          when it is not connected.
-        items:
-          $ref: '#/definitions/model.AgentCardTool'
-        type: array
-      version:
-        example: 0.1.0
-        type: string
-    type: object
-  model.AgentCardLLM:
-    properties:
-      baseUrl:
-        description: BaseURL is the scheme and host of the model API, without path
-          or credentials.
-        example: https://api.anthropic.com
-        type: string
-      model:
-        example: claude-opus-5
-        type: string
-      requires:
-        example:
-        - tool_use
-        - anthropic-messages
-        items:
-          type: string
-        type: array
-    type: object
   model.AgentCardTool:
     properties:
       grade:
@@ -233,16 +354,6 @@ definitions:
       guardedByDryRun:
         type: boolean
       name:
-        type: string
-    type: object
-  model.AgentMCPServer:
-    properties:
-      connected:
-        type: boolean
-      toolCount:
-        type: integer
-      url:
-        example: http://127.0.0.1:8090/aiapp/mcp
         type: string
     type: object
   model.AgentRegistration:
@@ -563,34 +674,6 @@ definitions:
         type: string
     required:
     - commands
-    type: object
-  model.IntentReq:
-    properties:
-      intent:
-        description: Intent is what the operator wants, in their own words.
-        example: Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노드에 올려줘
-        type: string
-    required:
-    - intent
-    type: object
-  model.IntentResp:
-    properties:
-      answer:
-        description: Answer is what the agent reports back to the operator.
-        type: string
-      dryRun:
-        description: DryRun reflects the guard setting the run executed under.
-        type: boolean
-      runId:
-        type: string
-      steps:
-        description: Steps is every tool the agent chose, in order, with what the
-          guard did.
-        items:
-          $ref: '#/definitions/model.ToolStep'
-        type: array
-      usage:
-        $ref: '#/definitions/model.TokenUsage'
     type: object
   model.ModelRef:
     properties:
@@ -977,37 +1060,14 @@ info:
   contact: {}
   description: Registers AI application metadata, deploys the application onto AI
     semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP
-    tools and archives every deploy and control call. Natural language intents are
-    forwarded to the automation agent.
+    tools and archives every deploy and control call. Automation engine routes and
+    the partner natural language agent routes are forwarded to their own processes.
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   title: AI-MCMP AI-App Service (Prototype)
   version: 0.1.0
 paths:
-  /agent/card:
-    get:
-      description: 'Report the agent card an agent registry reads: identity, the framework
-        it serves, the MCP server it takes tools from and whether it is connected,
-        the tools and their grades, what it needs of a planning model, and how registration
-        went. Served by the automation agent and forwarded by the AI-App service'
-      operationId: GetAgentCard
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Agent card
-          schema:
-            $ref: '#/definitions/model.AgentCard'
-        "502":
-          description: Automation agent is not reachable from the AI-App service
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-      security:
-      - BearerAuth: []
-      summary: Describe the automation agent
-      tags:
-      - '[Agent] AI Application Automation Agent'
   /apps:
     get:
       description: List every AI application in the catalog with its runtime, model
@@ -1252,6 +1312,153 @@ paths:
       summary: Get one archived run
       tags:
       - '[Archive] Deploy and Control Archive'
+  /engine/card:
+    get:
+      description: 'Report the engine card an agent registry reads: identity, that
+        it uses no LLM, its workflows, the AI-App MCP server it calls and whether
+        it is connected, the tools it publishes and the ones it calls, the dry-run
+        state and how registration went'
+      operationId: GetEngineCard
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Engine card
+          schema:
+            $ref: '#/definitions/engine.Card'
+        "502":
+          description: Automation engine is not reachable from the AI-App service
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Describe the automation engine
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/runs:
+    get:
+      description: List archived engine runs, newest first, each with every step,
+        its input and result, and whether the dry-run gate held it
+      operationId: GetEngineRuns
+      parameters:
+      - default: 20
+        description: How many runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived runs
+          schema:
+            $ref: '#/definitions/engine.RunListResp'
+        "400":
+          description: Malformed limit
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: List automation engine runs
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/runs/{runId}:
+    get:
+      description: Read one archived engine run by its identifier
+      operationId: GetEngineRun
+      parameters:
+      - description: Run ID
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived run
+          schema:
+            $ref: '#/definitions/engine.Run'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get one automation engine run
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/workflows/{workflow}:
+    post:
+      consumes:
+      - application/json
+      description: Run one fixed workflow as ordered AI-App tool calls, without a
+        model, and archive the run. deploy takes {appId, deploymentName, specId?,
+        imageId?} and deploys any required model service that is not running first;
+        heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status
+        takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported
+        as blocked and the steps that need it as waiting. A run whose steps failed
+        is still returned with 200 and status failed. Served by the automation engine
+        and forwarded by the AI-App service
+      operationId: PostEngineWorkflow
+      parameters:
+      - description: Workflow
+        enum:
+        - deploy
+        - heal
+        - control
+        - status
+        in: path
+        name: workflow
+        required: true
+        type: string
+      - default: default
+        description: Namespace ID
+        in: query
+        name: ns
+        type: string
+      - description: Workflow input
+        in: body
+        name: input
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Run finished; see its status
+          schema:
+            $ref: '#/definitions/engine.Run'
+        "400":
+          description: Malformed or incomplete input
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Unknown workflow
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Automation engine is not reachable from the AI-App service
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "503":
+          description: AI-App tool server is not reachable
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Run an automation engine workflow
+      tags:
+      - '[Engine] AI Application Automation Engine'
   /ns/{nsId}/deployments:
     get:
       description: List every deployment of the namespace with its node status
@@ -1676,56 +1883,6 @@ paths:
       summary: Plan a deployment
       tags:
       - '[Deploy] AI Application Deployment'
-  /ns/{nsId}/intents:
-    post:
-      consumes:
-      - application/json
-      description: Hand an operator instruction to the deployment agent. The agent
-        resolves the application, recommends an accelerator spec, reviews the request
-        and, when the dry-run guard is off, provisions. Every step is archived
-      operationId: PostIntent
-      parameters:
-      - default: default
-        description: Namespace ID
-        in: path
-        name: nsId
-        required: true
-        type: string
-      - description: Operator instruction
-        in: body
-        name: intentReq
-        required: true
-        schema:
-          $ref: '#/definitions/model.IntentReq'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Agent run finished
-          schema:
-            $ref: '#/definitions/model.IntentResp'
-        "400":
-          description: Malformed or empty instruction
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-        "500":
-          description: Agent run failed
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-        "502":
-          description: Automation agent is not reachable from the AI-App service
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-        "503":
-          description: Planning model is not configured or the AI-App tool server
-            is not reachable
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-      security:
-      - BearerAuth: []
-      summary: Run a natural language deployment intent
-      tags:
-      - '[Agent] AI Application Automation Agent'
   /readyz:
     get:
       description: Report whether the service finished initialization and can accept

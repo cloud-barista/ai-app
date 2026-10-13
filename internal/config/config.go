@@ -45,9 +45,9 @@ const recommenderTimeout = time.Minute
 type Config struct {
 	Server    ServerConfig
 	Tumblebug TumblebugConfig
-	LLM       LLMConfig
-	Agent     AgentConfig
 	Engine    EngineConfig
+	// PartnerNL is where the partner natural language agent is reached.
+	PartnerNL PartnerNLConfig
 	App       AppConfig
 	Archive   ArchiveConfig
 	Auth      AuthConfig
@@ -108,32 +108,6 @@ type TumblebugConfig struct {
 	BaseURLFromDefault bool
 }
 
-// LLMConfig holds the Anthropic Messages API settings used for planning.
-type LLMConfig struct {
-	BaseURL   string
-	APIKey    string
-	Model     string
-	MaxTokens int
-	Timeout   time.Duration
-}
-
-// AgentConfig holds the automation agent settings.
-type AgentConfig struct {
-	// MaxSteps caps tool-use iterations so a looping model cannot run forever.
-	MaxSteps int
-	// Port is the HTTP port the agent process listens on.
-	Port int
-	// URL is where the AI-App service forwards intent and agent requests.
-	URL string
-	// ArchiveDir holds the intent run archive, apart from the AI-App archive.
-	ArchiveDir string
-	// RegistryURL is the agent registry the agent card is posted to at startup.
-	// Empty leaves registration off.
-	RegistryURL string
-	// RegistryToken is sent to the registry as a bearer token when set.
-	RegistryToken string
-}
-
 // EngineConfig holds the automation engine settings: the AI application
 // management automation agent of AI-Ops, which runs fixed workflows without a
 // model.
@@ -151,7 +125,15 @@ type EngineConfig struct {
 	RegistryToken string
 }
 
-// AppConfig holds how the agent and the engine reach the AI-App service.
+// PartnerNLConfig holds where the AI-App service forwards /aiapp/partner/nl/*:
+// the partner institution's natural language agent. Natural language
+// interpretation is the partner institution's area; until its agent exists,
+// this points at the mock of it.
+type PartnerNLConfig struct {
+	URL string
+}
+
+// AppConfig holds how the engine reaches the AI-App service.
 type AppConfig struct {
 	// MCPURL is the Streamable HTTP endpoint of the AI-App MCP server.
 	MCPURL string
@@ -193,17 +175,10 @@ func Load() (*Config, error) {
 	v.SetDefault("tumblebug.spec_namespace", "system")
 	v.SetDefault("tumblebug.default_os_type", "ubuntu 22.04")
 	v.SetDefault("tumblebug.dry_run", true)
-	v.SetDefault("llm.base_url", "https://api.anthropic.com")
-	v.SetDefault("llm.model", "claude-opus-5")
-	v.SetDefault("llm.max_tokens", 16000)
-	v.SetDefault("llm.timeout", 5*time.Minute)
-	v.SetDefault("agent.max_steps", 12)
-	v.SetDefault("agent.port", 8093)
-	v.SetDefault("agent.url", "http://127.0.0.1:8093")
-	v.SetDefault("agent.archive_dir", "./data/agent-archive")
 	v.SetDefault("engine.port", 8091)
 	v.SetDefault("engine.url", "http://127.0.0.1:8091")
 	v.SetDefault("engine.archive_dir", "./data/engine-archive")
+	v.SetDefault("mock_nl.url", "http://127.0.0.1:8093")
 	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
 	v.SetDefault("health.timeout", 15*time.Minute)
@@ -222,22 +197,12 @@ func Load() (*Config, error) {
 		"tumblebug.spec_namespace",
 		"tumblebug.default_os_type",
 		"tumblebug.dry_run",
-		"llm.base_url",
-		"llm.api_key",
-		"llm.model",
-		"llm.max_tokens",
-		"llm.timeout",
-		"agent.max_steps",
-		"agent.port",
-		"agent.url",
-		"agent.archive_dir",
-		"agent.registry_url",
-		"agent.registry_token",
 		"engine.port",
 		"engine.url",
 		"engine.archive_dir",
 		"engine.registry_url",
 		"engine.registry_token",
+		"mock_nl.url",
 		"app.mcp_url",
 		"app.token",
 		"archive.dir",
@@ -283,27 +248,15 @@ func Load() (*Config, error) {
 			// so the environment is the thing to ask.
 			BaseURLFromDefault: os.Getenv(envPrefix+"_TUMBLEBUG_BASE_URL") == "",
 		},
-		LLM: LLMConfig{
-			BaseURL:   strings.TrimRight(v.GetString("llm.base_url"), "/"),
-			APIKey:    v.GetString("llm.api_key"),
-			Model:     v.GetString("llm.model"),
-			MaxTokens: v.GetInt("llm.max_tokens"),
-			Timeout:   v.GetDuration("llm.timeout"),
-		},
-		Agent: AgentConfig{
-			MaxSteps:      v.GetInt("agent.max_steps"),
-			Port:          v.GetInt("agent.port"),
-			URL:           strings.TrimRight(v.GetString("agent.url"), "/"),
-			ArchiveDir:    v.GetString("agent.archive_dir"),
-			RegistryURL:   strings.TrimRight(v.GetString("agent.registry_url"), "/"),
-			RegistryToken: v.GetString("agent.registry_token"),
-		},
 		Engine: EngineConfig{
 			Port:          v.GetInt("engine.port"),
 			URL:           strings.TrimRight(v.GetString("engine.url"), "/"),
 			ArchiveDir:    v.GetString("engine.archive_dir"),
 			RegistryURL:   strings.TrimRight(v.GetString("engine.registry_url"), "/"),
 			RegistryToken: v.GetString("engine.registry_token"),
+		},
+		PartnerNL: PartnerNLConfig{
+			URL: strings.TrimRight(v.GetString("mock_nl.url"), "/"),
 		},
 		App: AppConfig{
 			MCPURL: v.GetString("app.mcp_url"),
@@ -362,30 +315,6 @@ func (c *Config) validate() error {
 	if c.Tumblebug.DefaultOSType == "" {
 		return fmt.Errorf("%s_TUMBLEBUG_DEFAULT_OS_TYPE is required", envPrefix)
 	}
-	if c.LLM.BaseURL == "" {
-		return fmt.Errorf("%s_LLM_BASE_URL is required", envPrefix)
-	}
-	if c.LLM.Model == "" {
-		return fmt.Errorf("%s_LLM_MODEL is required", envPrefix)
-	}
-	if c.LLM.MaxTokens <= 0 {
-		return fmt.Errorf("invalid llm max tokens: %d", c.LLM.MaxTokens)
-	}
-	if c.LLM.Timeout <= 0 {
-		return fmt.Errorf("invalid llm timeout: %s", c.LLM.Timeout)
-	}
-	if c.Agent.MaxSteps <= 0 {
-		return fmt.Errorf("invalid agent max steps: %d", c.Agent.MaxSteps)
-	}
-	if c.Agent.Port <= 0 || c.Agent.Port > 65535 {
-		return fmt.Errorf("invalid agent port: %d", c.Agent.Port)
-	}
-	if c.Agent.URL == "" {
-		return fmt.Errorf("%s_AGENT_URL is required", envPrefix)
-	}
-	if c.Agent.ArchiveDir == "" {
-		return fmt.Errorf("%s_AGENT_ARCHIVE_DIR is required", envPrefix)
-	}
 	if c.Engine.Port <= 0 || c.Engine.Port > 65535 {
 		return fmt.Errorf("invalid engine port: %d", c.Engine.Port)
 	}
@@ -394,6 +323,9 @@ func (c *Config) validate() error {
 	}
 	if c.Engine.ArchiveDir == "" {
 		return fmt.Errorf("%s_ENGINE_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.PartnerNL.URL == "" {
+		return fmt.Errorf("%s_MOCK_NL_URL is required", envPrefix)
 	}
 	if c.App.MCPURL == "" {
 		return fmt.Errorf("%s_APP_MCP_URL is required", envPrefix)

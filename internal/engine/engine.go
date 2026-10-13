@@ -148,6 +148,25 @@ func (e *Engine) Execute(ctx context.Context, nsID, workflow string, input json.
 	return nil, fmt.Errorf("%w %q: want one of %s", ErrUnknownWorkflow, workflow, strings.Join(Workflows, ", "))
 }
 
+// ListApplications answers a catalog lookup from the AI-App service: the
+// ranked candidates of find_ai_apps when in has a query, every application in
+// short form from list_ai_apps otherwise. It is a read and runs no workflow, so
+// nothing is archived.
+func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQuery) (json.RawMessage, error) {
+	if err := e.app.Prepare(ctx); err != nil {
+		return nil, err
+	}
+	query := strings.TrimSpace(in.Query)
+	if query == "" {
+		return callApp(ctx, e.app, nsID, "list_ai_apps", map[string]any{})
+	}
+	args := map[string]any{"query": query}
+	if in.Limit > 0 {
+		args["limit"] = in.Limit
+	}
+	return callApp(ctx, e.app, nsID, "find_ai_apps", args)
+}
+
 // ListRuns reads the most recent runs, newest first.
 func (e *Engine) ListRuns(limit int) ([]Run, error) {
 	if limit <= 0 {
@@ -230,11 +249,16 @@ func (r *runner) call(ctx context.Context, name, tool string, input any, out any
 
 // invoke calls one AI-App tool and returns its JSON result.
 func (r *runner) invoke(ctx context.Context, tool string, input any) (json.RawMessage, error) {
+	return callApp(ctx, r.engine.app, r.nsID, tool, input)
+}
+
+// callApp calls one AI-App tool in nsID and returns its JSON result.
+func callApp(ctx context.Context, app AppClient, nsID, tool string, input any) (json.RawMessage, error) {
 	args, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("encode %s input: %w", tool, err)
 	}
-	result, err := r.engine.app.Call(ctx, r.nsID, tool, args)
+	result, err := app.Call(ctx, nsID, tool, args)
 	if err != nil {
 		return nil, err
 	}

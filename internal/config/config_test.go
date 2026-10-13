@@ -104,19 +104,6 @@ func TestAuthTokensReadFromEnv(t *testing.T) {
 	}
 }
 
-func TestAgentRegistryReadsURLAndToken(t *testing.T) {
-	t.Setenv("AIAPP_AGENT_REGISTRY_URL", "http://registry.example/api/")
-	t.Setenv("AIAPP_AGENT_REGISTRY_TOKEN", "secret")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Agent.RegistryURL != "http://registry.example/api" || cfg.Agent.RegistryToken != "secret" {
-		t.Errorf("agent = %+v", cfg.Agent)
-	}
-}
-
 func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
 	clearBackendEnv(t)
 	t.Setenv("AIAPP_HEALTH_TIMEOUT", "")
@@ -145,8 +132,8 @@ func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-func TestEngineAndAgentPortDefaults(t *testing.T) {
-	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_AGENT_PORT", "AIAPP_AGENT_URL"} {
+func TestEngineAndPartnerNLDefaults(t *testing.T) {
+	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL"} {
 		t.Setenv(env, "")
 	}
 	cfg, err := Load()
@@ -156,8 +143,17 @@ func TestEngineAndAgentPortDefaults(t *testing.T) {
 	if cfg.Engine.Port != 8091 || cfg.Engine.URL != "http://127.0.0.1:8091" || cfg.Engine.ArchiveDir != "./data/engine-archive" {
 		t.Errorf("engine = %+v, want port 8091 and its archive", cfg.Engine)
 	}
-	if cfg.Agent.Port != 8093 || cfg.Agent.URL != "http://127.0.0.1:8093" {
-		t.Errorf("agent = %+v, want port 8093", cfg.Agent)
+	if cfg.PartnerNL.URL != "http://127.0.0.1:8093" {
+		t.Errorf("partner nl = %+v, want port 8093", cfg.PartnerNL)
+	}
+
+	t.Setenv("AIAPP_MOCK_NL_URL", "http://nl.example:8093/")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.PartnerNL.URL != "http://nl.example:8093" {
+		t.Errorf("partner nl = %q, want the configured URL without the trailing slash", cfg.PartnerNL.URL)
 	}
 
 	t.Setenv("AIAPP_ENGINE_REGISTRY_URL", "http://registry.example/api/")

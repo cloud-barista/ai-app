@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
@@ -46,6 +45,14 @@ type Tool struct {
 	Grade       Grade
 	InputSchema map[string]any
 	Handle      Handler
+}
+
+// Definition is a tool as a caller sees it before calling it: its name, what
+// it does and the JSON Schema of its input.
+type Definition struct {
+	Name        string
+	Description string
+	InputSchema any
 }
 
 // Registry holds every tool the agent may call.
@@ -86,13 +93,13 @@ func (r *Registry) Names() []string {
 	return names
 }
 
-// Definitions renders the tool list in the shape the Messages API expects.
-func (r *Registry) Definitions() []llm.ToolDef {
+// Definitions renders the tool list with the guard state in each description.
+func (r *Registry) Definitions() []Definition {
 	names := r.Names()
-	defs := make([]llm.ToolDef, 0, len(names))
+	defs := make([]Definition, 0, len(names))
 	for _, name := range names {
 		tool := r.tools[name]
-		defs = append(defs, llm.ToolDef{
+		defs = append(defs, Definition{
 			Name:        tool.Name,
 			Description: r.describe(tool),
 			InputSchema: tool.InputSchema,

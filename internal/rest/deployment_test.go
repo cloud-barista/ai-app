@@ -78,7 +78,7 @@ func newHealthServer(t *testing.T, commands *sentCommands) *Server {
 	deployService := deploy.NewService(tumblebug.NewClient(tbCfg), apps, tbCfg)
 	tools.Register(registry, apps, deployService)
 
-	return NewAppServer(&config.Config{Agent: config.AgentConfig{URL: "http://127.0.0.1:1"}}, AppDependencies{
+	return NewAppServer(&config.Config{PartnerNL: config.PartnerNLConfig{URL: "http://127.0.0.1:1"}}, AppDependencies{
 		Catalog: apps,
 		Deploy:  deployService,
 		Archive: appArchive,
@@ -193,7 +193,7 @@ func newProvisioningServer(t *testing.T, healthCodes []string, healthChecks *int
 		deploy.WithHealthWait(5*time.Second, time.Millisecond))
 	tools.Register(registry, apps, deployService)
 
-	return NewAppServer(&config.Config{Agent: config.AgentConfig{URL: "http://127.0.0.1:1"}}, AppDependencies{
+	return NewAppServer(&config.Config{PartnerNL: config.PartnerNLConfig{URL: "http://127.0.0.1:1"}}, AppDependencies{
 		Catalog: apps,
 		Deploy:  deployService,
 		Archive: appArchive,

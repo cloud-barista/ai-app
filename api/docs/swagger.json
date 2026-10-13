@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Natural language intents are forwarded to the automation agent.",
+        "description": "Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.",
         "title": "AI-MCMP AI-App Service (Prototype)",
         "contact": {},
         "license": {
@@ -12,38 +12,6 @@
     },
     "basePath": "/aiapp",
     "paths": {
-        "/agent/card": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Report the agent card an agent registry reads: identity, the framework it serves, the MCP server it takes tools from and whether it is connected, the tools and their grades, what it needs of a planning model, and how registration went. Served by the automation agent and forwarded by the AI-App service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "[Agent] AI Application Automation Agent"
-                ],
-                "summary": "Describe the automation agent",
-                "operationId": "GetAgentCard",
-                "responses": {
-                    "200": {
-                        "description": "Agent card",
-                        "schema": {
-                            "$ref": "#/definitions/model.AgentCard"
-                        }
-                    },
-                    "502": {
-                        "description": "Automation agent is not reachable from the AI-App service",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    }
-                }
-            }
-        },
         "/apps": {
             "get": {
                 "security": [
@@ -403,6 +371,216 @@
                     },
                     "500": {
                         "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/card": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report the engine card an agent registry reads: identity, that it uses no LLM, its workflows, the AI-App MCP server it calls and whether it is connected, the tools it publishes and the ones it calls, the dry-run state and how registration went",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Describe the automation engine",
+                "operationId": "GetEngineCard",
+                "responses": {
+                    "200": {
+                        "description": "Engine card",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Card"
+                        }
+                    },
+                    "502": {
+                        "description": "Automation engine is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/runs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "List automation engine runs",
+                "operationId": "GetEngineRuns",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "How many runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived runs",
+                        "schema": {
+                            "$ref": "#/definitions/engine.RunListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed limit",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/runs/{runId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one archived engine run by its identifier",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Get one automation engine run",
+                "operationId": "GetEngineRun",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived run",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Run"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/workflows/{workflow}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run. deploy takes {appId, deploymentName, specId?, imageId?} and deploys any required model service that is not running first; heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Run an automation engine workflow",
+                "operationId": "PostEngineWorkflow",
+                "parameters": [
+                    {
+                        "enum": [
+                            "deploy",
+                            "heal",
+                            "control",
+                            "status"
+                        ],
+                        "type": "string",
+                        "description": "Workflow",
+                        "name": "workflow",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "ns",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Workflow input",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Run finished; see its status",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Run"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete input",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown workflow",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Automation engine is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "503": {
+                        "description": "AI-App tool server is not reachable",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1023,78 +1201,6 @@
                 }
             }
         },
-        "/ns/{nsId}/intents": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Hand an operator instruction to the deployment agent. The agent resolves the application, recommends an accelerator spec, reviews the request and, when the dry-run guard is off, provisions. Every step is archived",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "[Agent] AI Application Automation Agent"
-                ],
-                "summary": "Run a natural language deployment intent",
-                "operationId": "PostIntent",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "default": "default",
-                        "description": "Namespace ID",
-                        "name": "nsId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Operator instruction",
-                        "name": "intentReq",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/model.IntentReq"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Agent run finished",
-                        "schema": {
-                            "$ref": "#/definitions/model.IntentResp"
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed or empty instruction",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "500": {
-                        "description": "Agent run failed",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "502": {
-                        "description": "Automation agent is not reachable from the AI-App service",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "503": {
-                        "description": "Planning model is not configured or the AI-App tool server is not reachable",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    }
-                }
-            }
-        },
         "/readyz": {
             "get": {
                 "description": "Report whether the service finished initialization and can accept requests",
@@ -1208,6 +1314,266 @@
                     "type": "integer"
                 }
             }
+        },
+        "engine.Card": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "dryRun": {
+                    "description": "DryRun is the AI-App dry-run state, as of the current MCP session.",
+                    "type": "boolean"
+                },
+                "framework": {
+                    "type": "string",
+                    "example": "AI-Ops"
+                },
+                "mcp": {
+                    "$ref": "#/definitions/engine.CardMCP"
+                },
+                "mcpEndpoint": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "ai-mcmp-app-automation-engine"
+                },
+                "owner": {
+                    "type": "string",
+                    "example": "innogrid"
+                },
+                "registration": {
+                    "description": "Registration is how the last registry registration went. It is left out\nof the card sent to the registry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AgentRegistration"
+                        }
+                    ]
+                },
+                "servesFramework": {
+                    "type": "string",
+                    "example": "AI-App"
+                },
+                "tools": {
+                    "$ref": "#/definitions/engine.CardToolGroup"
+                },
+                "usesLLM": {
+                    "description": "UsesLLM is always false: the workflows are fixed.",
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0.1.0"
+                },
+                "workflowEndpoint": {
+                    "type": "string"
+                },
+                "workflows": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deploy",
+                        "heal",
+                        "control",
+                        "status"
+                    ]
+                }
+            }
+        },
+        "engine.CardMCP": {
+            "type": "object",
+            "properties": {
+                "appServer": {
+                    "$ref": "#/definitions/engine.CardMCPServer"
+                }
+            }
+        },
+        "engine.CardMCPServer": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "toolCount": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "http://127.0.0.1:8090/aiapp/mcp"
+                }
+            }
+        },
+        "engine.CardToolGroup": {
+            "type": "object",
+            "properties": {
+                "exposed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentCardTool"
+                    }
+                },
+                "uses": {
+                    "description": "Uses is empty when the engine is not connected to the AI-App service.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentCardTool"
+                    }
+                }
+            }
+        },
+        "engine.Run": {
+            "type": "object",
+            "properties": {
+                "dryRun": {
+                    "description": "DryRun is the AI-App dry-run state the run executed under.",
+                    "type": "boolean"
+                },
+                "endedAt": {
+                    "type": "string"
+                },
+                "input": {},
+                "message": {
+                    "type": "string"
+                },
+                "nsId": {
+                    "type": "string",
+                    "example": "default"
+                },
+                "runId": {
+                    "type": "string",
+                    "example": "eng-mbt3x2k1"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "enum": [
+                        "succeeded",
+                        "failed",
+                        "blocked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.RunStatus"
+                        }
+                    ],
+                    "example": "blocked"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/engine.Step"
+                    }
+                },
+                "workflow": {
+                    "type": "string",
+                    "enum": [
+                        "deploy",
+                        "heal",
+                        "control",
+                        "status"
+                    ],
+                    "example": "deploy"
+                }
+            }
+        },
+        "engine.RunListResp": {
+            "type": "object",
+            "properties": {
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/engine.Run"
+                    }
+                }
+            }
+        },
+        "engine.RunStatus": {
+            "type": "string",
+            "enum": [
+                "succeeded",
+                "failed",
+                "blocked"
+            ],
+            "x-enum-varnames": [
+                "RunSucceeded",
+                "RunFailed",
+                "RunBlocked"
+            ]
+        },
+        "engine.Step": {
+            "type": "object",
+            "properties": {
+                "endedAt": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "input": {},
+                "message": {
+                    "description": "Message says why a step was blocked, waits or was skipped, or what its\nresult meant for the workflow.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "plan model service vllm-llama31-8b"
+                },
+                "output": {
+                    "description": "Output is the tool result as the AI-App service returned it.",
+                    "type": "object"
+                },
+                "startedAt": {
+                    "description": "StartedAt and EndedAt are absent on a step that was not run.",
+                    "type": "string"
+                },
+                "status": {
+                    "enum": [
+                        "succeeded",
+                        "failed",
+                        "blocked",
+                        "waiting",
+                        "skipped"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.StepStatus"
+                        }
+                    ],
+                    "example": "succeeded"
+                },
+                "tool": {
+                    "description": "Tool is the AI-App MCP tool the step calls.",
+                    "type": "string",
+                    "example": "plan_deployment"
+                }
+            }
+        },
+        "engine.StepStatus": {
+            "type": "string",
+            "enum": [
+                "succeeded",
+                "failed",
+                "blocked",
+                "waiting",
+                "skipped"
+            ],
+            "x-enum-varnames": [
+                "StepSucceeded",
+                "StepFailed",
+                "StepBlocked",
+                "StepWaiting",
+                "StepSkipped"
+            ]
         },
         "model.AcceleratorDevice": {
             "type": "object",
@@ -1353,94 +1719,6 @@
                 }
             }
         },
-        "model.AgentCard": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "displayName": {
-                    "type": "string",
-                    "example": "AI 응용 관리 자동화 에이전트"
-                },
-                "dryRun": {
-                    "type": "boolean"
-                },
-                "framework": {
-                    "type": "string",
-                    "example": "AI-Ops"
-                },
-                "intentEndpoint": {
-                    "description": "IntentEndpoint is where an instruction is handed to the agent.",
-                    "type": "string",
-                    "example": "/aiapp/ns/{nsId}/intents"
-                },
-                "llm": {
-                    "$ref": "#/definitions/model.AgentCardLLM"
-                },
-                "mcpServers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.AgentMCPServer"
-                    }
-                },
-                "name": {
-                    "type": "string",
-                    "example": "ai-mcmp-app-automation-agent"
-                },
-                "owner": {
-                    "type": "string",
-                    "example": "innogrid"
-                },
-                "registration": {
-                    "description": "Registration is how the last registry registration went. It is left out\nof the card sent to the registry.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.AgentRegistration"
-                        }
-                    ]
-                },
-                "servesFramework": {
-                    "type": "string",
-                    "example": "AI-App"
-                },
-                "tools": {
-                    "description": "Tools is what the agent can call, as of its current MCP session. Empty\nwhen it is not connected.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.AgentCardTool"
-                    }
-                },
-                "version": {
-                    "type": "string",
-                    "example": "0.1.0"
-                }
-            }
-        },
-        "model.AgentCardLLM": {
-            "type": "object",
-            "properties": {
-                "baseUrl": {
-                    "description": "BaseURL is the scheme and host of the model API, without path or credentials.",
-                    "type": "string",
-                    "example": "https://api.anthropic.com"
-                },
-                "model": {
-                    "type": "string",
-                    "example": "claude-opus-5"
-                },
-                "requires": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "tool_use",
-                        "anthropic-messages"
-                    ]
-                }
-            }
-        },
         "model.AgentCardTool": {
             "type": "object",
             "properties": {
@@ -1453,21 +1731,6 @@
                 },
                 "name": {
                     "type": "string"
-                }
-            }
-        },
-        "model.AgentMCPServer": {
-            "type": "object",
-            "properties": {
-                "connected": {
-                    "type": "boolean"
-                },
-                "toolCount": {
-                    "type": "integer"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "http://127.0.0.1:8090/aiapp/mcp"
                 }
             }
         },
@@ -1911,45 +2174,6 @@
                 "userName": {
                     "type": "string",
                     "example": "cb-user"
-                }
-            }
-        },
-        "model.IntentReq": {
-            "type": "object",
-            "required": [
-                "intent"
-            ],
-            "properties": {
-                "intent": {
-                    "description": "Intent is what the operator wants, in their own words.",
-                    "type": "string",
-                    "example": "Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노드에 올려줘"
-                }
-            }
-        },
-        "model.IntentResp": {
-            "type": "object",
-            "properties": {
-                "answer": {
-                    "description": "Answer is what the agent reports back to the operator.",
-                    "type": "string"
-                },
-                "dryRun": {
-                    "description": "DryRun reflects the guard setting the run executed under.",
-                    "type": "boolean"
-                },
-                "runId": {
-                    "type": "string"
-                },
-                "steps": {
-                    "description": "Steps is every tool the agent chose, in order, with what the guard did.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.ToolStep"
-                    }
-                },
-                "usage": {
-                    "$ref": "#/definitions/model.TokenUsage"
                 }
             }
         },

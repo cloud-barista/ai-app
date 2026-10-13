@@ -80,7 +80,7 @@ func TestConnectFailureHidesEndpointSecrets(t *testing.T) {
 				t.Fatalf("Definitions = %v", defs)
 			}
 			logged := buf.String()
-			if !strings.Contains(logged, "Failed to read the AI-App tool list") {
+			if !strings.Contains(logged, "Failed to read the MCP tool list") {
 				t.Fatalf("no warning logged: %s", logged)
 			}
 			assertNoSecrets(t, "log", logged)
@@ -100,7 +100,7 @@ func TestConnectedLogHidesEndpointSecrets(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 	logged := buf.String()
-	if !strings.Contains(logged, "Connected to the AI-App MCP server") ||
+	if !strings.Contains(logged, "Connected to the MCP server") ||
 		!strings.Contains(logged, srv.URL+"/aiapp/mcp") {
 		t.Fatalf("connect not logged with the endpoint: %s", logged)
 	}

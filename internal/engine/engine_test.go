@@ -179,6 +179,17 @@ func (f *fakeApp) registry() *tools.Registry {
 	registry.Add(f.tool("probe_accelerator", tools.GradeRead, func(string, json.RawMessage) (any, error) {
 		return model.AcceleratorReport{Probed: true, Message: "1 GPU found"}, nil
 	}))
+	registry.Add(f.tool("list_ai_apps", tools.GradeRead, func(string, json.RawMessage) (any, error) {
+		return map[string]any{"apps": []string{modelServiceID, applicationID}}, nil
+	}))
+	registry.Add(f.tool("find_ai_apps", tools.GradeRead, func(_ string, input json.RawMessage) (any, error) {
+		var a struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		_ = json.Unmarshal(input, &a)
+		return map[string]any{"candidates": []string{applicationID}, "query": a.Query, "limit": a.Limit}, nil
+	}))
 	return registry
 }
 
@@ -477,7 +488,7 @@ func TestRunsAreArchived(t *testing.T) {
 	}
 }
 
-func TestEngineMCPPublishesFourToolsWithGrades(t *testing.T) {
+func TestEngineMCPPublishesWorkflowAndCatalogToolsWithGrades(t *testing.T) {
 	fake := &fakeApp{dryRun: true, ready: []bool{true}}
 	e, _ := newEngine(t, fake)
 	srv := httptest.NewServer(mcpserver.NewNamedHandler(MCPServerName, NewRegistry(e)))
@@ -504,9 +515,10 @@ func TestEngineMCPPublishesFourToolsWithGrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	want := map[string]string{ToolDeploy: "write", ToolHeal: "write", ToolControl: "write", ToolStatus: "read"}
+	want := map[string]string{ToolDeploy: "write", ToolHeal: "write", ToolControl: "write", ToolStatus: "read",
+		ToolApplications: "read"}
 	if len(res.Tools) != len(want) {
-		t.Fatalf("tools/list returned %d tools, want 4", len(res.Tools))
+		t.Fatalf("tools/list returned %d tools, want %d", len(res.Tools), len(want))
 	}
 	for _, tool := range res.Tools {
 		if got := tool.Meta[mcpserver.MetaGrade]; got != want[tool.Name] {
@@ -536,6 +548,48 @@ func TestEngineMCPPublishesFourToolsWithGrades(t *testing.T) {
 	}
 }
 
+func TestListApplicationsPicksTheCatalogTool(t *testing.T) {
+	fake := &fakeApp{dryRun: true}
+	e, dir := newEngine(t, fake)
+	registry := NewRegistry(e)
+
+	if registry.Grade(ToolApplications) != tools.GradeRead {
+		t.Errorf("%s grade = %q, want read", ToolApplications, registry.Grade(ToolApplications))
+	}
+
+	out, err := registry.Call(context.Background(), "ns-cat", ToolApplications,
+		json.RawMessage(`{"query":"Open WebUI chatbot","limit":3}`))
+	if err != nil {
+		t.Fatalf("lookup with query: %v", err)
+	}
+	raw, _ := json.Marshal(out)
+	if !strings.Contains(string(raw), applicationID) || !strings.Contains(string(raw), `"query":"Open WebUI chatbot"`) ||
+		!strings.Contains(string(raw), `"limit":3`) {
+		t.Errorf("lookup with query = %s", raw)
+	}
+
+	out, err = registry.Call(context.Background(), "ns-cat", ToolApplications, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("lookup without query: %v", err)
+	}
+	raw, _ = json.Marshal(out)
+	if !strings.Contains(string(raw), `"apps"`) || !strings.Contains(string(raw), modelServiceID) {
+		t.Errorf("lookup without query = %s", raw)
+	}
+
+	if calls := strings.Join(fake.calledTools(), ","); calls != "find_ai_apps:,list_ai_apps:" {
+		t.Errorf("AI-App calls = %s, want find_ai_apps then list_ai_apps", calls)
+	}
+	for _, ns := range fake.ns {
+		if ns != "ns-cat" {
+			t.Errorf("AI-App saw namespace %q, want ns-cat", ns)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runs.jsonl")); !os.IsNotExist(err) {
+		t.Errorf("a catalog lookup archived a run: %v", err)
+	}
+}
+
 func TestCardSaysNoLLM(t *testing.T) {
 	fake := &fakeApp{dryRun: true}
 	e, _ := newEngine(t, fake)
@@ -549,11 +603,11 @@ func TestCardSaysNoLLM(t *testing.T) {
 		card.ServesFramework != "AI-App" || !card.DryRun {
 		t.Errorf("card identity = %+v", card)
 	}
-	if !card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 10 || len(card.Tools.Uses) != 10 {
+	if !card.MCP.AppServer.Connected || card.MCP.AppServer.ToolCount != 12 || len(card.Tools.Uses) != 12 {
 		t.Errorf("card mcp = %+v, uses %d", card.MCP, len(card.Tools.Uses))
 	}
-	if len(card.Tools.Exposed) != 4 || len(card.Workflows) != 4 {
-		t.Errorf("card exposes %d tools and %d workflows, want 4 and 4", len(card.Tools.Exposed), len(card.Workflows))
+	if len(card.Tools.Exposed) != 5 || len(card.Workflows) != 4 {
+		t.Errorf("card exposes %d tools and %d workflows, want 5 and 4", len(card.Tools.Exposed), len(card.Workflows))
 	}
 	if card.Registration == nil || card.Registration.Status != "disabled" ||
 		card.Registration.Message != RegistryEnv+" is not set" {

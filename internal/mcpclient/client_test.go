@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/agent"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
@@ -17,9 +16,6 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
-
-var _ agent.ToolSource = (*Client)(nil)
-var _ agent.Preparer = (*Client)(nil)
 
 // serve publishes the registry over Streamable HTTP and returns a client for it.
 func serve(t *testing.T, registry *tools.Registry) *Client {

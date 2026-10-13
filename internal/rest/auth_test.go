@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
+	"github.com/labstack/echo/v4"
+
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
-	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
@@ -20,19 +20,19 @@ import (
 
 const testToken = "s3cret"
 
-// newTestServers starts an agent behind httptest and builds an AI-App server
-// that forwards to it, both requiring token.
+// newTestServers starts a stand-in for the partner natural language agent
+// behind httptest and builds an AI-App server that forwards to it, both
+// requiring token.
 func newTestServers(t *testing.T, token string) *Server {
 	t.Helper()
 	MarkReady()
 
-	agentArchive, err := archive.NewStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("agent archive: %v", err)
-	}
-	agentCfg := &config.Config{Auth: config.AuthConfig{Token: token}}
-	card := agentcard.New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), agentCfg.LLM, nil)
-	agentSrv := httptest.NewServer(NewAgentServer(agentCfg, AgentDependencies{Archive: agentArchive, Card: card}).echo)
+	partner := echo.New()
+	partner.Use(RequireBearer(token, partnerNLPrefix+"/readyz"))
+	partner.Any(partnerNLPrefix+"/*", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"path": c.Request().URL.Path})
+	})
+	agentSrv := httptest.NewServer(partner)
 	t.Cleanup(agentSrv.Close)
 
 	appArchive, err := archive.NewStore(t.TempDir())
@@ -46,8 +46,8 @@ func newTestServers(t *testing.T, token string) *Server {
 	tools.Register(registry, apps, deployService)
 
 	appCfg := &config.Config{
-		Agent: config.AgentConfig{URL: agentSrv.URL},
-		Auth:  config.AuthConfig{Token: token},
+		PartnerNL: config.PartnerNLConfig{URL: agentSrv.URL},
+		Auth:      config.AuthConfig{Token: token},
 	}
 	return NewAppServer(appCfg, AppDependencies{
 		Catalog: apps,
@@ -82,9 +82,9 @@ func TestProtectedRoutesNeedToken(t *testing.T) {
 		{http.MethodGet, "/aiapp/tools"},
 		{http.MethodGet, "/aiapp/archive"},
 		{http.MethodPost, "/aiapp/mcp"},
-		{http.MethodGet, "/aiapp/agent/archive"},
-		{http.MethodGet, "/aiapp/agent/card"},
-		{http.MethodPost, "/aiapp/ns/default/intents"},
+		{http.MethodGet, "/aiapp/partner/nl/runs"},
+		{http.MethodGet, "/aiapp/partner/nl/card"},
+		{http.MethodPost, "/aiapp/partner/nl/ns/default/intents"},
 	} {
 		for _, auth := range []string{"", "Bearer wrong", "Basic " + testToken, testToken} {
 			rec := do(s, tc.method, tc.path, auth)
@@ -102,7 +102,7 @@ func TestProtectedRoutesNeedToken(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/agent/archive", "/aiapp/agent/card"} {
+	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/partner/nl/runs", "/aiapp/partner/nl/card"} {
 		if rec := do(s, http.MethodGet, path, "Bearer "+testToken); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with the token = %d, want 200: %s", path, rec.Code, rec.Body.String())
 		}
@@ -115,7 +115,7 @@ func TestProtectedRoutesNeedToken(t *testing.T) {
 func TestOpenRoutesNeedNoToken(t *testing.T) {
 	s := newTestServers(t, testToken)
 
-	for _, path := range []string{"/aiapp/readyz", "/aiapp/ui", "/aiapp/api/index.html", "/aiapp/api/doc.json", "/aiapp/agent/readyz"} {
+	for _, path := range []string{"/aiapp/readyz", "/aiapp/ui", "/aiapp/api/index.html", "/aiapp/api/doc.json", "/aiapp/partner/nl/readyz"} {
 		if rec := do(s, http.MethodGet, path, ""); rec.Code != http.StatusOK {
 			t.Errorf("GET %s without a token = %d, want 200", path, rec.Code)
 		}
@@ -129,7 +129,7 @@ func TestOpenRoutesNeedNoToken(t *testing.T) {
 func TestNoTokenLeavesEverythingOpen(t *testing.T) {
 	s := newTestServers(t, "")
 
-	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/agent/archive", "/aiapp/readyz", "/aiapp/agent/readyz"} {
+	for _, path := range []string{"/aiapp/apps", "/aiapp/tools", "/aiapp/archive", "/aiapp/partner/nl/runs", "/aiapp/readyz", "/aiapp/partner/nl/readyz"} {
 		if rec := do(s, http.MethodGet, path, ""); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with authentication off = %d, want 200", path, rec.Code)
 		}

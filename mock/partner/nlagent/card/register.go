@@ -1,4 +1,4 @@
-package agentcard
+package card
 
 import (
 	"context"
@@ -15,8 +15,8 @@ const (
 	StatusFailed     = registration.StatusFailed
 )
 
-// registryEnv is the setting that turns registration on.
-const registryEnv = "AIAPP_AGENT_REGISTRY_URL"
+// RegistryEnv is the setting that turns registration on.
+const RegistryEnv = "AIAPP_MOCK_NL_REGISTRY_URL"
 
 // Registrar posts the agent card to an agent registry and remembers the outcome.
 type Registrar struct {
@@ -27,10 +27,10 @@ type Registrar struct {
 // registryURL leaves registration disabled. A non-empty token is sent as a
 // bearer token.
 func NewRegistrar(registryURL, token string) *Registrar {
-	return &Registrar{Registrar: registration.New(registryURL, token, registryEnv)}
+	return &Registrar{Registrar: registration.New(registryURL, token, RegistryEnv)}
 }
 
-// Register posts the card of c to the registry. It first connects the AI-App
+// Register posts the card of c to the registry. It first connects the engine
 // MCP server, when the tool cache can, so the card lists the tools; see
 // registration.Registrar.Register.
 func (r *Registrar) Register(ctx context.Context, c *Card) {
@@ -45,5 +45,5 @@ func (r *Registrar) Register(ctx context.Context, c *Card) {
 }
 
 func disabledRegistration() model.AgentRegistration {
-	return registration.New("", "", registryEnv).State()
+	return registration.New("", "", RegistryEnv).State()
 }

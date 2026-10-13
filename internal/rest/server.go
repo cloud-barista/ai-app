@@ -12,8 +12,6 @@ import (
 
 	_ "github.com/ish-hcc/ai-agent-proto/api/docs"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/agent"
-	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
@@ -40,15 +38,9 @@ type AppDependencies struct {
 	Tools   *tools.Registry
 }
 
-// AgentDependencies are the service layer objects the agent routes are built on.
-type AgentDependencies struct {
-	Agent   *agent.Service
-	Archive *archive.Store
-	Card    *agentcard.Card
-}
-
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
-// server, the console and a proxy to the automation agent.
+// server, the console, and proxies to the automation engine and to the partner
+// natural language agent.
 func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	handler := &Handler{
 		catalog: deps.Catalog,
@@ -57,9 +49,10 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		tools:   deps.Tools,
 	}
 
-	// The agent and engine readiness are open here as their own are there:
-	// the console overview asks for them before anyone has entered a token.
-	e := newEcho(cfg.Auth.Token, agentPrefix+"/readyz", enginePrefix+"/readyz")
+	// The engine and partner agent readiness are open here as their own are
+	// there: the console overview asks for them before anyone has entered a
+	// token.
+	e := newEcho(cfg.Auth.Token, partnerNLPrefix+"/readyz", enginePrefix+"/readyz")
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/api/*", echoSwagger.WrapHandler)
@@ -94,47 +87,20 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// The same tools as an MCP server over Streamable HTTP.
 	g.Any("/mcp", echo.WrapHandler(mcpserver.NewHandler(deps.Tools)))
 
-	// The automation agent runs in its own process. The console and operators
-	// keep one address, so its routes are forwarded from here.
-	proxy := echo.WrapHandler(newAgentProxy(cfg.Agent.URL))
-	g.POST("/ns/:nsId/intents", proxy)
-	g.Any("/agent/*", proxy)
-
-	// The automation engine runs in its own process too. Its routes keep their
-	// path, MCP endpoint included.
+	// The automation engine runs in its own process. The console and operators
+	// keep one address, so its routes are forwarded from here with their path,
+	// MCP endpoint included.
 	g.Any("/engine/*", echo.WrapHandler(newEngineProxy(cfg.Engine.URL)))
+
+	// Natural language instructions are the partner institution's area. Its
+	// agent, here a mock, is reached the same way, path unchanged.
+	g.Any("/partner/nl/*", echo.WrapHandler(newPartnerNLProxy(cfg.PartnerNL.URL)))
 
 	// Deploy and control archive.
 	g.GET("/archive", handler.RestGetArchive)
 	g.GET("/archive/:runId", handler.RestGetArchiveRun)
 
 	return &Server{echo: e, port: cfg.Server.Port}
-}
-
-// NewAgentServer builds the automation agent service: intents, the archive of
-// intent runs and the agent card.
-func NewAgentServer(cfg *config.Config, deps AgentDependencies) *Server {
-	handler := &Handler{
-		agent:   deps.Agent,
-		archive: deps.Archive,
-		card:    deps.Card,
-	}
-
-	e := newEcho(cfg.Auth.Token)
-	g := e.Group(BasePath)
-	g.GET("/readyz", RestGetReadyz)
-
-	g.POST("/ns/:nsId/intents", handler.RestPostIntent)
-
-	// Intent run archive.
-	g.GET("/archive", handler.RestGetArchive)
-	g.GET("/archive/:runId", handler.RestGetArchiveRun)
-
-	// The agent card, read by an agent registry. The AI-App service forwards
-	// /aiapp/agent/card here unchanged.
-	g.GET("/agent/card", handler.RestGetAgentCard)
-
-	return &Server{echo: e, port: cfg.Agent.Port}
 }
 
 // EngineDependencies are the service layer objects the engine routes are built on.

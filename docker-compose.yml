@@ -1,12 +1,13 @@
-# Runs the AI-App service, the AI application automation engine, the AI
-# application automation agent and the partner recommender mock.
+# Runs the AI-App service, the AI application automation engine and two partner
+# institution mocks: the recommender and the natural language agent.
 #
-# All services come from one image and differ only in the command. The partner
-# recommender mock stands in for the partner institution's infrastructure
-# recommendation API; it is not part of this prototype. The engine and the
-# agent reach the tools through the AI-App MCP server, and the AI-App service
-# forwards engine, intent and agent routes to them, so the console needs only
-# the AI-App address.
+# All services come from one image and differ only in the command. The
+# mock-partner-* services stand in for the partner institution's infrastructure
+# recommendation API and natural language agent; they are not part of this
+# prototype. The engine reaches the tools through the AI-App MCP server, the
+# natural language agent mock reaches the engine tools through the engine MCP
+# server, and the AI-App service forwards engine and partner agent routes to
+# them, so the console needs only the AI-App address.
 #
 # CB-Tumblebug is deliberately not a service here. It brings cb-spider and a
 # database with it, and including them would turn "bring this prototype up" into
@@ -64,11 +65,13 @@ services:
       # Where engine routes (/aiapp/engine/*) are forwarded, path unchanged.
       AIAPP_ENGINE_URL: "http://ai-automation-engine:8091"
 
-      # Where intent and agent routes are forwarded.
-      AIAPP_AGENT_URL: "http://ai-agent:8093"
+      # Where partner natural language agent routes (/aiapp/partner/nl/*) are
+      # forwarded, path unchanged. Here the mock of that agent.
+      AIAPP_MOCK_NL_URL: "http://mock-partner-nl-agent:8093"
 
-      # Empty leaves authentication off. The agent gets the same token because
-      # forwarded routes carry the caller's Authorization header unchanged.
+      # Empty leaves authentication off. The engine and the agent mock get the
+      # same token because forwarded routes carry the caller's Authorization
+      # header unchanged.
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"
 
@@ -137,46 +140,48 @@ services:
       retries: 5
       start_period: 10s
 
-  ai-agent:
+  # Partner institution natural language agent (mock implementation). It turns
+  # an instruction into engine tool calls through a planning model, so it starts
+  # once the engine answers.
+  mock-partner-nl-agent:
     build:
       context: .
       dockerfile: Dockerfile
     image: ai-agent-proto:local
-    container_name: ai-agent
-    command: ["/usr/local/bin/ai-agent"]
+    container_name: mock-partner-nl-agent
+    command: ["/usr/local/bin/mock-partner-nl-agent"]
     restart: unless-stopped
-    # The agent reads its tools from the AI-App MCP server at startup and
-    # registers a card listing them, so it starts once that server answers.
     depends_on:
-      ai-app-server:
+      ai-automation-engine:
         condition: service_healthy
     ports:
-      - "${AIAPP_AGENT_PORT:-8093}:8093"
+      - "${AIAPP_MOCK_NL_PORT:-8093}:8093"
     environment:
-      AIAPP_AGENT_PORT: "8093"
+      AIAPP_MOCK_NL_PORT: "8093"
 
       # The tools, their grades and the dry-run state all come from here.
-      AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
+      AIAPP_MOCK_NL_ENGINE_MCP_URL: "http://ai-automation-engine:8091/aiapp/engine/mcp"
 
-      # The same token as the AI-App service, both to accept and to send.
+      # The same token as the other services, both to accept and to send.
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
-      AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_MOCK_NL_ENGINE_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
 
       AIAPP_LLM_BASE_URL: "${AIAPP_LLM_BASE_URL:-https://api.anthropic.com}"
       AIAPP_LLM_API_KEY: "${AIAPP_LLM_API_KEY:-}"
       AIAPP_LLM_MODEL: "${AIAPP_LLM_MODEL:-claude-opus-5}"
-      AIAPP_AGENT_MAX_STEPS: "${AIAPP_AGENT_MAX_STEPS:-12}"
-      AIAPP_AGENT_ARCHIVE_DIR: "/app/data/agent-archive"
+      AIAPP_LLM_TIMEOUT: "${AIAPP_LLM_TIMEOUT:-5m}"
+      AIAPP_MOCK_NL_MAX_STEPS: "${AIAPP_MOCK_NL_MAX_STEPS:-12}"
+      AIAPP_MOCK_NL_ARCHIVE_DIR: "/app/data/partner-nl-archive"
 
       # Agent registry the card is posted to at startup. Empty leaves it off.
-      AIAPP_AGENT_REGISTRY_URL: "${AIAPP_AGENT_REGISTRY_URL:-}"
-      AIAPP_AGENT_REGISTRY_TOKEN: "${AIAPP_AGENT_REGISTRY_TOKEN:-}"
+      AIAPP_MOCK_NL_REGISTRY_URL: "${AIAPP_MOCK_NL_REGISTRY_URL:-}"
+      AIAPP_MOCK_NL_REGISTRY_TOKEN: "${AIAPP_MOCK_NL_REGISTRY_TOKEN:-}"
 
     volumes:
-      - agent-archive:/app/data/agent-archive
+      - partner-nl-archive:/app/data/partner-nl-archive
 
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8093/aiapp/readyz"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8093/aiapp/partner/nl/readyz"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -213,4 +218,4 @@ services:
 volumes:
   archive:
   engine-archive:
-  agent-archive:
+  partner-nl-archive:

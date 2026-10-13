@@ -4,13 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/agent"
-	"github.com/ish-hcc/ai-agent-proto/internal/agentcard"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
-	"github.com/ish-hcc/ai-agent-proto/internal/llm"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
@@ -22,10 +19,8 @@ import (
 type Handler struct {
 	catalog *catalog.Store
 	deploy  *deploy.Service
-	agent   *agent.Service
 	archive *archive.Store
 	tools   *tools.Registry
-	card    *agentcard.Card
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
@@ -53,8 +48,6 @@ func statusCodeFor(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, deploy.ErrNoRecommender):
 		return http.StatusUnprocessableEntity
-	case errors.Is(err, llm.ErrDisabled):
-		return http.StatusServiceUnavailable
 	case errors.Is(err, mcpclient.ErrUnavailable):
 		return http.StatusServiceUnavailable
 	}
