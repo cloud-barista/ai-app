@@ -70,6 +70,7 @@ func (t namespaceTransport) RoundTrip(req *http.Request) (*http.Response, error)
 
 // Client is a ToolSource backed by the AI-App MCP server.
 type Client struct {
+	name       string
 	endpoint   string
 	display    string
 	httpClient *http.Client
@@ -84,7 +85,13 @@ type Client struct {
 // New builds a Client for the Streamable HTTP endpoint. It does not connect.
 // A non-empty token is sent as a bearer token.
 func New(endpoint, token string) *Client {
+	return NewNamed(clientName, endpoint, token)
+}
+
+// NewNamed builds a Client that introduces itself to the server as name.
+func NewNamed(name, endpoint, token string) *Client {
 	return &Client{
+		name:       name,
 		endpoint:   endpoint,
 		display:    redact.URL(endpoint),
 		httpClient: &http.Client{Transport: namespaceTransport{base: http.DefaultTransport, token: token}},
@@ -209,7 +216,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 		// The agent only ever asks; it does not wait for server notifications.
 		DisableStandaloneSSE: true,
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: clientVersion}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: c.name, Version: clientVersion}, nil)
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return fmt.Errorf("%w: connect %s: %s", ErrUnavailable, c.display, redact.Error(err, c.endpoint))

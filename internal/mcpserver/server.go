@@ -37,19 +37,25 @@ const (
 
 // NewServer builds an MCP server exposing every tool in the registry.
 func NewServer(registry *tools.Registry) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, nil)
+	return NewNamedServer(serverName, registry)
+}
+
+// NewNamedServer builds an MCP server that introduces itself as name and
+// exposes every tool in the registry.
+func NewNamedServer(name string, registry *tools.Registry) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: name, Version: serverVersion}, nil)
 
 	// Implementation has no _meta field, so the dry-run state rides on the
-	// initialize (and discover) result instead.
-	dryRun := registry.DryRun()
+	// initialize (and discover) result instead. It is read per request because
+	// a registry may take it from a service that answers only later.
 	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			result, err := next(ctx, method, req)
 			switch res := result.(type) {
 			case *mcp.InitializeResult:
-				res.Meta = withDryRun(res.Meta, dryRun)
+				res.Meta = withDryRun(res.Meta, registry.DryRun())
 			case *mcp.DiscoverResult:
-				res.Meta = withDryRun(res.Meta, dryRun)
+				res.Meta = withDryRun(res.Meta, registry.DryRun())
 			}
 			return result, err
 		}
@@ -77,7 +83,12 @@ func NewServer(registry *tools.Registry) *mcp.Server {
 
 // NewHandler wraps the MCP server in a Streamable HTTP handler.
 func NewHandler(registry *tools.Registry) http.Handler {
-	server := NewServer(registry)
+	return NewNamedHandler(serverName, registry)
+}
+
+// NewNamedHandler wraps the MCP server named name in a Streamable HTTP handler.
+func NewNamedHandler(name string, registry *tools.Registry) http.Handler {
+	server := NewNamedServer(name, registry)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 }
 

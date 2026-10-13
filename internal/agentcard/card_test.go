@@ -192,12 +192,12 @@ func TestRegisterFailsAfterThreeAttempts(t *testing.T) {
 	defer srv.Close()
 
 	registrar := NewRegistrar(srv.URL, "")
-	registrar.interval = time.Millisecond
+	registrar.SetInterval(time.Millisecond)
 	card := New(mcpclient.New("http://127.0.0.1:1/aiapp/mcp", ""), testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
 
-	if fake.calls() != registerAttempts || registerAttempts != 3 {
+	if fake.calls() != 3 {
 		t.Errorf("registry called %d times, want 3", fake.calls())
 	}
 	if fake.auths[0] != "" {
@@ -240,12 +240,12 @@ func TestCardAndRegistrationCarryNoURLSecrets(t *testing.T) {
 	registryURL := secretURL(t, srv.URL+"/registry", "ru", "rpw", "key=rtok")
 
 	registrar := NewRegistrar(registryURL, "reg-token")
-	registrar.interval = time.Millisecond
+	registrar.SetInterval(time.Millisecond)
 	card := New(client, testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
 
-	if fake.calls() != registerAttempts || fake.paths[0] != "POST /registry/agents" {
+	if fake.calls() != 3 || fake.paths[0] != "POST /registry/agents" {
 		t.Fatalf("registry saw %v", fake.paths)
 	}
 	secrets := []string{"mu:", "mpw", "mtok", "ru:", "rpw", "rtok", "frag", "reg-token", "bad token", "Bearer"}
@@ -320,7 +320,7 @@ func TestRegisterWaitsForLateMCPServer(t *testing.T) {
 	defer srv.Close()
 
 	registrar := NewRegistrar(srv.URL, "")
-	registrar.interval = time.Millisecond
+	registrar.SetInterval(time.Millisecond)
 	card := New(client, testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
@@ -347,12 +347,12 @@ func TestRegisterWithoutMCPServerSendsUnconnectedCard(t *testing.T) {
 
 	client := &countingClient{Client: mcpclient.New("http://127.0.0.1:1/aiapp/mcp", "")}
 	registrar := NewRegistrar(srv.URL, "")
-	registrar.interval = time.Millisecond
+	registrar.SetInterval(time.Millisecond)
 	card := New(client, testLLM, registrar)
 
 	registrar.Register(context.Background(), card)
 
-	if got := client.prepares.Load(); got != connectAttempts || connectAttempts != 3 {
+	if got := client.prepares.Load(); got != 3 {
 		t.Errorf("connection attempts = %d, want 3", got)
 	}
 	var sent model.AgentCard

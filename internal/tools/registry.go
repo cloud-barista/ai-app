@@ -51,13 +51,20 @@ type Tool struct {
 // Registry holds every tool the agent may call.
 type Registry struct {
 	tools map[string]Tool
-	// dryRun mirrors the deploy service setting, so the tool surface reports the
-	// same guard state that the service enforces.
-	dryRun bool
+	// dryRun mirrors the setting of whoever enforces the guard, so the tool
+	// surface reports the same guard state that is enforced.
+	dryRun func() bool
 }
 
 // NewRegistry builds an empty Registry.
 func NewRegistry(dryRun bool) *Registry {
+	return NewRegistryFunc(func() bool { return dryRun })
+}
+
+// NewRegistryFunc builds an empty Registry whose guard state is read from
+// dryRun each time it is asked, for a registry whose tools are guarded by
+// another service that may not be reachable yet.
+func NewRegistryFunc(dryRun func() bool) *Registry {
 	return &Registry{tools: make(map[string]Tool), dryRun: dryRun}
 }
 
@@ -120,7 +127,7 @@ func (r *Registry) Grade(name string) Grade {
 }
 
 // DryRun reports whether guarded tools are blocked.
-func (r *Registry) DryRun() bool { return r.dryRun }
+func (r *Registry) DryRun() bool { return r.dryRun() }
 
 // Call runs one tool by name.
 //
@@ -138,7 +145,7 @@ func (r *Registry) Call(ctx context.Context, nsID, name string, input json.RawMe
 // describe appends the guard state to a tool description so the model knows,
 // before it plans, that a guarded call will not take effect.
 func (r *Registry) describe(tool Tool) string {
-	if r.dryRun && tool.Grade.GuardedByDryRun() {
+	if r.dryRun() && tool.Grade.GuardedByDryRun() {
 		return tool.Description + " NOTE: dry run is on, so this call is planned and returned, never sent to the cloud; the calling agent records it."
 	}
 	return tool.Description
