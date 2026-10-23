@@ -1,0 +1,1946 @@
+basePath: /aiapp
+definitions:
+  catalog.Match:
+    properties:
+      appId:
+        type: string
+      kind:
+        $ref: '#/definitions/model.AppKind'
+      modelId:
+        type: string
+      name:
+        type: string
+      reasons:
+        description: |-
+          Reasons names the signals that matched, so an operator can see why a
+          candidate came up rather than being handed an unexplained ranking.
+        items:
+          type: string
+        type: array
+      requires:
+        description: Requires names the model services an application needs deployed
+          first.
+        items:
+          $ref: '#/definitions/model.AppRequirement'
+        type: array
+      runtime:
+        type: string
+      score:
+        description: |-
+          Score is comparable only within one Resolve call. It ranks candidates; it
+          is not a probability and must not be compared across queries.
+        type: integer
+    type: object
+  engine.Card:
+    properties:
+      description:
+        type: string
+      displayName:
+        type: string
+      dryRun:
+        description: DryRun is the AI-App dry-run state, as of the current MCP session.
+        type: boolean
+      framework:
+        example: AI-Ops
+        type: string
+      mcp:
+        $ref: '#/definitions/engine.CardMCP'
+      mcpEndpoint:
+        type: string
+      name:
+        example: ai-mcmp-app-automation-engine
+        type: string
+      owner:
+        example: innogrid
+        type: string
+      registration:
+        allOf:
+        - $ref: '#/definitions/model.AgentRegistration'
+        description: |-
+          Registration is how the last registry registration went. It is left out
+          of the card sent to the registry.
+      servesFramework:
+        example: AI-App
+        type: string
+      tools:
+        $ref: '#/definitions/engine.CardToolGroup'
+      usesLLM:
+        description: 'UsesLLM is always false: the workflows are fixed.'
+        type: boolean
+      version:
+        example: 0.1.0
+        type: string
+      workflowEndpoint:
+        type: string
+      workflows:
+        example:
+        - deploy
+        - heal
+        - control
+        - status
+        items:
+          type: string
+        type: array
+    type: object
+  engine.CardMCP:
+    properties:
+      appServer:
+        $ref: '#/definitions/engine.CardMCPServer'
+    type: object
+  engine.CardMCPServer:
+    properties:
+      connected:
+        type: boolean
+      toolCount:
+        type: integer
+      url:
+        example: http://127.0.0.1:8090/aiapp/mcp
+        type: string
+    type: object
+  engine.CardToolGroup:
+    properties:
+      exposed:
+        items:
+          $ref: '#/definitions/model.AgentCardTool'
+        type: array
+      uses:
+        description: |-
+          Uses names the AI-App tools the engine calls, whether or not it is
+          connected. A tool carries its grade only while the engine is connected
+          to an AI-App service that publishes it.
+        items:
+          $ref: '#/definitions/model.AgentCardTool'
+        type: array
+    type: object
+  engine.Run:
+    properties:
+      dryRun:
+        description: DryRun is the AI-App dry-run state the run executed under.
+        type: boolean
+      endedAt:
+        type: string
+      input: {}
+      message:
+        type: string
+      nsId:
+        example: default
+        type: string
+      runId:
+        example: eng-mbt3x2k1
+        type: string
+      startedAt:
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/engine.RunStatus'
+        enum:
+        - succeeded
+        - failed
+        - blocked
+        example: blocked
+      steps:
+        items:
+          $ref: '#/definitions/engine.Step'
+        type: array
+      workflow:
+        enum:
+        - deploy
+        - heal
+        - control
+        - status
+        example: deploy
+        type: string
+    type: object
+  engine.RunListResp:
+    properties:
+      runs:
+        items:
+          $ref: '#/definitions/engine.Run'
+        type: array
+    type: object
+  engine.RunStatus:
+    enum:
+    - succeeded
+    - failed
+    - blocked
+    type: string
+    x-enum-varnames:
+    - RunSucceeded
+    - RunFailed
+    - RunBlocked
+  engine.Step:
+    properties:
+      endedAt:
+        type: string
+      error:
+        type: string
+      index:
+        type: integer
+      input: {}
+      message:
+        description: |-
+          Message says why a step was blocked, waits or was skipped, or what its
+          result meant for the workflow.
+        type: string
+      name:
+        example: plan model service vllm-llama31-8b
+        type: string
+      output:
+        description: Output is the tool result as the AI-App service returned it.
+        type: object
+      startedAt:
+        description: StartedAt and EndedAt are absent on a step that was not run.
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/engine.StepStatus'
+        enum:
+        - succeeded
+        - failed
+        - blocked
+        - waiting
+        - skipped
+        example: succeeded
+      tool:
+        description: Tool is the AI-App MCP tool the step calls.
+        example: plan_deployment
+        type: string
+    type: object
+  engine.StepStatus:
+    enum:
+    - succeeded
+    - failed
+    - blocked
+    - waiting
+    - skipped
+    type: string
+    x-enum-varnames:
+    - StepSucceeded
+    - StepFailed
+    - StepBlocked
+    - StepWaiting
+    - StepSkipped
+  model.AcceleratorDevice:
+    properties:
+      driverVersion:
+        type: string
+      index:
+        type: integer
+      kernelDriver:
+        description: |-
+          KernelDriver is the driver the kernel actually bound to the device. An
+          accelerator image whose driver never bound leaves this empty while the
+          device itself still appears, which is the case the catalog comparison
+          cannot see from the vendor tool alone.
+        type: string
+      kind:
+        description: |-
+          Kind is gpu, npu or tpu. It says which class of AI semiconductor answered,
+          which the vendor alone does not: one vendor can ship more than one class.
+        type: string
+      memoryKnown:
+        type: boolean
+      memoryMiB:
+        type: integer
+      migEnabled:
+        type: boolean
+      migKnown:
+        type: boolean
+      name:
+        type: string
+      nodeId:
+        type: string
+      pciBusId:
+        description: |-
+          PCIBusID is the bus address in the domain:bus:device.function form the
+          kernel prints. It is the only identifier every source shares, so it is
+          what joins a vendor reading to its PCI entry.
+        type: string
+      source:
+        description: |-
+          Source names what produced this entry, for example nvidia-smi or pci. A
+          reading taken off the PCI bus and one taken from a vendor driver carry
+          different amounts of truth, and merging them without saying which is which
+          makes an inventory look like a measurement.
+        type: string
+      uuid:
+        description: |-
+          UUID keeps the vendor prefix the driver prints. Stripping it splits one
+          card into two identities wherever the prefixed form is used as a join key.
+        type: string
+      vendor:
+        type: string
+      virtualFunction:
+        description: |-
+          VirtualFunction marks an SR-IOV virtual function. Counting a physical
+          function and its virtual functions as separate cards inflates the device
+          count on a virtualisation host.
+        type: boolean
+    type: object
+  model.AcceleratorExpectation:
+    properties:
+      minCount:
+        type: integer
+      minMemoryGiB:
+        type: number
+      model:
+        type: string
+      type:
+        type: string
+    type: object
+  model.AcceleratorReport:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/model.AcceleratorDevice'
+        type: array
+      expected:
+        $ref: '#/definitions/model.AcceleratorExpectation'
+      findings:
+        description: |-
+          Findings are the disagreements between the two. They are reported, not
+          raised as errors: the nodes are already running either way.
+        items:
+          type: string
+        type: array
+      infraId:
+        type: string
+      message:
+        type: string
+      mode:
+        description: |-
+          Mode is mig, bare_metal or unknown. Passthrough and bare metal look the
+          same from inside a guest and are not split here.
+        type: string
+      probed:
+        description: Probed is false when the nodes were never asked.
+        type: boolean
+      sources:
+        description: |-
+          Sources lists the probes that answered on at least one node, in the order
+          they were tried. An empty list with Probed true means the nodes answered
+          but carried nothing this probe knows how to read.
+        items:
+          type: string
+        type: array
+    type: object
+  model.AcceleratorRequirement:
+    properties:
+      minCount:
+        description: MinCount is the smallest acceptable number of devices per node.
+        example: 1
+        type: integer
+      minMemoryGiB:
+        description: MinMemoryGiB is the smallest acceptable per-device memory. Zero
+          means unset.
+        example: 22
+        type: number
+      model:
+        description: Model narrows the search to a device model. Empty means any model
+          of Type.
+        example: NVIDIA L4
+        type: string
+      type:
+        description: Type is the accelerator class, matched against the spec acceleratorType.
+        example: gpu
+        type: string
+    required:
+    - minCount
+    - type
+    type: object
+  model.AgentCardTool:
+    properties:
+      grade:
+        description: Grade is one of read, review, write, destructive.
+        type: string
+      guardedByDryRun:
+        type: boolean
+      name:
+        type: string
+    type: object
+  model.AgentRegistration:
+    properties:
+      at:
+        type: string
+      message:
+        type: string
+      registryUrl:
+        type: string
+      status:
+        description: Status is disabled, pending, registered or failed.
+        example: registered
+        type: string
+    type: object
+  model.AppKind:
+    enum:
+    - model-service
+    - application
+    type: string
+    x-enum-varnames:
+    - KindModelService
+    - KindApplication
+  model.AppRequirement:
+    properties:
+      appId:
+        example: vllm-llama31-8b
+        type: string
+      env:
+        example: OPENAI_API_BASE_URL
+        type: string
+    required:
+    - appId
+    - env
+    type: object
+  model.AppSpec:
+    properties:
+      accelerator:
+        allOf:
+        - $ref: '#/definitions/model.AcceleratorRequirement'
+        description: |-
+          Accelerator is required for a model service. An application that leaves
+          the type empty is placed on a CPU node.
+      aliases:
+        description: |-
+          Aliases are the other names an operator uses for this application, in any
+          language. They exist because an instruction arrives as "라마 추론서버", not
+          as the registered id, and nothing else in the record carries that word.
+        example:
+        - llama
+        items:
+          type: string
+        type: array
+      deployTargets:
+        items:
+          $ref: '#/definitions/model.DeployTarget'
+        type: array
+      description:
+        example: OpenAI compatible inference endpoint
+        type: string
+      id:
+        example: vllm-llama31-8b
+        type: string
+      install:
+        $ref: '#/definitions/model.InstallSpec'
+      kind:
+        allOf:
+        - $ref: '#/definitions/model.AppKind'
+        enum:
+        - model-service
+        - application
+        example: model-service
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      model:
+        allOf:
+        - $ref: '#/definitions/model.ModelRef'
+        description: Model is required for a model service and optional for an application.
+      name:
+        example: vLLM Llama 3.1 8B Instruct
+        type: string
+      requires:
+        items:
+          $ref: '#/definitions/model.AppRequirement'
+        type: array
+      resources:
+        $ref: '#/definitions/model.ResourceRequirement'
+      runtime:
+        allOf:
+        - $ref: '#/definitions/model.Runtime'
+        example: vllm
+      runtimeVersion:
+        example: 0.6.3
+        type: string
+      serving:
+        $ref: '#/definitions/model.ServingSpec'
+      version:
+        example: 0.1.0
+        type: string
+    required:
+    - id
+    - install
+    - name
+    - runtime
+    - serving
+    - version
+    type: object
+  model.AppSpecListResp:
+    properties:
+      apps:
+        items:
+          $ref: '#/definitions/model.AppSpec'
+        type: array
+    type: object
+  model.ArchiveListResp:
+    properties:
+      records:
+        items:
+          $ref: '#/definitions/model.ArchiveRecord'
+        type: array
+    type: object
+  model.ArchiveRecord:
+    properties:
+      answer:
+        type: string
+      endedAt:
+        type: string
+      error:
+        type: string
+      intent:
+        type: string
+      kind:
+        example: intent
+        type: string
+      nsId:
+        type: string
+      runId:
+        type: string
+      startedAt:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/model.ToolStep'
+        type: array
+      usage:
+        $ref: '#/definitions/model.TokenUsage'
+    type: object
+  model.ControlAppReq:
+    properties:
+      action:
+        description: Action is one of suspend, resume, reboot, terminate.
+        enum:
+        - suspend
+        - resume
+        - reboot
+        - terminate
+        example: suspend
+        type: string
+    required:
+    - action
+    type: object
+  model.ControlResult:
+    properties:
+      action:
+        type: string
+      affected:
+        items:
+          type: string
+        type: array
+      dryRun:
+        type: boolean
+      infraId:
+        type: string
+      message:
+        type: string
+    type: object
+  model.DeployAppReq:
+    properties:
+      appId:
+        description: AppID selects the registered application to deploy.
+        example: vllm-llama31-8b
+        type: string
+      imageId:
+        description: ImageID pins the node image. Empty asks the partner recommender
+          API.
+        example: ubuntu22.04
+        type: string
+      infraName:
+        description: InfraName becomes the CB-Tumblebug Infra ID and is the idempotency
+          key.
+        example: vllm-lab-01
+        type: string
+      nodeCount:
+        description: NodeCount is how many serving nodes to provision.
+        example: 1
+        type: integer
+      sgTemplateId:
+        description: |-
+          SGTemplateID pins the security group template provisioning starts from.
+          Empty leaves the cloud manager default, which opens every port and is
+          documented upstream as being for development and testing only.
+        example: sg-usecase-web
+        type: string
+      specId:
+        description: SpecID pins the node spec. Empty asks the partner recommender
+          API.
+        example: aws+us-west-2+g6.xlarge
+        type: string
+    required:
+    - appId
+    - infraName
+    type: object
+  model.DeployTarget:
+    enum:
+    - vm
+    - container
+    type: string
+    x-enum-varnames:
+    - DeployTargetVM
+    - DeployTargetContainer
+  model.DeploymentPlan:
+    properties:
+      acceleratorSummary:
+        description: AcceleratorSummary describes the accelerator the chosen spec
+          provides.
+        type: string
+      appId:
+        type: string
+      appName:
+        type: string
+      estimatedCost:
+        description: EstimatedCost is the CB-Tumblebug review estimate, when a review
+          ran.
+        type: string
+      imageId:
+        type: string
+      imageReason:
+        description: ImageReason explains an image that was resolved rather than requested.
+        type: string
+      imageSource:
+        description: 'ImageSource records how ImageID was chosen: "requested" or "resolved".'
+        type: string
+      infraName:
+        type: string
+      nodeCount:
+        type: integer
+      nsId:
+        type: string
+      request:
+        description: Request is the dynamic Infra request body, including the install
+          commands.
+      requirements:
+        description: Requirements are the model services an application was wired
+          to.
+        items:
+          $ref: '#/definitions/model.ResolvedRequirement'
+        type: array
+      sgTemplateId:
+        type: string
+      specId:
+        type: string
+      specSource:
+        description: 'SpecSource records how SpecID was chosen: "requested" or "recommended".'
+        type: string
+    type: object
+  model.DeploymentResult:
+    properties:
+      accelerator:
+        allOf:
+        - $ref: '#/definitions/model.AcceleratorReport'
+        description: Accelerator reports what the nodes answered when asked what they
+          carry.
+      dryRun:
+        description: DryRun is true when the plan was archived but never sent.
+        type: boolean
+      health:
+        allOf:
+        - $ref: '#/definitions/model.ServingHealth'
+        description: |-
+          Health reports whether the application answered on its serving port,
+          on a real run. A dry run leaves it out because nothing was started.
+      infra:
+        description: Infra is the provisioned Infra, present only on a real run.
+      message:
+        description: Message explains the outcome to the caller.
+        type: string
+      plan:
+        $ref: '#/definitions/model.DeploymentPlan'
+      review:
+        allOf:
+        - $ref: '#/definitions/model.ReviewSummary'
+        description: Review is the CB-Tumblebug pre-flight verdict, when a review
+          ran.
+      serving:
+        allOf:
+        - $ref: '#/definitions/model.ServingAccess'
+        description: Serving reports whether the application's port was opened, on
+          a real run.
+    type: object
+  model.InstallSpec:
+    properties:
+      commands:
+        items:
+          type: string
+        type: array
+      osType:
+        description: OSType selects the node image family. Empty uses the service
+          default.
+        example: ubuntu 22.04
+        type: string
+      timeoutMinutes:
+        example: 30
+        type: integer
+      userName:
+        example: cb-user
+        type: string
+    required:
+    - commands
+    type: object
+  model.ModelRef:
+    properties:
+      format:
+        description: Format is the artifact format the runtime loads.
+        example: safetensors
+        type: string
+      id:
+        description: ID is the model identifier in the AI model registry.
+        example: meta-llama/Llama-3.1-8B-Instruct
+        type: string
+      sizeGiB:
+        description: SizeGiB is the on-disk footprint, used to size the root disk.
+        example: 16
+        type: number
+    required:
+    - id
+    type: object
+  model.NodeHealth:
+    properties:
+      error:
+        type: string
+      httpCode:
+        description: |-
+          HTTPCode is the status the application answered with. Zero means
+          nothing answered, or the check could not run; Error says which.
+        type: integer
+      nodeId:
+        type: string
+      publicIp:
+        type: string
+      ready:
+        type: boolean
+    type: object
+  model.NodeUpdate:
+    properties:
+      error:
+        type: string
+      nodeId:
+        type: string
+      nodeIp:
+        type: string
+      stderr:
+        description: Stderr is the tail of what the commands wrote to standard error.
+        type: string
+      succeeded:
+        description: Succeeded is false when the node reported an error for the command
+          set.
+        type: boolean
+    type: object
+  model.ProvisionResult:
+    properties:
+      appId:
+        description: AppID and AppVersion name what an update applied.
+        type: string
+      appVersion:
+        type: string
+      dryRun:
+        description: DryRun is true when the update was prepared but never sent.
+        type: boolean
+      infra:
+        allOf:
+        - $ref: '#/definitions/tumblebug.InfraInfo'
+        description: |-
+          Infra is the Infra as the provisioner left it, when it reports one. A
+          create must carry it: opening the serving port and probing the
+          accelerator both read the nodes from it.
+      infraId:
+        type: string
+      message:
+        type: string
+      nodes:
+        description: Nodes is the per-node outcome of an update.
+        items:
+          $ref: '#/definitions/model.NodeUpdate'
+        type: array
+    type: object
+  model.ResolvedRequirement:
+    properties:
+      appId:
+        example: vllm-llama31-8b
+        type: string
+      endpoint:
+        description: Endpoint is the value exported under Env before the install commands
+          run.
+        example: http://203.0.113.10:8000/v1
+        type: string
+      env:
+        example: OPENAI_API_BASE_URL
+        type: string
+      infraId:
+        example: vllm-lab-01
+        type: string
+    type: object
+  model.ResourceRequirement:
+    properties:
+      minMemoryGiB:
+        example: 32
+        type: integer
+      minVCPU:
+        example: 8
+        type: integer
+      rootDiskGiB:
+        example: 100
+        type: integer
+    type: object
+  model.ReviewSummary:
+    properties:
+      creationViable:
+        type: boolean
+      estimatedCost:
+        type: string
+      overallMessage:
+        type: string
+      overallStatus:
+        type: string
+      recommendations:
+        items:
+          type: string
+        type: array
+      totalNodeCount:
+        type: integer
+    type: object
+  model.Runtime:
+    enum:
+    - vllm
+    - triton
+    - tgi
+    - ollama
+    - app
+    type: string
+    x-enum-varnames:
+    - RuntimeVLLM
+    - RuntimeTriton
+    - RuntimeTGI
+    - RuntimeOllama
+    - RuntimeOther
+  model.ServingAccess:
+    properties:
+      endpoints:
+        description: Endpoints are the reachable addresses, one per node with a public
+          address.
+        items:
+          type: string
+        type: array
+      message:
+        type: string
+      opened:
+        description: Opened is false when the rule could not be added; Message says
+          why.
+        type: boolean
+      port:
+        type: integer
+      protocol:
+        type: string
+      securityGroupIds:
+        items:
+          type: string
+        type: array
+      sourceIp:
+        description: SourceIP is the range the port was opened to.
+        type: string
+    type: object
+  model.ServingHealth:
+    properties:
+      appId:
+        type: string
+      attempts:
+        description: Attempts is how many times the nodes were asked before this result.
+        type: integer
+      checkedAt:
+        type: string
+      healthPath:
+        type: string
+      infraId:
+        type: string
+      message:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/model.NodeHealth'
+        type: array
+      port:
+        type: integer
+      ready:
+        description: Ready is true when every node answered with a 2xx or 3xx status.
+        type: boolean
+    type: object
+  model.ServingSpec:
+    properties:
+      apiBasePath:
+        description: |-
+          APIBasePath is appended to the endpoint handed to an application that
+          requires this service, for example "/v1" for an OpenAI compatible API.
+        example: /v1
+        type: string
+      healthPath:
+        example: /health
+        type: string
+      port:
+        example: 8000
+        type: integer
+      protocol:
+        example: http
+        type: string
+    required:
+    - port
+    type: object
+  model.SimpleMsg:
+    properties:
+      message:
+        example: AI application not found
+        type: string
+    type: object
+  model.SpecCandidate:
+    properties:
+      acceleratorCount:
+        type: integer
+      acceleratorMemoryGB:
+        type: number
+      acceleratorModel:
+        type: string
+      acceleratorType:
+        type: string
+      costPerHour:
+        type: number
+      id:
+        type: string
+      memoryGiB:
+        type: number
+      providerName:
+        type: string
+      regionName:
+        type: string
+      vCPU:
+        type: integer
+    type: object
+  model.TokenUsage:
+    properties:
+      inputTokens:
+        type: integer
+      outputTokens:
+        type: integer
+    type: object
+  model.ToolDescriptor:
+    properties:
+      description:
+        type: string
+      grade:
+        description: Grade is one of read, review, write, destructive.
+        type: string
+      guardedByDryRun:
+        description: GuardedByDryRun is true when the dry-run setting can block this
+          tool.
+        type: boolean
+      inputSchema: {}
+      name:
+        type: string
+    type: object
+  model.ToolListResp:
+    properties:
+      dryRun:
+        type: boolean
+      tools:
+        items:
+          $ref: '#/definitions/model.ToolDescriptor'
+        type: array
+    type: object
+  model.ToolStep:
+    properties:
+      calledAt:
+        type: string
+      duration:
+        type: string
+      error:
+        type: string
+      executed:
+        description: Executed is false when the dry-run guard blocked an infrastructure
+          change.
+        type: boolean
+      grade:
+        description: Grade is the tool risk grade that decided whether the call was
+          executed.
+        type: string
+      index:
+        type: integer
+      input: {}
+      output: {}
+      tool:
+        type: string
+    type: object
+  model.UpdateDeploymentReq:
+    properties:
+      appId:
+        description: AppID selects the registered application whose install commands
+          are applied.
+        example: vllm-llama31-8b
+        type: string
+    required:
+    - appId
+    type: object
+  tumblebug.InfraInfo:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      label:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      node:
+        items:
+          $ref: '#/definitions/tumblebug.NodeInfo'
+        type: array
+      status:
+        type: string
+      statusCount:
+        $ref: '#/definitions/tumblebug.StatusCountInfo'
+      targetStatus:
+        type: string
+    type: object
+  tumblebug.InfraStatusView:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      statusCount:
+        $ref: '#/definitions/tumblebug.StatusCountInfo'
+      targetAction:
+        type: string
+      targetStatus:
+        type: string
+    type: object
+  tumblebug.NodeInfo:
+    properties:
+      id:
+        type: string
+      imageId:
+        type: string
+      name:
+        type: string
+      nodeGroupId:
+        type: string
+      privateIP:
+        type: string
+      publicIP:
+        type: string
+      securityGroupIds:
+        description: |-
+          SecurityGroupIDs are the groups attached to the node, and are how the
+          serving port is opened after provisioning.
+        items:
+          type: string
+        type: array
+      specId:
+        type: string
+      sshPort:
+        type: integer
+      status:
+        type: string
+    type: object
+  tumblebug.StatusCountInfo:
+    properties:
+      countCreating:
+        type: integer
+      countFailed:
+        type: integer
+      countRunning:
+        type: integer
+      countSuspended:
+        type: integer
+      countTerminated:
+        type: integer
+      countTotal:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: Registers AI application metadata, deploys the application onto AI
+    semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP
+    tools and archives every deploy and control call. Automation engine routes and
+    the partner natural language agent routes are forwarded to their own processes.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: AI-MCMP AI-App Service (Prototype)
+  version: 0.1.0
+paths:
+  /apps:
+    get:
+      description: List every AI application in the catalog with its runtime, model
+        and accelerator requirement
+      operationId: GetAllApps
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI application list
+          schema:
+            $ref: '#/definitions/model.AppSpecListResp'
+      security:
+      - BearerAuth: []
+      summary: List registered AI applications
+      tags:
+      - '[App] AI Application Catalog'
+    post:
+      consumes:
+      - application/json
+      description: Register or replace an AI application metadata record. Replacing
+        an existing id publishes a new version
+      operationId: PostApp
+      parameters:
+      - description: AI application metadata
+        in: body
+        name: appSpec
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppSpec'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI application registered
+          schema:
+            $ref: '#/definitions/model.AppSpec'
+        "400":
+          description: Malformed or incomplete metadata
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Register an AI application
+      tags:
+      - '[App] AI Application Catalog'
+  /apps/{appId}:
+    delete:
+      description: Remove an AI application from the catalog. Deployments already
+        running are untouched
+      operationId: DeleteApp
+      parameters:
+      - description: AI application ID
+        in: path
+        name: appId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI application deleted
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Delete an AI application
+      tags:
+      - '[App] AI Application Catalog'
+    get:
+      description: Read one registered AI application, including its install commands
+        and serving port
+      operationId: GetApp
+      parameters:
+      - default: vllm-llama31-8b
+        description: AI application ID
+        in: path
+        name: appId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI application metadata
+          schema:
+            $ref: '#/definitions/model.AppSpec'
+        "404":
+          description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get an AI application
+      tags:
+      - '[App] AI Application Catalog'
+  /apps/{appId}/specs:
+    get:
+      description: Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node
+        specs that satisfy the accelerator requirement. Without a recommender API
+        this answers 422.
+      operationId: GetAppSpecs
+      parameters:
+      - default: vllm-llama31-8b
+        description: AI application ID
+        in: path
+        name: appId
+        required: true
+        type: string
+      - default: 5
+        description: How many candidates to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Matching node specs
+          schema:
+            items:
+              $ref: '#/definitions/model.SpecCandidate'
+            type: array
+        "404":
+          description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "422":
+          description: No recommender configured
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Spec recommendation failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Remote placement service failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Recommend accelerator specs for an AI application
+      tags:
+      - '[App] AI Application Catalog'
+  /apps/search:
+    get:
+      description: Rank registered AI applications against an operator's own words
+        and report the signals that matched. An empty list means the catalog holds
+        nothing that fits
+      operationId: GetAppMatches
+      parameters:
+      - description: The operator's instruction, in their own words
+        in: query
+        name: q
+        required: true
+        type: string
+      - default: 5
+        description: How many candidates to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ranked candidates
+          schema:
+            items:
+              $ref: '#/definitions/catalog.Match'
+            type: array
+        "400":
+          description: Query required
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Find AI applications matching a description
+      tags:
+      - '[App] AI Application Catalog'
+  /archive:
+    get:
+      description: List archived deployment and control runs, newest first. A record
+        holds the instruction, every tool call with its arguments and the guard verdict
+      operationId: GetArchive
+      parameters:
+      - default: 20
+        description: How many records to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived runs
+          schema:
+            $ref: '#/definitions/model.ArchiveListResp'
+        "400":
+          description: Malformed limit
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: List archived runs
+      tags:
+      - '[Archive] Deploy and Control Archive'
+  /archive/{runId}:
+    get:
+      description: Read one archived run by its identifier
+      operationId: GetArchiveRun
+      parameters:
+      - description: Run ID
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived run
+          schema:
+            $ref: '#/definitions/model.ArchiveRecord'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get one archived run
+      tags:
+      - '[Archive] Deploy and Control Archive'
+  /engine/card:
+    get:
+      description: 'Report the engine card an agent registry reads: identity, that
+        it uses no LLM, its workflows, the AI-App MCP server it calls and whether
+        it is connected, the tools it publishes and the ones it calls, the dry-run
+        state and how registration went'
+      operationId: GetEngineCard
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Engine card
+          schema:
+            $ref: '#/definitions/engine.Card'
+        "502":
+          description: Automation engine is not reachable from the AI-App service
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Describe the automation engine
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/runs:
+    get:
+      description: List archived engine runs, newest first, each with every step,
+        its input and result, and whether the dry-run gate held it
+      operationId: GetEngineRuns
+      parameters:
+      - default: 20
+        description: How many runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived runs
+          schema:
+            $ref: '#/definitions/engine.RunListResp'
+        "400":
+          description: Malformed limit
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: List automation engine runs
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/runs/{runId}:
+    get:
+      description: Read one archived engine run by its identifier
+      operationId: GetEngineRun
+      parameters:
+      - description: Run ID
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Archived run
+          schema:
+            $ref: '#/definitions/engine.Run'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Archive lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get one automation engine run
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /engine/workflows/{workflow}:
+    post:
+      consumes:
+      - application/json
+      description: Run one fixed workflow as ordered AI-App tool calls, without a
+        model, and archive the run. deploy takes {appId, deploymentName, specId?,
+        imageId?} and deploys any required model service that is not running first;
+        heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status
+        takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported
+        as blocked and the steps that need it as waiting. A run whose steps failed
+        is still returned with 200 and status failed. Served by the automation engine
+        and forwarded by the AI-App service
+      operationId: PostEngineWorkflow
+      parameters:
+      - description: Workflow
+        enum:
+        - deploy
+        - heal
+        - control
+        - status
+        in: path
+        name: workflow
+        required: true
+        type: string
+      - default: default
+        description: Namespace ID
+        in: query
+        name: ns
+        type: string
+      - description: Workflow input
+        in: body
+        name: input
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Run finished; see its status
+          schema:
+            $ref: '#/definitions/engine.Run'
+        "400":
+          description: Malformed or incomplete input
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Unknown workflow
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Automation engine is not reachable from the AI-App service
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "503":
+          description: AI-App tool server is not reachable
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Run an automation engine workflow
+      tags:
+      - '[Engine] AI Application Automation Engine'
+  /ns/{nsId}/deployments:
+    get:
+      description: List every deployment of the namespace with its node status
+      operationId: GetAllDeployments
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment list
+          schema:
+            items:
+              $ref: '#/definitions/tumblebug.InfraInfo'
+            type: array
+        "500":
+          description: Deployment lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: List deployments
+      tags:
+      - '[Deploy] AI Application Deployment'
+    post:
+      consumes:
+      - application/json
+      description: Provision nodes and install the AI application on them. The request
+        is reviewed first, refused if the name is taken, and only sent to the cloud
+        when the dry-run guard is off. After provisioning the serving port is checked
+        on every node once; with waitHealthy=true the call keeps checking until every
+        node answers or AIAPP_HEALTH_TIMEOUT passes. Either way a node that does not
+        answer is reported under health and does not fail the deployment
+      operationId: PostDeployment
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Wait until the application answers on every node, up to AIAPP_HEALTH_TIMEOUT
+        in: query
+        name: waitHealthy
+        type: boolean
+      - description: Deployment request
+        in: body
+        name: deployReq
+        required: true
+        schema:
+          $ref: '#/definitions/model.DeployAppReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment planned or provisioned
+          schema:
+            $ref: '#/definitions/model.DeploymentResult'
+        "400":
+          description: Malformed request or request not viable
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "409":
+          description: Deployment name already in use, or a model service the application
+            requires is not deployed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "422":
+          description: 'No recommender configured: pin specId and imageId'
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Remote placement service failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Deploy an AI application
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}:
+    delete:
+      description: Terminate every node of the deployment and remove its records.
+        Shared resources of the namespace are kept
+      operationId: DeleteDeployment
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment deleted or planned
+          schema:
+            $ref: '#/definitions/model.ControlResult'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment deletion failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Delete a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/accelerator:
+    get:
+      description: Ask the deployed nodes what accelerator they carry and compare
+        it against what the application asked for. Values the driver cannot report
+        are left unknown rather than zero, and MIG state is reported because it decides
+        what is observable at all
+      operationId: GetDeploymentAccelerator
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      - description: Registered application to compare against
+        in: query
+        name: appId
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Accelerator report
+          schema:
+            $ref: '#/definitions/model.AcceleratorReport'
+        "404":
+          description: Deployment or application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Accelerator probe failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Read the accelerator on a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/control:
+    post:
+      consumes:
+      - application/json
+      description: Apply suspend, resume, reboot or terminate to every node. terminate
+        stops the nodes but keeps the records, so delete afterwards to stop billing
+      operationId: PostDeploymentControl
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      - description: Lifecycle action
+        in: body
+        name: controlReq
+        required: true
+        schema:
+          $ref: '#/definitions/model.ControlAppReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Action applied or planned
+          schema:
+            $ref: '#/definitions/model.ControlResult'
+        "400":
+          description: Unsupported action
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment control failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Control a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/health:
+    get:
+      description: Run a read-only curl against 127.0.0.1 on the serving port and
+        health path on every node of the deployment, through the CB-Tumblebug remote
+        command channel. A node is ready on a 2xx or 3xx answer, and the deployment
+        is ready when every node is. Without appId the application is read from the
+        ai-mcmp.app-id label of the deployment
+      operationId: GetDeploymentHealth
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      - description: Registered application whose serving port is checked. Defaults
+          to the deployment label
+        in: query
+        name: appId
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Serving health
+          schema:
+            $ref: '#/definitions/model.ServingHealth'
+        "400":
+          description: No appId given and the deployment carries no application label
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Deployment or application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Serving health check failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Check whether a deployment serves
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/status:
+    get:
+      description: Report the node status summary, suitable for polling while a deployment
+        comes up
+      operationId: GetDeploymentStatus
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment status
+          schema:
+            $ref: '#/definitions/tumblebug.InfraStatusView'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment status lookup failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get deployment status
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/{infraId}/update:
+    post:
+      consumes:
+      - application/json
+      description: Apply the current version of a registered AI application to a running
+        deployment by running its install commands on every node again. The nodes
+        are kept, and nothing is sent while the dry-run guard is on
+      operationId: PostDeploymentUpdate
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment ID
+        in: path
+        name: infraId
+        required: true
+        type: string
+      - description: Application to apply
+        in: body
+        name: updateReq
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateDeploymentReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Update applied or planned
+          schema:
+            $ref: '#/definitions/model.ProvisionResult'
+        "400":
+          description: Malformed or incomplete request
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: Deployment or application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "409":
+          description: Deployment was not deployed with this application, or a model
+            service it requires is not deployed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment update failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Remote placement service failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Update a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /ns/{nsId}/deployments/plan:
+    post:
+      consumes:
+      - application/json
+      description: Build the provisioning request for an AI application without contacting
+        any cloud. Leave specId or imageId empty to take them from the partner recommender
+        API (AIAPP_RECOMMENDER_URL); without one both must be pinned
+      operationId: PostDeploymentPlan
+      parameters:
+      - default: default
+        description: Namespace ID
+        in: path
+        name: nsId
+        required: true
+        type: string
+      - description: Deployment request
+        in: body
+        name: deployReq
+        required: true
+        schema:
+          $ref: '#/definitions/model.DeployAppReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment plan
+          schema:
+            $ref: '#/definitions/model.DeploymentPlan'
+        "400":
+          description: Malformed or incomplete request
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: AI application not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "409":
+          description: A model service the application requires is not deployed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "422":
+          description: 'No recommender configured: pin specId and imageId'
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: Deployment planning failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: Remote placement service failed
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Plan a deployment
+      tags:
+      - '[Deploy] AI Application Deployment'
+  /readyz:
+    get:
+      description: Report whether the service finished initialization and can accept
+        requests
+      operationId: GetReadyz
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is ready
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "503":
+          description: Service is still initializing
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      summary: Check service readiness
+      tags:
+      - '[Health] Service Health'
+  /tools:
+    get:
+      description: List every tool the agent may call, with its risk grade and whether
+        the dry-run guard applies. Exposed so another agent framework can adopt the
+        same tool surface
+      operationId: GetTools
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tool catalog
+          schema:
+            $ref: '#/definitions/model.ToolListResp'
+      security:
+      - BearerAuth: []
+      summary: List agent tools
+      tags:
+      - '[Agent] AI Application Automation Agent'
+  /ui:
+    get:
+      description: Serve the single page console that calls this service's own API
+      operationId: GetConsole
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: The console page
+          schema:
+            type: string
+      summary: Open the operator console
+      tags:
+      - '[Console] Operator Console'
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <token>". Required on every route but readiness, the console
+      and this documentation when AIAPP_AUTH_TOKEN is set.'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -1,0 +1,2723 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.",
+        "title": "AI-MCMP AI-App Service (Prototype)",
+        "contact": {},
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "0.1.0"
+    },
+    "basePath": "/aiapp",
+    "paths": {
+        "/apps": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List every AI application in the catalog with its runtime, model and accelerator requirement",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "List registered AI applications",
+                "operationId": "GetAllApps",
+                "responses": {
+                    "200": {
+                        "description": "AI application list",
+                        "schema": {
+                            "$ref": "#/definitions/model.AppSpecListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Register or replace an AI application metadata record. Replacing an existing id publishes a new version",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "Register an AI application",
+                "operationId": "PostApp",
+                "parameters": [
+                    {
+                        "description": "AI application metadata",
+                        "name": "appSpec",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.AppSpec"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI application registered",
+                        "schema": {
+                            "$ref": "#/definitions/model.AppSpec"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete metadata",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Rank registered AI applications against an operator's own words and report the signals that matched. An empty list means the catalog holds nothing that fits",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "Find AI applications matching a description",
+                "operationId": "GetAppMatches",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The operator's instruction, in their own words",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "How many candidates to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ranked candidates",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/catalog.Match"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Query required",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{appId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one registered AI application, including its install commands and serving port",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "Get an AI application",
+                "operationId": "GetApp",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "vllm-llama31-8b",
+                        "description": "AI application ID",
+                        "name": "appId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI application metadata",
+                        "schema": {
+                            "$ref": "#/definitions/model.AppSpec"
+                        }
+                    },
+                    "404": {
+                        "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Remove an AI application from the catalog. Deployments already running are untouched",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "Delete an AI application",
+                "operationId": "DeleteApp",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "AI application ID",
+                        "name": "appId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI application deleted",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{appId}/specs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node specs that satisfy the accelerator requirement. Without a recommender API this answers 422.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[App] AI Application Catalog"
+                ],
+                "summary": "Recommend accelerator specs for an AI application",
+                "operationId": "GetAppSpecs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "vllm-llama31-8b",
+                        "description": "AI application ID",
+                        "name": "appId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "How many candidates to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Matching node specs",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.SpecCandidate"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "No recommender configured",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Spec recommendation failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/archive": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List archived deployment and control runs, newest first. A record holds the instruction, every tool call with its arguments and the guard verdict",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Archive] Deploy and Control Archive"
+                ],
+                "summary": "List archived runs",
+                "operationId": "GetArchive",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "How many records to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived runs",
+                        "schema": {
+                            "$ref": "#/definitions/model.ArchiveListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed limit",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/archive/{runId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one archived run by its identifier",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Archive] Deploy and Control Archive"
+                ],
+                "summary": "Get one archived run",
+                "operationId": "GetArchiveRun",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived run",
+                        "schema": {
+                            "$ref": "#/definitions/model.ArchiveRecord"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/card": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report the engine card an agent registry reads: identity, that it uses no LLM, its workflows, the AI-App MCP server it calls and whether it is connected, the tools it publishes and the ones it calls, the dry-run state and how registration went",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Describe the automation engine",
+                "operationId": "GetEngineCard",
+                "responses": {
+                    "200": {
+                        "description": "Engine card",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Card"
+                        }
+                    },
+                    "502": {
+                        "description": "Automation engine is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/runs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "List automation engine runs",
+                "operationId": "GetEngineRuns",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "How many runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived runs",
+                        "schema": {
+                            "$ref": "#/definitions/engine.RunListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed limit",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/runs/{runId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one archived engine run by its identifier",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Get one automation engine run",
+                "operationId": "GetEngineRun",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Archived run",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Run"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Archive lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/engine/workflows/{workflow}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run. deploy takes {appId, deploymentName, specId?, imageId?} and deploys any required model service that is not running first; heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Engine] AI Application Automation Engine"
+                ],
+                "summary": "Run an automation engine workflow",
+                "operationId": "PostEngineWorkflow",
+                "parameters": [
+                    {
+                        "enum": [
+                            "deploy",
+                            "heal",
+                            "control",
+                            "status"
+                        ],
+                        "type": "string",
+                        "description": "Workflow",
+                        "name": "workflow",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "ns",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Workflow input",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Run finished; see its status",
+                        "schema": {
+                            "$ref": "#/definitions/engine.Run"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete input",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown workflow",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Automation engine is not reachable from the AI-App service",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "503": {
+                        "description": "AI-App tool server is not reachable",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List every deployment of the namespace with its node status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "List deployments",
+                "operationId": "GetAllDeployments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/tumblebug.InfraInfo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Provision nodes and install the AI application on them. The request is reviewed first, refused if the name is taken, and only sent to the cloud when the dry-run guard is off. After provisioning the serving port is checked on every node once; with waitHealthy=true the call keeps checking until every node answers or AIAPP_HEALTH_TIMEOUT passes. Either way a node that does not answer is reported under health and does not fail the deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Deploy an AI application",
+                "operationId": "PostDeployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Wait until the application answers on every node, up to AIAPP_HEALTH_TIMEOUT",
+                        "name": "waitHealthy",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Deployment request",
+                        "name": "deployReq",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DeployAppReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment planned or provisioned",
+                        "schema": {
+                            "$ref": "#/definitions/model.DeploymentResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed request or request not viable",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "Deployment name already in use, or a model service the application requires is not deployed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "No recommender configured: pin specId and imageId",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/plan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Build the provisioning request for an AI application without contacting any cloud. Leave specId or imageId empty to take them from the partner recommender API (AIAPP_RECOMMENDER_URL); without one both must be pinned",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Plan a deployment",
+                "operationId": "PostDeploymentPlan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deployment request",
+                        "name": "deployReq",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DeployAppReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment plan",
+                        "schema": {
+                            "$ref": "#/definitions/model.DeploymentPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete request",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "AI application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "A model service the application requires is not deployed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "No recommender configured: pin specId and imageId",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment planning failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Terminate every node of the deployment and remove its records. Shared resources of the namespace are kept",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Delete a deployment",
+                "operationId": "DeleteDeployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment deleted or planned",
+                        "schema": {
+                            "$ref": "#/definitions/model.ControlResult"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment deletion failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/accelerator": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ask the deployed nodes what accelerator they carry and compare it against what the application asked for. Values the driver cannot report are left unknown rather than zero, and MIG state is reported because it decides what is observable at all",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Read the accelerator on a deployment",
+                "operationId": "GetDeploymentAccelerator",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered application to compare against",
+                        "name": "appId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Accelerator report",
+                        "schema": {
+                            "$ref": "#/definitions/model.AcceleratorReport"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Accelerator probe failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/control": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Apply suspend, resume, reboot or terminate to every node. terminate stops the nodes but keeps the records, so delete afterwards to stop billing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Control a deployment",
+                "operationId": "PostDeploymentControl",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Lifecycle action",
+                        "name": "controlReq",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ControlAppReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Action applied or planned",
+                        "schema": {
+                            "$ref": "#/definitions/model.ControlResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Unsupported action",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment control failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Run a read-only curl against 127.0.0.1 on the serving port and health path on every node of the deployment, through the CB-Tumblebug remote command channel. A node is ready on a 2xx or 3xx answer, and the deployment is ready when every node is. Without appId the application is read from the ai-mcmp.app-id label of the deployment",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Check whether a deployment serves",
+                "operationId": "GetDeploymentHealth",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered application whose serving port is checked. Defaults to the deployment label",
+                        "name": "appId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Serving health",
+                        "schema": {
+                            "$ref": "#/definitions/model.ServingHealth"
+                        }
+                    },
+                    "400": {
+                        "description": "No appId given and the deployment carries no application label",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Serving health check failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report the node status summary, suitable for polling while a deployment comes up",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Get deployment status",
+                "operationId": "GetDeploymentStatus",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment status",
+                        "schema": {
+                            "$ref": "#/definitions/tumblebug.InfraStatusView"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment status lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/ns/{nsId}/deployments/{infraId}/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Apply the current version of a registered AI application to a running deployment by running its install commands on every node again. The nodes are kept, and nothing is sent while the dry-run guard is on",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deploy] AI Application Deployment"
+                ],
+                "summary": "Update a deployment",
+                "operationId": "PostDeploymentUpdate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Namespace ID",
+                        "name": "nsId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "infraId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Application to apply",
+                        "name": "updateReq",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateDeploymentReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Update applied or planned",
+                        "schema": {
+                            "$ref": "#/definitions/model.ProvisionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete request",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "Deployment was not deployed with this application, or a model service it requires is not deployed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "Deployment update failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "Remote placement service failed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz": {
+            "get": {
+                "description": "Report whether the service finished initialization and can accept requests",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Health] Service Health"
+                ],
+                "summary": "Check service readiness",
+                "operationId": "GetReadyz",
+                "responses": {
+                    "200": {
+                        "description": "Service is ready",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "503": {
+                        "description": "Service is still initializing",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/tools": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List every tool the agent may call, with its risk grade and whether the dry-run guard applies. Exposed so another agent framework can adopt the same tool surface",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Agent] AI Application Automation Agent"
+                ],
+                "summary": "List agent tools",
+                "operationId": "GetTools",
+                "responses": {
+                    "200": {
+                        "description": "Tool catalog",
+                        "schema": {
+                            "$ref": "#/definitions/model.ToolListResp"
+                        }
+                    }
+                }
+            }
+        },
+        "/ui": {
+            "get": {
+                "description": "Serve the single page console that calls this service's own API",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "[Console] Operator Console"
+                ],
+                "summary": "Open the operator console",
+                "operationId": "GetConsole",
+                "responses": {
+                    "200": {
+                        "description": "The console page",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "catalog.Match": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.AppKind"
+                },
+                "modelId": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reasons": {
+                    "description": "Reasons names the signals that matched, so an operator can see why a\ncandidate came up rather than being handed an unexplained ranking.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "requires": {
+                    "description": "Requires names the model services an application needs deployed first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppRequirement"
+                    }
+                },
+                "runtime": {
+                    "type": "string"
+                },
+                "score": {
+                    "description": "Score is comparable only within one Resolve call. It ranks candidates; it\nis not a probability and must not be compared across queries.",
+                    "type": "integer"
+                }
+            }
+        },
+        "engine.Card": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "dryRun": {
+                    "description": "DryRun is the AI-App dry-run state, as of the current MCP session.",
+                    "type": "boolean"
+                },
+                "framework": {
+                    "type": "string",
+                    "example": "AI-Ops"
+                },
+                "mcp": {
+                    "$ref": "#/definitions/engine.CardMCP"
+                },
+                "mcpEndpoint": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "ai-mcmp-app-automation-engine"
+                },
+                "owner": {
+                    "type": "string",
+                    "example": "innogrid"
+                },
+                "registration": {
+                    "description": "Registration is how the last registry registration went. It is left out\nof the card sent to the registry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AgentRegistration"
+                        }
+                    ]
+                },
+                "servesFramework": {
+                    "type": "string",
+                    "example": "AI-App"
+                },
+                "tools": {
+                    "$ref": "#/definitions/engine.CardToolGroup"
+                },
+                "usesLLM": {
+                    "description": "UsesLLM is always false: the workflows are fixed.",
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0.1.0"
+                },
+                "workflowEndpoint": {
+                    "type": "string"
+                },
+                "workflows": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deploy",
+                        "heal",
+                        "control",
+                        "status"
+                    ]
+                }
+            }
+        },
+        "engine.CardMCP": {
+            "type": "object",
+            "properties": {
+                "appServer": {
+                    "$ref": "#/definitions/engine.CardMCPServer"
+                }
+            }
+        },
+        "engine.CardMCPServer": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "toolCount": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "http://127.0.0.1:8090/aiapp/mcp"
+                }
+            }
+        },
+        "engine.CardToolGroup": {
+            "type": "object",
+            "properties": {
+                "exposed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentCardTool"
+                    }
+                },
+                "uses": {
+                    "description": "Uses names the AI-App tools the engine calls, whether or not it is\nconnected. A tool carries its grade only while the engine is connected\nto an AI-App service that publishes it.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AgentCardTool"
+                    }
+                }
+            }
+        },
+        "engine.Run": {
+            "type": "object",
+            "properties": {
+                "dryRun": {
+                    "description": "DryRun is the AI-App dry-run state the run executed under.",
+                    "type": "boolean"
+                },
+                "endedAt": {
+                    "type": "string"
+                },
+                "input": {},
+                "message": {
+                    "type": "string"
+                },
+                "nsId": {
+                    "type": "string",
+                    "example": "default"
+                },
+                "runId": {
+                    "type": "string",
+                    "example": "eng-mbt3x2k1"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "enum": [
+                        "succeeded",
+                        "failed",
+                        "blocked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.RunStatus"
+                        }
+                    ],
+                    "example": "blocked"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/engine.Step"
+                    }
+                },
+                "workflow": {
+                    "type": "string",
+                    "enum": [
+                        "deploy",
+                        "heal",
+                        "control",
+                        "status"
+                    ],
+                    "example": "deploy"
+                }
+            }
+        },
+        "engine.RunListResp": {
+            "type": "object",
+            "properties": {
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/engine.Run"
+                    }
+                }
+            }
+        },
+        "engine.RunStatus": {
+            "type": "string",
+            "enum": [
+                "succeeded",
+                "failed",
+                "blocked"
+            ],
+            "x-enum-varnames": [
+                "RunSucceeded",
+                "RunFailed",
+                "RunBlocked"
+            ]
+        },
+        "engine.Step": {
+            "type": "object",
+            "properties": {
+                "endedAt": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "input": {},
+                "message": {
+                    "description": "Message says why a step was blocked, waits or was skipped, or what its\nresult meant for the workflow.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "plan model service vllm-llama31-8b"
+                },
+                "output": {
+                    "description": "Output is the tool result as the AI-App service returned it.",
+                    "type": "object"
+                },
+                "startedAt": {
+                    "description": "StartedAt and EndedAt are absent on a step that was not run.",
+                    "type": "string"
+                },
+                "status": {
+                    "enum": [
+                        "succeeded",
+                        "failed",
+                        "blocked",
+                        "waiting",
+                        "skipped"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.StepStatus"
+                        }
+                    ],
+                    "example": "succeeded"
+                },
+                "tool": {
+                    "description": "Tool is the AI-App MCP tool the step calls.",
+                    "type": "string",
+                    "example": "plan_deployment"
+                }
+            }
+        },
+        "engine.StepStatus": {
+            "type": "string",
+            "enum": [
+                "succeeded",
+                "failed",
+                "blocked",
+                "waiting",
+                "skipped"
+            ],
+            "x-enum-varnames": [
+                "StepSucceeded",
+                "StepFailed",
+                "StepBlocked",
+                "StepWaiting",
+                "StepSkipped"
+            ]
+        },
+        "model.AcceleratorDevice": {
+            "type": "object",
+            "properties": {
+                "driverVersion": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "kernelDriver": {
+                    "description": "KernelDriver is the driver the kernel actually bound to the device. An\naccelerator image whose driver never bound leaves this empty while the\ndevice itself still appears, which is the case the catalog comparison\ncannot see from the vendor tool alone.",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind is gpu, npu or tpu. It says which class of AI semiconductor answered,\nwhich the vendor alone does not: one vendor can ship more than one class.",
+                    "type": "string"
+                },
+                "memoryKnown": {
+                    "type": "boolean"
+                },
+                "memoryMiB": {
+                    "type": "integer"
+                },
+                "migEnabled": {
+                    "type": "boolean"
+                },
+                "migKnown": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "pciBusId": {
+                    "description": "PCIBusID is the bus address in the domain:bus:device.function form the\nkernel prints. It is the only identifier every source shares, so it is\nwhat joins a vendor reading to its PCI entry.",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source names what produced this entry, for example nvidia-smi or pci. A\nreading taken off the PCI bus and one taken from a vendor driver carry\ndifferent amounts of truth, and merging them without saying which is which\nmakes an inventory look like a measurement.",
+                    "type": "string"
+                },
+                "uuid": {
+                    "description": "UUID keeps the vendor prefix the driver prints. Stripping it splits one\ncard into two identities wherever the prefixed form is used as a join key.",
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                },
+                "virtualFunction": {
+                    "description": "VirtualFunction marks an SR-IOV virtual function. Counting a physical\nfunction and its virtual functions as separate cards inflates the device\ncount on a virtualisation host.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.AcceleratorExpectation": {
+            "type": "object",
+            "properties": {
+                "minCount": {
+                    "type": "integer"
+                },
+                "minMemoryGiB": {
+                    "type": "number"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.AcceleratorReport": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AcceleratorDevice"
+                    }
+                },
+                "expected": {
+                    "$ref": "#/definitions/model.AcceleratorExpectation"
+                },
+                "findings": {
+                    "description": "Findings are the disagreements between the two. They are reported, not\nraised as errors: the nodes are already running either way.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "Mode is mig, bare_metal or unknown. Passthrough and bare metal look the\nsame from inside a guest and are not split here.",
+                    "type": "string"
+                },
+                "probed": {
+                    "description": "Probed is false when the nodes were never asked.",
+                    "type": "boolean"
+                },
+                "sources": {
+                    "description": "Sources lists the probes that answered on at least one node, in the order\nthey were tried. An empty list with Probed true means the nodes answered\nbut carried nothing this probe knows how to read.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.AcceleratorRequirement": {
+            "type": "object",
+            "required": [
+                "minCount",
+                "type"
+            ],
+            "properties": {
+                "minCount": {
+                    "description": "MinCount is the smallest acceptable number of devices per node.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "minMemoryGiB": {
+                    "description": "MinMemoryGiB is the smallest acceptable per-device memory. Zero means unset.",
+                    "type": "number",
+                    "example": 22
+                },
+                "model": {
+                    "description": "Model narrows the search to a device model. Empty means any model of Type.",
+                    "type": "string",
+                    "example": "NVIDIA L4"
+                },
+                "type": {
+                    "description": "Type is the accelerator class, matched against the spec acceleratorType.",
+                    "type": "string",
+                    "example": "gpu"
+                }
+            }
+        },
+        "model.AgentCardTool": {
+            "type": "object",
+            "properties": {
+                "grade": {
+                    "description": "Grade is one of read, review, write, destructive.",
+                    "type": "string"
+                },
+                "guardedByDryRun": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.AgentRegistration": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "registryUrl": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is disabled, pending, registered or failed.",
+                    "type": "string",
+                    "example": "registered"
+                }
+            }
+        },
+        "model.AppKind": {
+            "type": "string",
+            "enum": [
+                "model-service",
+                "application"
+            ],
+            "x-enum-varnames": [
+                "KindModelService",
+                "KindApplication"
+            ]
+        },
+        "model.AppRequirement": {
+            "type": "object",
+            "required": [
+                "appId",
+                "env"
+            ],
+            "properties": {
+                "appId": {
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "env": {
+                    "type": "string",
+                    "example": "OPENAI_API_BASE_URL"
+                }
+            }
+        },
+        "model.AppSpec": {
+            "type": "object",
+            "required": [
+                "id",
+                "install",
+                "name",
+                "runtime",
+                "serving",
+                "version"
+            ],
+            "properties": {
+                "accelerator": {
+                    "description": "Accelerator is required for a model service. An application that leaves\nthe type empty is placed on a CPU node.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AcceleratorRequirement"
+                        }
+                    ]
+                },
+                "aliases": {
+                    "description": "Aliases are the other names an operator uses for this application, in any\nlanguage. They exist because an instruction arrives as \"라마 추론서버\", not\nas the registered id, and nothing else in the record carries that word.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "llama"
+                    ]
+                },
+                "deployTargets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DeployTarget"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "OpenAI compatible inference endpoint"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "install": {
+                    "$ref": "#/definitions/model.InstallSpec"
+                },
+                "kind": {
+                    "enum": [
+                        "model-service",
+                        "application"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AppKind"
+                        }
+                    ],
+                    "example": "model-service"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "model": {
+                    "description": "Model is required for a model service and optional for an application.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ModelRef"
+                        }
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "vLLM Llama 3.1 8B Instruct"
+                },
+                "requires": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppRequirement"
+                    }
+                },
+                "resources": {
+                    "$ref": "#/definitions/model.ResourceRequirement"
+                },
+                "runtime": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.Runtime"
+                        }
+                    ],
+                    "example": "vllm"
+                },
+                "runtimeVersion": {
+                    "type": "string",
+                    "example": "0.6.3"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.ServingSpec"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0.1.0"
+                }
+            }
+        },
+        "model.AppSpecListResp": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppSpec"
+                    }
+                }
+            }
+        },
+        "model.ArchiveListResp": {
+            "type": "object",
+            "properties": {
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ArchiveRecord"
+                    }
+                }
+            }
+        },
+        "model.ArchiveRecord": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "endedAt": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "intent": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "intent"
+                },
+                "nsId": {
+                    "type": "string"
+                },
+                "runId": {
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ToolStep"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/model.TokenUsage"
+                }
+            }
+        },
+        "model.ControlAppReq": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "description": "Action is one of suspend, resume, reboot, terminate.",
+                    "type": "string",
+                    "enum": [
+                        "suspend",
+                        "resume",
+                        "reboot",
+                        "terminate"
+                    ],
+                    "example": "suspend"
+                }
+            }
+        },
+        "model.ControlResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "affected": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "dryRun": {
+                    "type": "boolean"
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeployAppReq": {
+            "type": "object",
+            "required": [
+                "appId",
+                "infraName"
+            ],
+            "properties": {
+                "appId": {
+                    "description": "AppID selects the registered application to deploy.",
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "imageId": {
+                    "description": "ImageID pins the node image. Empty asks the partner recommender API.",
+                    "type": "string",
+                    "example": "ubuntu22.04"
+                },
+                "infraName": {
+                    "description": "InfraName becomes the CB-Tumblebug Infra ID and is the idempotency key.",
+                    "type": "string",
+                    "example": "vllm-lab-01"
+                },
+                "nodeCount": {
+                    "description": "NodeCount is how many serving nodes to provision.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "sgTemplateId": {
+                    "description": "SGTemplateID pins the security group template provisioning starts from.\nEmpty leaves the cloud manager default, which opens every port and is\ndocumented upstream as being for development and testing only.",
+                    "type": "string",
+                    "example": "sg-usecase-web"
+                },
+                "specId": {
+                    "description": "SpecID pins the node spec. Empty asks the partner recommender API.",
+                    "type": "string",
+                    "example": "aws+us-west-2+g6.xlarge"
+                }
+            }
+        },
+        "model.DeployTarget": {
+            "type": "string",
+            "enum": [
+                "vm",
+                "container"
+            ],
+            "x-enum-varnames": [
+                "DeployTargetVM",
+                "DeployTargetContainer"
+            ]
+        },
+        "model.DeploymentPlan": {
+            "type": "object",
+            "properties": {
+                "acceleratorSummary": {
+                    "description": "AcceleratorSummary describes the accelerator the chosen spec provides.",
+                    "type": "string"
+                },
+                "appId": {
+                    "type": "string"
+                },
+                "appName": {
+                    "type": "string"
+                },
+                "estimatedCost": {
+                    "description": "EstimatedCost is the CB-Tumblebug review estimate, when a review ran.",
+                    "type": "string"
+                },
+                "imageId": {
+                    "type": "string"
+                },
+                "imageReason": {
+                    "description": "ImageReason explains an image that was resolved rather than requested.",
+                    "type": "string"
+                },
+                "imageSource": {
+                    "description": "ImageSource records how ImageID was chosen: \"requested\" or \"resolved\".",
+                    "type": "string"
+                },
+                "infraName": {
+                    "type": "string"
+                },
+                "nodeCount": {
+                    "type": "integer"
+                },
+                "nsId": {
+                    "type": "string"
+                },
+                "request": {
+                    "description": "Request is the dynamic Infra request body, including the install commands."
+                },
+                "requirements": {
+                    "description": "Requirements are the model services an application was wired to.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ResolvedRequirement"
+                    }
+                },
+                "sgTemplateId": {
+                    "type": "string"
+                },
+                "specId": {
+                    "type": "string"
+                },
+                "specSource": {
+                    "description": "SpecSource records how SpecID was chosen: \"requested\" or \"recommended\".",
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeploymentResult": {
+            "type": "object",
+            "properties": {
+                "accelerator": {
+                    "description": "Accelerator reports what the nodes answered when asked what they carry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AcceleratorReport"
+                        }
+                    ]
+                },
+                "dryRun": {
+                    "description": "DryRun is true when the plan was archived but never sent.",
+                    "type": "boolean"
+                },
+                "health": {
+                    "description": "Health reports whether the application answered on its serving port,\non a real run. A dry run leaves it out because nothing was started.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ServingHealth"
+                        }
+                    ]
+                },
+                "infra": {
+                    "description": "Infra is the provisioned Infra, present only on a real run."
+                },
+                "message": {
+                    "description": "Message explains the outcome to the caller.",
+                    "type": "string"
+                },
+                "plan": {
+                    "$ref": "#/definitions/model.DeploymentPlan"
+                },
+                "review": {
+                    "description": "Review is the CB-Tumblebug pre-flight verdict, when a review ran.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ReviewSummary"
+                        }
+                    ]
+                },
+                "serving": {
+                    "description": "Serving reports whether the application's port was opened, on a real run.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ServingAccess"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.InstallSpec": {
+            "type": "object",
+            "required": [
+                "commands"
+            ],
+            "properties": {
+                "commands": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "osType": {
+                    "description": "OSType selects the node image family. Empty uses the service default.",
+                    "type": "string",
+                    "example": "ubuntu 22.04"
+                },
+                "timeoutMinutes": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "userName": {
+                    "type": "string",
+                    "example": "cb-user"
+                }
+            }
+        },
+        "model.ModelRef": {
+            "type": "object",
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "format": {
+                    "description": "Format is the artifact format the runtime loads.",
+                    "type": "string",
+                    "example": "safetensors"
+                },
+                "id": {
+                    "description": "ID is the model identifier in the AI model registry.",
+                    "type": "string",
+                    "example": "meta-llama/Llama-3.1-8B-Instruct"
+                },
+                "sizeGiB": {
+                    "description": "SizeGiB is the on-disk footprint, used to size the root disk.",
+                    "type": "number",
+                    "example": 16
+                }
+            }
+        },
+        "model.NodeHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "httpCode": {
+                    "description": "HTTPCode is the status the application answered with. Zero means\nnothing answered, or the check could not run; Error says which.",
+                    "type": "integer"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "publicIp": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.NodeUpdate": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "nodeIp": {
+                    "type": "string"
+                },
+                "stderr": {
+                    "description": "Stderr is the tail of what the commands wrote to standard error.",
+                    "type": "string"
+                },
+                "succeeded": {
+                    "description": "Succeeded is false when the node reported an error for the command set.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.ProvisionResult": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "description": "AppID and AppVersion name what an update applied.",
+                    "type": "string"
+                },
+                "appVersion": {
+                    "type": "string"
+                },
+                "dryRun": {
+                    "description": "DryRun is true when the update was prepared but never sent.",
+                    "type": "boolean"
+                },
+                "infra": {
+                    "description": "Infra is the Infra as the provisioner left it, when it reports one. A\ncreate must carry it: opening the serving port and probing the\naccelerator both read the nodes from it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/tumblebug.InfraInfo"
+                        }
+                    ]
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "description": "Nodes is the per-node outcome of an update.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeUpdate"
+                    }
+                }
+            }
+        },
+        "model.ResolvedRequirement": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                },
+                "endpoint": {
+                    "description": "Endpoint is the value exported under Env before the install commands run.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/v1"
+                },
+                "env": {
+                    "type": "string",
+                    "example": "OPENAI_API_BASE_URL"
+                },
+                "infraId": {
+                    "type": "string",
+                    "example": "vllm-lab-01"
+                }
+            }
+        },
+        "model.ResourceRequirement": {
+            "type": "object",
+            "properties": {
+                "minMemoryGiB": {
+                    "type": "integer",
+                    "example": 32
+                },
+                "minVCPU": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "rootDiskGiB": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "model.ReviewSummary": {
+            "type": "object",
+            "properties": {
+                "creationViable": {
+                    "type": "boolean"
+                },
+                "estimatedCost": {
+                    "type": "string"
+                },
+                "overallMessage": {
+                    "type": "string"
+                },
+                "overallStatus": {
+                    "type": "string"
+                },
+                "recommendations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "totalNodeCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.Runtime": {
+            "type": "string",
+            "enum": [
+                "vllm",
+                "triton",
+                "tgi",
+                "ollama",
+                "app"
+            ],
+            "x-enum-varnames": [
+                "RuntimeVLLM",
+                "RuntimeTriton",
+                "RuntimeTGI",
+                "RuntimeOllama",
+                "RuntimeOther"
+            ]
+        },
+        "model.ServingAccess": {
+            "type": "object",
+            "properties": {
+                "endpoints": {
+                    "description": "Endpoints are the reachable addresses, one per node with a public address.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                },
+                "opened": {
+                    "description": "Opened is false when the rule could not be added; Message says why.",
+                    "type": "boolean"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "securityGroupIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sourceIp": {
+                    "description": "SourceIP is the range the port was opened to.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ServingHealth": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "string"
+                },
+                "attempts": {
+                    "description": "Attempts is how many times the nodes were asked before this result.",
+                    "type": "integer"
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "healthPath": {
+                    "type": "string"
+                },
+                "infraId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeHealth"
+                    }
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "ready": {
+                    "description": "Ready is true when every node answered with a 2xx or 3xx status.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.ServingSpec": {
+            "type": "object",
+            "required": [
+                "port"
+            ],
+            "properties": {
+                "apiBasePath": {
+                    "description": "APIBasePath is appended to the endpoint handed to an application that\nrequires this service, for example \"/v1\" for an OpenAI compatible API.",
+                    "type": "string",
+                    "example": "/v1"
+                },
+                "healthPath": {
+                    "type": "string",
+                    "example": "/health"
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 8000
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "http"
+                }
+            }
+        },
+        "model.SimpleMsg": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "AI application not found"
+                }
+            }
+        },
+        "model.SpecCandidate": {
+            "type": "object",
+            "properties": {
+                "acceleratorCount": {
+                    "type": "integer"
+                },
+                "acceleratorMemoryGB": {
+                    "type": "number"
+                },
+                "acceleratorModel": {
+                    "type": "string"
+                },
+                "acceleratorType": {
+                    "type": "string"
+                },
+                "costPerHour": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "memoryGiB": {
+                    "type": "number"
+                },
+                "providerName": {
+                    "type": "string"
+                },
+                "regionName": {
+                    "type": "string"
+                },
+                "vCPU": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.TokenUsage": {
+            "type": "object",
+            "properties": {
+                "inputTokens": {
+                    "type": "integer"
+                },
+                "outputTokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.ToolDescriptor": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "grade": {
+                    "description": "Grade is one of read, review, write, destructive.",
+                    "type": "string"
+                },
+                "guardedByDryRun": {
+                    "description": "GuardedByDryRun is true when the dry-run setting can block this tool.",
+                    "type": "boolean"
+                },
+                "inputSchema": {},
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ToolListResp": {
+            "type": "object",
+            "properties": {
+                "dryRun": {
+                    "type": "boolean"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ToolDescriptor"
+                    }
+                }
+            }
+        },
+        "model.ToolStep": {
+            "type": "object",
+            "properties": {
+                "calledAt": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "executed": {
+                    "description": "Executed is false when the dry-run guard blocked an infrastructure change.",
+                    "type": "boolean"
+                },
+                "grade": {
+                    "description": "Grade is the tool risk grade that decided whether the call was executed.",
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "input": {},
+                "output": {},
+                "tool": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.UpdateDeploymentReq": {
+            "type": "object",
+            "required": [
+                "appId"
+            ],
+            "properties": {
+                "appId": {
+                    "description": "AppID selects the registered application whose install commands are applied.",
+                    "type": "string",
+                    "example": "vllm-llama31-8b"
+                }
+            }
+        },
+        "tumblebug.InfraInfo": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tumblebug.NodeInfo"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "statusCount": {
+                    "$ref": "#/definitions/tumblebug.StatusCountInfo"
+                },
+                "targetStatus": {
+                    "type": "string"
+                }
+            }
+        },
+        "tumblebug.InfraStatusView": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "statusCount": {
+                    "$ref": "#/definitions/tumblebug.StatusCountInfo"
+                },
+                "targetAction": {
+                    "type": "string"
+                },
+                "targetStatus": {
+                    "type": "string"
+                }
+            }
+        },
+        "tumblebug.NodeInfo": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "imageId": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodeGroupId": {
+                    "type": "string"
+                },
+                "privateIP": {
+                    "type": "string"
+                },
+                "publicIP": {
+                    "type": "string"
+                },
+                "securityGroupIds": {
+                    "description": "SecurityGroupIDs are the groups attached to the node, and are how the\nserving port is opened after provisioning.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "specId": {
+                    "type": "string"
+                },
+                "sshPort": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "tumblebug.StatusCountInfo": {
+            "type": "object",
+            "properties": {
+                "countCreating": {
+                    "type": "integer"
+                },
+                "countFailed": {
+                    "type": "integer"
+                },
+                "countRunning": {
+                    "type": "integer"
+                },
+                "countSuspended": {
+                    "type": "integer"
+                },
+                "countTerminated": {
+                    "type": "integer"
+                },
+                "countTotal": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "\"Bearer \u003ctoken\u003e\". Required on every route but readiness, the console and this documentation when AIAPP_AUTH_TOKEN is set.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

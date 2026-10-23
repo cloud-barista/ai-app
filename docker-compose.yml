@@ -1,0 +1,221 @@
+# Runs the AI-App service, the AI application automation engine and two partner
+# institution mocks: the recommender and the natural language agent.
+#
+# All services come from one image and differ only in the command. The
+# mock-partner-* services stand in for the partner institution's infrastructure
+# recommendation API and natural language agent; they are not part of this
+# prototype. The engine reaches the tools through the AI-App MCP server, the
+# natural language agent mock reaches the engine tools through the engine MCP
+# server, and the AI-App service forwards engine and partner agent routes to
+# them, so the console needs only the AI-App address.
+#
+# CB-Tumblebug is deliberately not a service here. It brings cb-spider and a
+# database with it, and including them would turn "bring this prototype up" into
+# "bring a multi-cloud platform up". Point AIAPP_TUMBLEBUG_BASE_URL at an
+# existing one when the deployment path is needed; without it everything that
+# does not touch a cloud still works.
+#
+#   docker compose up -d        # starts with built-in defaults, no .env needed
+#   cp .env.example .env        # only to point at a real CB-Tumblebug
+services:
+  ai-app-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: ai-app-server
+    command: ["/usr/local/bin/ai-app-server"]
+    restart: unless-stopped
+    ports:
+      - "${AIAPP_SERVER_PORT:-8090}:8090"
+    environment:
+      AIAPP_SERVER_PORT: "8090"
+
+      # host.docker.internal resolves to the host from inside the container, so
+      # the default reaches a CB-Tumblebug running on the developer's own machine
+      # rather than to the container's own loopback, where nothing is listening.
+      AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
+      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
+      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
+      AIAPP_TUMBLEBUG_TIMEOUT: "${AIAPP_TUMBLEBUG_TIMEOUT:-20m}"
+      AIAPP_TUMBLEBUG_IMAGE_NAMESPACE: "${AIAPP_TUMBLEBUG_IMAGE_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE: "${AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE:-ubuntu 22.04}"
+
+      # The write gate. It stays on unless someone turns it off on purpose, so a
+      # container started by accident cannot provision anything billable.
+      AIAPP_TUMBLEBUG_DRY_RUN: "${AIAPP_TUMBLEBUG_DRY_RUN:-true}"
+
+      # How long a deployment asked with waitHealthy=true waits for the
+      # application to answer on its serving port, and how often it asks.
+      AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
+      AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
+
+      # Spec and image recommendation come from the partner recommender API,
+      # here its mock. Set AIAPP_RECOMMENDER_URL empty in .env to run without a
+      # recommender; every plan then has to pin specId and imageId.
+      AIAPP_RECOMMENDER_URL: "${AIAPP_RECOMMENDER_URL-http://mock-partner-recommender:8092}"
+      AIAPP_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+
+      # Provisioning stays on CB-Tumblebug unless pointed at an external service.
+      AIAPP_PROVISIONER: "${AIAPP_PROVISIONER:-local}"
+      AIAPP_PROVISIONER_URL: "${AIAPP_PROVISIONER_URL:-}"
+      AIAPP_PROVISIONER_TOKEN: "${AIAPP_PROVISIONER_TOKEN:-}"
+
+      # Where engine routes (/aiapp/engine/*) are forwarded, path unchanged.
+      AIAPP_ENGINE_URL: "http://ai-automation-engine:8091"
+
+      # Where partner natural language agent routes (/aiapp/partner/nl/*) are
+      # forwarded, path unchanged. Here the mock of that agent.
+      AIAPP_MOCK_NL_URL: "http://mock-partner-nl-agent:8093"
+
+      # Empty leaves authentication off. The engine and the agent mock get the
+      # same token because forwarded routes carry the caller's Authorization
+      # header unchanged.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_ARCHIVE_DIR: "/app/data/archive"
+
+    # The archive is the first-year deliverable and the second-year input, so it
+    # outlives the container it was written by.
+    volumes:
+      - archive:/app/data/archive
+
+    # host.docker.internal is native on Docker Desktop and has to be added on
+    # Linux, where the default bridge does not provide it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8090/aiapp/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # The automatic deploy and control engine. It runs fixed workflows as ordered
+  # AI-App tool calls and uses no LLM.
+  ai-automation-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: ai-automation-engine
+    command: ["/usr/local/bin/ai-automation-engine"]
+    restart: unless-stopped
+    # Every workflow step is an AI-App tool call, so it starts once that
+    # server answers.
+    depends_on:
+      ai-app-server:
+        condition: service_healthy
+    ports:
+      - "${AIAPP_ENGINE_PORT:-8091}:8091"
+    environment:
+      AIAPP_ENGINE_PORT: "8091"
+
+      # The tools, their grades and the dry-run state all come from here.
+      AIAPP_APP_MCP_URL: "http://ai-app-server:8090/aiapp/mcp"
+
+      # The same token as the AI-App service, both to accept and to send.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+
+      # How long a deploy or heal step waits for the application to answer
+      # after it was deployed or updated, and how often it asks.
+      AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
+      AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
+
+      AIAPP_ENGINE_ARCHIVE_DIR: "/app/data/engine-archive"
+
+      # Agent registry the engine card is posted to at startup. Empty leaves it off.
+      AIAPP_ENGINE_REGISTRY_URL: "${AIAPP_ENGINE_REGISTRY_URL:-}"
+      AIAPP_ENGINE_REGISTRY_TOKEN: "${AIAPP_ENGINE_REGISTRY_TOKEN:-}"
+
+    volumes:
+      - engine-archive:/app/data/engine-archive
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8091/aiapp/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Partner institution natural language agent (mock implementation). It turns
+  # an instruction into engine tool calls through a planning model, so it starts
+  # once the engine answers.
+  mock-partner-nl-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: mock-partner-nl-agent
+    command: ["/usr/local/bin/mock-partner-nl-agent"]
+    restart: unless-stopped
+    depends_on:
+      ai-automation-engine:
+        condition: service_healthy
+    ports:
+      - "${AIAPP_MOCK_NL_PORT:-8093}:8093"
+    environment:
+      AIAPP_MOCK_NL_PORT: "8093"
+
+      # The tools, their grades and the dry-run state all come from here.
+      AIAPP_MOCK_NL_ENGINE_MCP_URL: "http://ai-automation-engine:8091/aiapp/engine/mcp"
+
+      # The same token as the other services, both to accept and to send.
+      AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_MOCK_NL_ENGINE_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+
+      AIAPP_LLM_BASE_URL: "${AIAPP_LLM_BASE_URL:-https://api.anthropic.com}"
+      AIAPP_LLM_API_KEY: "${AIAPP_LLM_API_KEY:-}"
+      AIAPP_LLM_MODEL: "${AIAPP_LLM_MODEL:-claude-opus-5}"
+      AIAPP_LLM_TIMEOUT: "${AIAPP_LLM_TIMEOUT:-5m}"
+      AIAPP_MOCK_NL_MAX_STEPS: "${AIAPP_MOCK_NL_MAX_STEPS:-12}"
+      AIAPP_MOCK_NL_ARCHIVE_DIR: "/app/data/partner-nl-archive"
+
+      # Agent registry the card is posted to at startup. Empty leaves it off.
+      AIAPP_MOCK_NL_REGISTRY_URL: "${AIAPP_MOCK_NL_REGISTRY_URL:-}"
+      AIAPP_MOCK_NL_REGISTRY_TOKEN: "${AIAPP_MOCK_NL_REGISTRY_TOKEN:-}"
+
+    volumes:
+      - partner-nl-archive:/app/data/partner-nl-archive
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8093/aiapp/partner/nl/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Partner institution recommender (mock implementation). It answers the
+  # proposed recommendation contract from the CB-Tumblebug spec and image
+  # catalogs, so it reads the same CB-Tumblebug settings as the AI-App service.
+  mock-partner-recommender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: mock-partner-recommender
+    command: ["/usr/local/bin/mock-partner-recommender"]
+    restart: unless-stopped
+    ports:
+      - "${AIAPP_MOCK_RECOMMENDER_PORT:-8092}:8092"
+    environment:
+      AIAPP_MOCK_RECOMMENDER_PORT: "8092"
+      # The same token the AI-App service sends.
+      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+
+      AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
+      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
+      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
+      AIAPP_TUMBLEBUG_IMAGE_NAMESPACE: "${AIAPP_TUMBLEBUG_IMAGE_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
+      AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE: "${AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE:-ubuntu 22.04}"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  archive:
+  engine-archive:
+  partner-nl-archive:
