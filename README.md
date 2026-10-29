@@ -694,6 +694,7 @@ make docker-down
 ```
 
 **이쪽도 설정 파일이 필요 없습니다.** `docker-compose.yml` 은 같은 이미지에서 네 서비스를 띄우고, 명령만 다릅니다.
+노드 배포에 쓰는 Semaphore 는 `deploy` 프로필로 따로 띄웁니다.
 
 | 서비스 | 포트 | 비고 |
 |---|---|---|
@@ -701,6 +702,7 @@ make docker-down
 | `ai-automation-engine` | `8091` | `ai-app-server` 가 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-app-server:8090/aiapp/mcp`, 실행 기록은 named volume `engine-archive` |
 | `mock-partner-recommender` | `8092` | 협력 기관 · 모의. AI-App 과 같은 CB-Tumblebug 설정을 읽음 |
 | `mock-partner-nl-agent` | `8093` | 협력 기관 · 모의. `ai-automation-engine` 이 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-automation-engine:8091/aiapp/engine/mcp`, 기록은 named volume `partner-nl-archive` |
+| `semaphore` | `127.0.0.1:3001` | `deploy` 프로필이라 `docker compose --profile deploy up -d` 일 때만 뜸. `deploy/ansible` 을 `/ansible` 로, named volume `stage` 를 `ai-app-server` 와 같은 `/var/lib/aiapp/stage` 로 마운트. `AIAPP_SEMAPHORE_PASSWORD` 가 없으면 기동을 거부함(Semaphore 는 빈 비밀번호로도 로그인시킴) |
 
 아래 `docker ps` 출력은 한 프로세스 시절(1차년도)에 받은 것입니다.
 
@@ -814,6 +816,13 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_ARCHIVE_DIR` | `./data/archive` | App | 배포·제어 아카이브 위치 |
 | `AIAPP_APP_STORE_DIR` | `./data/apps` | App | 업로드한 응용 저장 위치. `<name>/<version>/` 아래 `files/`, `script.sh`, `meta.json`. 기동 때 다시 읽음 |
 | `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` (256 MiB) | App | 업로드 한 번의 script 와 파일 합계 상한 (바이트) |
+| `AIAPP_SEMAPHORE_URL` | | App | 노드에 playbook 을 돌릴 Semaphore 주소. 비우면 노드 배포만 안 됨 |
+| `AIAPP_SEMAPHORE_TOKEN` | | App | Semaphore API 토큰. 있으면 사용자·비밀번호 대신 씀 |
+| `AIAPP_SEMAPHORE_USERNAME` / `_PASSWORD` | | App | Semaphore 로그인. 토큰도 이것도 없으면 배포가 Semaphore 에 닿을 때 오류 |
+| `AIAPP_SEMAPHORE_PROJECT` | `aiapp` | App | 배포마다 key·inventory·template 을 등록할 프로젝트. 없으면 만듦 |
+| `AIAPP_SEMAPHORE_PLAYBOOK_DIR` | `/ansible` | App | Semaphore 컨테이너 안의 playbook 폴더. 프로젝트 repository 로 등록됨 |
+| `AIAPP_SEMAPHORE_POLL_INTERVAL` / `_TIMEOUT` | `5s` / `30m` | App | 태스크 상태 확인 간격과 태스크 하나의 상한. 넘으면 태스크를 멈추고 등록한 것을 지움 |
+| `AIAPP_STAGE_ROOT` | `/var/lib/aiapp/stage` | App | 배포 파일을 두는 곳. Semaphore 가 같은 절대경로로 봐야 하므로 절대경로만 받음 |
 | `AIAPP_ENGINE_ARCHIVE_DIR` | `./data/engine-archive` | Engine | 엔진 실행 기록 위치 |
 | `AIAPP_ENGINE_REGISTRY_URL` / `_TOKEN` | | Engine | 기동할 때 엔진 카드를 등록할 레지스트리(`POST <url>/agents`)와 그 bearer 토큰. 비우면 등록 안 함 |
 | `AIAPP_MOCK_RECOMMENDER_PORT` | `8092` | Rec | 모의 추천 API 리스닝 포트 |

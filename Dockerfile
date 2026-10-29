@@ -32,11 +32,13 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata
 
-# A non-root user owns the archive directories. Each service only ever appends
-# to its own, so nothing needs to write anywhere else in the image.
+# A non-root user owns the archive directories and the deployment stage. Each
+# service only ever appends to its own, so nothing needs to write anywhere else
+# in the image.
 RUN adduser -D -u 10001 aiapp
 WORKDIR /app
-RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/partner-nl-archive && chown -R aiapp:aiapp /app
+RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/partner-nl-archive /var/lib/aiapp/stage && \
+    chown -R aiapp:aiapp /app /var/lib/aiapp
 
 COPY --from=build /out/ai-app-server /usr/local/bin/ai-app-server
 COPY --from=build /out/ai-automation-engine /usr/local/bin/ai-automation-engine

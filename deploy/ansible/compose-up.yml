@@ -1,0 +1,60 @@
+# Copies a staged compose project to the node, starts it, and optionally waits
+# until it answers.
+#
+# Extra vars (passed by AI-App as the Semaphore task environment):
+#   stage_dir       staged folder with docker-compose.yml, as seen inside the
+#                   Semaphore container
+#   deployment_id   names the folder on the node: /opt/aiapp/<deployment_id>
+#   health_url      optional; polled from the node itself with curl
+#   health_retries  optional, attempts before giving up (default 60)
+#   health_delay    optional, seconds between attempts (default 10)
+#
+# Docker must already be installed; run install-docker.yml first.
+- name: Start the staged compose project
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    app_root: /opt/aiapp
+    app_dir: "{{ app_root }}/{{ deployment_id }}"
+  tasks:
+    - name: Check the required variables
+      ansible.builtin.assert:
+        that:
+          - stage_dir is defined and stage_dir | length > 0
+          - deployment_id is defined and deployment_id is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+        fail_msg: stage_dir and deployment_id are required, and deployment_id must be a plain name
+        quiet: true
+
+    - name: Create the application folder
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy the staged files
+      ansible.builtin.copy:
+        src: "{{ stage_dir }}/"
+        dest: "{{ app_dir }}/"
+        mode: preserve
+
+    - name: Start the project
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ app_dir }}"
+      register: compose_result
+      changed_when: true
+
+    - name: Show the compose output
+      ansible.builtin.debug:
+        var: compose_result.stderr_lines
+
+    - name: Wait until the service answers
+      ansible.builtin.command:
+        argv: [curl, -fsS, -o, /dev/null, --max-time, "10", "{{ health_url }}"]
+      register: health_result
+      until: health_result.rc == 0
+      retries: "{{ health_retries | default(60) | int }}"
+      delay: "{{ health_delay | default(10) | int }}"
+      changed_when: false
+      when: health_url is defined and health_url | length > 0

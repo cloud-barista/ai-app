@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -60,6 +61,10 @@ type Config struct {
 	Recommender BackendConfig
 	// Provisioner selects who reviews, creates and updates Infras.
 	Provisioner BackendConfig
+	// Semaphore runs the playbooks that install onto a node.
+	Semaphore SemaphoreConfig
+	// Stage is the shared folder deployment files are placed in for Semaphore.
+	Stage StageConfig
 }
 
 // BackendConfig selects the local or a remote implementation of one AI-App
@@ -157,6 +162,39 @@ type HealthConfig struct {
 	Interval time.Duration
 }
 
+// SemaphoreConfig holds how the AI-App service reaches Semaphore UI, which runs
+// the deployment playbooks against a node over SSH.
+type SemaphoreConfig struct {
+	// URL is the Semaphore base URL, without /api. Empty leaves node
+	// deployment unavailable; everything else works.
+	URL string
+	// Token is a Semaphore API token. When set it is used instead of the
+	// user name and password. Missing credentials are reported when a
+	// deployment reaches Semaphore, not at startup, for the same reason the
+	// CB-Tumblebug URL has a default.
+	Token    string
+	Username string
+	Password string
+	// Project is the Semaphore project deployments are registered in. It is
+	// created when it does not exist.
+	Project string
+	// PlaybookDir is where the playbooks are mounted inside the Semaphore
+	// container. It is registered as the project's repository.
+	PlaybookDir string
+	// PollInterval is how often a running task is asked for its status.
+	PollInterval time.Duration
+	// Timeout bounds one task, from start to a final status.
+	Timeout time.Duration
+}
+
+// StageConfig holds the shared folder of deployment files.
+type StageConfig struct {
+	// Root is mounted at the same path in the AI-App and the Semaphore
+	// containers, so a path under it means the same files to both. It must be
+	// absolute because it is passed to Semaphore as is.
+	Root string
+}
+
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
 	Dir string
@@ -206,6 +244,11 @@ func Load() (*Config, error) {
 	v.SetDefault("health.timeout", 15*time.Minute)
 	v.SetDefault("health.interval", 20*time.Second)
 	v.SetDefault("placement.provisioner", BackendLocal)
+	v.SetDefault("semaphore.project", "aiapp")
+	v.SetDefault("semaphore.playbook_dir", "/ansible")
+	v.SetDefault("semaphore.poll_interval", 5*time.Second)
+	v.SetDefault("semaphore.timeout", 30*time.Minute)
+	v.SetDefault("stage.root", "/var/lib/aiapp/stage")
 
 	// AutomaticEnv only resolves keys that viper already knows about.
 	for _, key := range []string{
@@ -234,6 +277,15 @@ func Load() (*Config, error) {
 		"auth.token",
 		"health.timeout",
 		"health.interval",
+		"semaphore.url",
+		"semaphore.token",
+		"semaphore.username",
+		"semaphore.password",
+		"semaphore.project",
+		"semaphore.playbook_dir",
+		"semaphore.poll_interval",
+		"semaphore.timeout",
+		"stage.root",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -315,6 +367,19 @@ func Load() (*Config, error) {
 			Token:   v.GetString("placement.provisioner_token"),
 			Timeout: v.GetDuration("tumblebug.timeout"),
 		},
+		Semaphore: SemaphoreConfig{
+			URL:          strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.url")), "/"),
+			Token:        v.GetString("semaphore.token"),
+			Username:     v.GetString("semaphore.username"),
+			Password:     v.GetString("semaphore.password"),
+			Project:      strings.TrimSpace(v.GetString("semaphore.project")),
+			PlaybookDir:  strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.playbook_dir")), "/"),
+			PollInterval: v.GetDuration("semaphore.poll_interval"),
+			Timeout:      v.GetDuration("semaphore.timeout"),
+		},
+		Stage: StageConfig{
+			Root: filepath.Clean(strings.TrimSpace(v.GetString("stage.root"))),
+		},
 	}
 
 	cfg.Recommender.Kind = BackendNone
@@ -379,6 +444,28 @@ func (c *Config) validate() error {
 	}
 	if err := c.Provisioner.validate(envPrefix + "_PROVISIONER"); err != nil {
 		return err
+	}
+	if err := c.Semaphore.validate(); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(c.Stage.Root) {
+		return fmt.Errorf("%s_STAGE_ROOT must be an absolute path, got %q", envPrefix, c.Stage.Root)
+	}
+	return nil
+}
+
+func (s SemaphoreConfig) validate() error {
+	if s.Project == "" {
+		return fmt.Errorf("%s_SEMAPHORE_PROJECT is required", envPrefix)
+	}
+	if !strings.HasPrefix(s.PlaybookDir, "/") {
+		return fmt.Errorf("%s_SEMAPHORE_PLAYBOOK_DIR must be an absolute path, got %q", envPrefix, s.PlaybookDir)
+	}
+	if s.PollInterval <= 0 {
+		return fmt.Errorf("invalid semaphore poll interval: %s", s.PollInterval)
+	}
+	if s.Timeout <= 0 {
+		return fmt.Errorf("invalid semaphore timeout: %s", s.Timeout)
 	}
 	return nil
 }

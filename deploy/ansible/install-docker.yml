@@ -1,0 +1,140 @@
+# Installs Docker Engine with the compose plugin from Docker's apt repository,
+# and the NVIDIA Container Toolkit on GPU nodes. Ubuntu only.
+#
+# Extra vars (passed by AI-App as the Semaphore task environment):
+#   gpu   optional, true on a node with an NVIDIA GPU (default false)
+#
+# A node that already has docker with the compose plugin is left as it is. A
+# node with docker but without the compose plugin fails instead of being
+# changed, because its docker came from somewhere this playbook does not manage.
+- name: Install Docker
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    docker_keyring: /etc/apt/keyrings/docker.asc
+    nvidia_keyring: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  tasks:
+    - name: Check for docker
+      ansible.builtin.shell: command -v docker
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check for the compose plugin
+      ansible.builtin.command: docker compose version
+      register: compose_check
+      changed_when: false
+      failed_when: false
+      when: docker_check.rc == 0
+
+    - name: Refuse a docker without the compose plugin
+      ansible.builtin.fail:
+        msg: docker is installed but "docker compose" is not available; install the compose plugin for this docker
+      when: docker_check.rc == 0 and compose_check.rc != 0
+
+    - name: Install docker from Docker's repository
+      when: docker_check.rc != 0
+      block:
+        - name: Read the distribution
+          ansible.builtin.shell: |
+            . /etc/os-release
+            echo "$ID"
+            echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}"
+            dpkg --print-architecture
+          register: os_release
+          changed_when: false
+
+        - name: Refuse a distribution other than Ubuntu
+          ansible.builtin.fail:
+            msg: "install-docker supports Ubuntu only, found {{ os_release.stdout_lines[0] }}"
+          when: os_release.stdout_lines[0] != 'ubuntu'
+
+        - name: Install the repository prerequisites
+          ansible.builtin.apt:
+            name: [ca-certificates, curl]
+            update_cache: true
+
+        - name: Create the keyring folder
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+
+        - name: Download the Docker signing key
+          ansible.builtin.get_url:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            dest: "{{ docker_keyring }}"
+            mode: "0644"
+
+        - name: Add the Docker repository
+          ansible.builtin.copy:
+            dest: /etc/apt/sources.list.d/docker.list
+            content: >-
+              deb [arch={{ os_release.stdout_lines[2] }} signed-by={{ docker_keyring }}]
+              https://download.docker.com/linux/ubuntu {{ os_release.stdout_lines[1] }} stable
+            mode: "0644"
+
+        - name: Install Docker Engine and the compose plugin
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+            update_cache: true
+
+        - name: Start docker
+          ansible.builtin.service:
+            name: docker
+            state: started
+            enabled: true
+
+    - name: Install the NVIDIA Container Toolkit
+      when: gpu | default(false) | bool
+      block:
+        - name: Check for the toolkit
+          ansible.builtin.shell: command -v nvidia-ctk
+          register: nvidia_check
+          changed_when: false
+          failed_when: false
+
+        - name: Download the NVIDIA signing key
+          ansible.builtin.shell: >-
+            set -o pipefail &&
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey
+            | gpg --dearmor --yes -o {{ nvidia_keyring }}
+          args:
+            executable: /bin/bash
+            creates: "{{ nvidia_keyring }}"
+          when: nvidia_check.rc != 0
+
+        - name: Add the NVIDIA repository
+          ansible.builtin.shell: >-
+            set -o pipefail &&
+            curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+            | sed 's#deb https://#deb [signed-by={{ nvidia_keyring }}] https://#g'
+            > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+          args:
+            executable: /bin/bash
+            creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+          when: nvidia_check.rc != 0
+
+        - name: Install the toolkit
+          ansible.builtin.apt:
+            name: nvidia-container-toolkit
+            update_cache: true
+          when: nvidia_check.rc != 0
+
+        - name: Register the NVIDIA runtime with docker
+          ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+          register: nvidia_configure
+          changed_when: "'Wrote updated config' in nvidia_configure.stdout + nvidia_configure.stderr"
+          when: nvidia_check.rc != 0
+
+        - name: Restart docker
+          ansible.builtin.service:
+            name: docker
+            state: restarted
+          when: nvidia_check.rc != 0

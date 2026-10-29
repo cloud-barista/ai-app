@@ -17,6 +17,11 @@
 #
 #   docker compose up -d        # starts with built-in defaults, no .env needed
 #   cp .env.example .env        # only to point at a real CB-Tumblebug
+#
+# Semaphore, which runs the deployment playbooks on a node, is in the deploy
+# profile and needs AIAPP_SEMAPHORE_PASSWORD in .env:
+#
+#   docker compose --profile deploy up -d
 services:
   ai-app-server:
     build:
@@ -75,10 +80,27 @@ services:
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"
 
+      # Semaphore runs the deployment playbooks on a node. A token, when set,
+      # is used instead of the user name and password.
+      AIAPP_SEMAPHORE_URL: "${AIAPP_SEMAPHORE_URL:-http://semaphore:3000}"
+      AIAPP_SEMAPHORE_TOKEN: "${AIAPP_SEMAPHORE_TOKEN:-}"
+      AIAPP_SEMAPHORE_USERNAME: "${AIAPP_SEMAPHORE_USERNAME:-admin}"
+      AIAPP_SEMAPHORE_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-}"
+      AIAPP_SEMAPHORE_PROJECT: "${AIAPP_SEMAPHORE_PROJECT:-aiapp}"
+      AIAPP_SEMAPHORE_POLL_INTERVAL: "${AIAPP_SEMAPHORE_POLL_INTERVAL:-5s}"
+      AIAPP_SEMAPHORE_TIMEOUT: "${AIAPP_SEMAPHORE_TIMEOUT:-30m}"
+      # Where the semaphore service mounts deploy/ansible.
+      AIAPP_SEMAPHORE_PLAYBOOK_DIR: "/ansible"
+
+      # Deployment files are placed here and read by Semaphore at the same
+      # path, so this must match the stage mount of both services.
+      AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
+
     # The archive is the first-year deliverable and the second-year input, so it
     # outlives the container it was written by.
     volumes:
       - archive:/app/data/archive
+      - stage:/var/lib/aiapp/stage
 
     # host.docker.internal is native on Docker Desktop and has to be added on
     # Linux, where the default bridge does not provide it.
@@ -215,7 +237,49 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Semaphore UI runs the playbooks of deploy/ansible against a node over SSH.
+  # The AI-App service registers a key, an inventory and a template for each
+  # deployment, runs it, and deletes them afterwards.
+  #
+  # It is in the deploy profile because it needs an admin password set, and Semaphore
+  # accepts an empty one and then logs anyone in with it, so the command below
+  # refuses to start without AIAPP_SEMAPHORE_PASSWORD. The UI is published on
+  # the loopback address only.
+  semaphore:
+    image: semaphoreui/semaphore:v2.12.17
+    container_name: aiapp-semaphore
+    profiles: ["deploy"]
+    command:
+      - /bin/sh
+      - -c
+      - '[ -n "$$SEMAPHORE_ADMIN_PASSWORD" ] || { echo "AIAPP_SEMAPHORE_PASSWORD is not set" >&2; exit 1; }; exec /usr/local/bin/server-wrapper'
+    restart: on-failure:5
+    # The AI-App container creates the stage volume first, so the volume takes
+    # the ownership of its image directory and the service can write to it.
+    depends_on:
+      ai-app-server:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${AIAPP_SEMAPHORE_PORT:-3001}:3000"
+    environment:
+      SEMAPHORE_DB_DIALECT: bolt
+      SEMAPHORE_ADMIN: "${AIAPP_SEMAPHORE_USERNAME:-admin}"
+      SEMAPHORE_ADMIN_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-}"
+      SEMAPHORE_ADMIN_NAME: "AI-App"
+      SEMAPHORE_ADMIN_EMAIL: "admin@localhost"
+    volumes:
+      - ./deploy/ansible:/ansible:ro
+      - stage:/var/lib/aiapp/stage:ro
+      # The generated config.json holds the key that encrypts stored keys, so
+      # it is kept with the database.
+      - semaphore-config:/etc/semaphore
+      - semaphore-data:/var/lib/semaphore
+
 volumes:
   archive:
   engine-archive:
   partner-nl-archive:
+  # Deployment files shared by the AI-App service and Semaphore.
+  stage:
+  semaphore-config:
+  semaphore-data:
