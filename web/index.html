@@ -1240,7 +1240,7 @@ function semaphoreSeen(r, dl) {
 /* statusCounts reads "succeeded 2 · dry-run 1" off a deployment listing. */
 function statusCounts(dl) {
   const by = dl.reduce((m, d) => (m[d.status] = (m[d.status] || 0) + 1, m), {});
-  return Object.keys(by).map((k) => `${k} ${by[k]}`).join(' · ');
+  return Object.keys(by).map((k) => `${esc(k)} ${by[k]}`).join(' · ');
 }
 
 /* A card reports the MCP session it holds now. No session means it has not
@@ -2471,7 +2471,7 @@ async function runIntent() {
                 ? '<span class="b b-on">막힘</span>'
                 : '<span class="b b-off">실행됨</span>'}</td>
         <td>${s.engineRunId
-              ? `<a class="link mono" style="font-size:12px" onclick="openEngineRun('${esc(s.engineRunId)}')">${esc(s.engineRunId)}</a>
+              ? `<a class="link mono" style="font-size:12px" onclick="openEngineRun(${jsq(s.engineRunId)})">${esc(s.engineRunId)}</a>
                  ${s.engineStatus ? stBadge(s.engineStatus) : ''}`
               : '<span class="b b-mut">없음</span>'}</td>
         <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre>
@@ -2687,7 +2687,7 @@ async function loadArchive() {
     ${rows.map((x) => {
       const src = ARCHIVES[x._src];
       const status = x.status ? stBadge(x.status) : stepsStatus(x);
-      return `<tr class="click" onclick="showRun(${x._src}, '${esc(x.runId || x.id || '')}')">
+      return `<tr class="click" onclick="showRun(${x._src}, ${jsq(x.runId || x.id || '')})">
       <td class="mono" style="font-size:12px">${esc(x.runId || x.id || '')}</td>
       <td style="font-size:12px">${src.mock
         ? `<span class="b b-mock">협력 기관 · 모의</span> ${esc(src.label)}` : esc(src.label)}</td>
