@@ -141,14 +141,18 @@ AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로�
 |---|------|------|
 | 1 | Tumblebug 에서 노드 정보와 SSH 키(`GET /ns/{nsId}/resources/sshKey/{sshKeyId}` 의 `privateKey`) 조회 | 공인 IP 가 없으면 사설 IP |
 | 2 | 공유 저장소에 파일 배치 | 모델 서비스는 compose 를 만들어 넣는다 |
-| 3 | Semaphore 에 그 노드의 key(ssh), inventory, template 등록 | 배포마다 만들고 끝나면 지운다 |
-| 4 | 태스크 실행: `install-docker` → `compose-up`(모델 서비스) 또는 `copy-and-run`(응용) | GPU 노드면 nvidia-container-toolkit 도 설치 |
+| 3 | Semaphore 에 그 노드의 key(ssh)와 inventory 등록 | 배포마다 만들고 끝나면 지운다. template 은 playbook 마다 하나씩 고정으로 둔다 |
+| 4 | 태스크 실행: `install-docker` → `compose-up`(모델 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드면 nvidia-container-toolkit 도 설치 |
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
-| 6 | 3에서 등록한 key·inventory·template 삭제 | 성공·실패와 무관하게 |
+| 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
 **배포마다 등록하는 방식을 고른 이유.** mc-observability·o11y-manager 는 고정 템플릿에 대상 정보를 env 로 넘긴다. 그 방식은
-Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 위해 템플릿을 여러 벌 돌려 쓴다. 배포마다 등록하면 화면에서
-노드별 이력이 보이는 대신 키가 Semaphore DB 에 남지 않도록 지우는 단계(6)가 반드시 있어야 한다.
+Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 위해 템플릿을 여러 벌 돌려 쓴다. 배포마다 key·inventory 를
+등록하면 노드별로 무엇이 돌았는지 보이는 대신, 키가 Semaphore DB 에 남지 않도록 지우는 단계(6)가 반드시 있어야 한다.
+
+**template 을 고정으로 바꾼 이유 (2026-10-29 구현 중 실측).** Semaphore v2.12.17 은 template 을 지우면 그 template 의 태스크
+이력과 로그를 같이 지운다. 처음 설계대로 배포마다 template 을 만들고 지우면 이력이 남지 않는다. 같은 실측에서 태스크 요청의
+`inventory_id` 가 template 의 inventory 를 덮어쓰는 것을 확인해서, template 은 고정하고 inventory 만 배포마다 바꾼다.
 
 ### 4.5 dry-run
 
