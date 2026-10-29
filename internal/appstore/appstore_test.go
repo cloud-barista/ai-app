@@ -138,6 +138,7 @@ func TestRegisterRefusesBadInput(t *testing.T) {
 	}{
 		{"empty name", "", "true", nil},
 		{"upper case name", "Dify", "true", nil},
+		{"dot in name", "dify.v2", "true", nil},
 		{"no script", "dify", "", nil},
 		{"script too long", "dify", strings.Repeat("x", model.MaxAppScriptBytes+1), nil},
 		{"parent path", "dify", "true", files("../x", "x")},

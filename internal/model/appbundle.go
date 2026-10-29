@@ -23,9 +23,9 @@ var appFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]{0,254}
 // App is one registered AI application with every version uploaded under its
 // name.
 type App struct {
-	// Name identifies the application: lower case letters, digits, ".", "_"
-	// and "-", at most 63 characters. Uploading again under the same name adds
-	// a version.
+	// Name identifies the application: lower case letters, digits, "_" and
+	// "-", at most 63 characters. Uploading again under the same name adds a
+	// version.
 	Name string `json:"name" example:"open-webui"`
 	// Versions are the uploaded versions, oldest first.
 	Versions []AppVersion `json:"versions"`
@@ -63,13 +63,18 @@ type AppListResp struct {
 	Apps []App `json:"apps"`
 }
 
+// appNamePattern is what an application name may look like. Unlike a catalog
+// identifier it holds no ".", because the name becomes part of a docker
+// compose project name on the node, and compose refuses a ".".
+var appNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
 // ValidateAppName reports why name cannot name an application.
 func ValidateAppName(name string) error {
 	switch {
 	case name == "":
 		return errRequired("name")
-	case !catalogIDPattern.MatchString(name):
-		return errInvalid("name", "must match [a-z0-9][a-z0-9._-]* and be at most 63 characters")
+	case !appNamePattern.MatchString(name):
+		return errInvalid("name", "must match [a-z0-9][a-z0-9_-]* and be at most 63 characters")
 	}
 	return nil
 }

@@ -3,39 +3,56 @@
 # Extra vars (passed by AI-App as the Semaphore task environment):
 #   stage_dir      staged folder, as seen inside the Semaphore container
 #                  (<AIAPP_STAGE_ROOT>/<deployment id>/<csp>-<node id>)
-#   deployment_id  names the folder on the node: /opt/aiapp/<deployment_id>
+#   node_dir       folder on the node: /opt/aiapp/<work key>, where the work
+#                  key is app-<name>
+#   compose_project
+#                  compose project name, aiapp-<work key>, exported to the
+#                  script as COMPOSE_PROJECT_NAME
+#   deployment_id  the deployment that ran; not used on the node, only
+#                  shown with the task in Semaphore
 #   script         file name of the script inside stage_dir, run with bash
 #                  from that folder. A .env in the folder is exported first.
 #                  It may start with "." (AI-App stages it as .aiapp-run.sh so
 #                  that it never clashes with an uploaded file name).
+#
+# Deploying the same application again replaces the files in its folder
+# (tasks/place-files.yml), takes down the containers of the compose project,
+# and runs the script in the same compose project. The containers are taken
+# down because a file bind mounted on its own keeps pointing at the replaced
+# file, and the script may not recreate them. Named volumes are kept.
 - name: Copy staged files and run the application script
   hosts: all
   become: true
   gather_facts: false
-  vars:
-    app_root: /opt/aiapp
-    app_dir: "{{ app_root }}/{{ deployment_id }}"
   tasks:
     - name: Check the required variables
       ansible.builtin.assert:
         that:
-          - stage_dir is defined and stage_dir | length > 0
-          - deployment_id is defined and deployment_id is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+          - compose_project is defined and compose_project is match('^aiapp-[a-z0-9][a-z0-9_-]*$')
           - script is defined and script is match('^[A-Za-z0-9.][A-Za-z0-9._/-]*$') and '..' not in script
-        fail_msg: stage_dir, deployment_id and script are required, and deployment_id and script must be plain names
+        fail_msg: compose_project and script are required, compose_project must be aiapp-<work key> and script a plain name
         quiet: true
 
-    - name: Create the application folder
-      ansible.builtin.file:
-        path: "{{ app_dir }}"
-        state: directory
-        mode: "0755"
+    - name: Place the files
+      ansible.builtin.include_tasks: tasks/place-files.yml
 
-    - name: Copy the staged files
-      ansible.builtin.copy:
-        src: "{{ stage_dir }}/"
-        dest: "{{ app_dir }}/"
-        mode: preserve
+    - name: Check whether docker is installed
+      ansible.builtin.command:
+        argv: [docker, version, --format, "{{ '{{' }}.Server.Version{{ '}}' }}"]
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    # A project that does not exist yet is a no-op that exits 0. No -v, so
+    # that named volumes survive the redeploy. Run from / so that compose
+    # finds the project by its labels and not by a compose file of the app.
+    - name: Take down the containers the previous deployment left
+      ansible.builtin.command:
+        argv: [docker, compose, -p, "{{ compose_project }}", down, --remove-orphans]
+        chdir: /
+      register: down_result
+      changed_when: down_result.stderr is search('Removed')
+      when: docker_check.rc == 0
 
     - name: Run the script
       ansible.builtin.shell: |
@@ -45,9 +62,10 @@
           . ./.env
           set +a
         fi
+        export COMPOSE_PROJECT_NAME={{ compose_project | quote }}
         bash ./{{ script | quote }}
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ node_dir }}"
         executable: /bin/bash
       register: script_result
       changed_when: true

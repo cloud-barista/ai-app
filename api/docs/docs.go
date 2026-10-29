@@ -66,7 +66,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "open-webui",
-                        "description": "Application name: lower case letters, digits, dot, underscore and hyphen, starting with a letter or digit, at most 63 characters",
+                        "description": "Application name: lower case letters, digits, underscore and hyphen, starting with a letter or digit, at most 63 characters. No dot: the name becomes part of a docker compose project name on the node",
                         "name": "name",
                         "in": "formData",
                         "required": true
@@ -381,7 +381,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype model-service needs modelService: modelId and artifactId from GET /models, and optionally engine (an engine profile the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the engine profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to, /opt/aiapp/\u003cid\u003e on the node). The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "description": "Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype model-service needs modelService: modelId and artifactId from GET /models, and optionally engine (an engine profile the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the engine profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cengine\u003e for a model service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1508,7 +1508,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "name": {
-                    "description": "Name identifies the application: lower case letters, digits, \".\", \"_\"\nand \"-\", at most 63 characters. Uploading again under the same name adds\na version.",
+                    "description": "Name identifies the application: lower case letters, digits, \"_\" and\n\"-\", at most 63 characters. Uploading again under the same name adds a\nversion.",
                     "type": "string",
                     "example": "open-webui"
                 },
@@ -2020,6 +2020,11 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "nodeDir": {
+                    "description": "NodeDir is the folder on the node the files were copied to,\n/opt/aiapp/\u003cwork key\u003e. Its compose project is aiapp-\u003cwork key\u003e.",
+                    "type": "string",
+                    "example": "/opt/aiapp/ms-vllm"
+                },
                 "notes": {
                     "description": "Notes record decisions made for this node, such as why the spec could\nnot be read.",
                     "type": "array",
@@ -2069,6 +2074,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.NodeDeployTarget"
                         }
                     ]
+                },
+                "workKey": {
+                    "description": "WorkKey names what the deployment occupies on the node: ms-\u003cengine\u003e for\na model service, app-\u003cname\u003e for an application. A later deployment of\nthe same work key to the same node replaces this one there.",
+                    "type": "string",
+                    "example": "ms-vllm"
                 }
             }
         },
@@ -2184,7 +2194,7 @@ const docTemplate = `{
                     "example": "2026-10-29T12:05:00Z"
                 },
                 "id": {
-                    "description": "ID is a UUID (version 4). It names the stage folder and, on each node,\n/opt/aiapp/\u003cid\u003e.",
+                    "description": "ID is a UUID (version 4). It names the stage folder. The folder on each\nnode is named after the work key instead; see NodeDeployResult.NodeDir.",
                     "type": "string",
                     "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
                 },

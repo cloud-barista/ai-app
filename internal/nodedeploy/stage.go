@@ -12,8 +12,9 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 )
 
-// Names of the files this service writes into a stage folder. Both start with
-// "." so that no uploaded file, whose name cannot, takes their place.
+// Names of the files this service writes into a stage folder. Those it adds
+// next to the files of an application start with "." so that no uploaded
+// file, whose name cannot, takes their place.
 const (
 	// EnvFile holds the env of the request, read by docker compose and
 	// exported before an application script runs.
@@ -22,6 +23,11 @@ const (
 	ScriptFile = ".aiapp-run.sh"
 	// ComposeFile is the compose file of a model service.
 	ComposeFile = "docker-compose.yml"
+	// ManifestFile lists the other files of the stage folder, one name per
+	// line. It is copied to the node with them, and the next deployment of
+	// the same work key removes the files the previous manifest lists and the
+	// new one does not.
+	ManifestFile = ".aiapp-files"
 )
 
 // Stage files are read by Semaphore, which runs as another user (uid 1001 in
@@ -95,6 +101,27 @@ func envFileContent(deploymentID string, env map[string]string) []byte {
 		fmt.Fprintf(&b, "%s='%s'\n", name, env[name])
 	}
 	return []byte(b.String())
+}
+
+// writeManifest lists the files of dir, except the manifest itself, in
+// ManifestFile.
+func writeManifest(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("failed to read stage folder %q: %w", dir, err)
+	}
+	var b strings.Builder
+	for _, entry := range entries {
+		if entry.Name() == ManifestFile {
+			continue
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("stage folder %q holds %q, which is not a regular file", dir, entry.Name())
+		}
+		b.WriteString(entry.Name())
+		b.WriteByte('\n')
+	}
+	return writeStageFile(filepath.Join(dir, ManifestFile), []byte(b.String()), stageFilePerm)
 }
 
 // stageApp copies the files and the script of an application version from its

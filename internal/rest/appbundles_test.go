@@ -163,6 +163,7 @@ func TestAppBundleUploadRefusals(t *testing.T) {
 		{"script twice", []part{name, script, {field: "script", fileName: "s.sh", content: "x"}}, http.StatusBadRequest},
 		{"no name", []part{script}, http.StatusBadRequest},
 		{"bad name", []part{{field: "name", content: "Dify!"}, script}, http.StatusBadRequest},
+		{"dot in name", []part{{field: "name", content: "open.webui"}, script}, http.StatusBadRequest},
 		{"parent path", []part{name, script, {field: "files", fileName: "../x", content: "x"}}, http.StatusBadRequest},
 		{"nested path", []part{name, script, {field: "files", fileName: "conf/x", content: "x"}}, http.StatusBadRequest},
 		{"hidden file", []part{name, script, {field: "files", fileName: ".env", content: "x"}}, http.StatusBadRequest},

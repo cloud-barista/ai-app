@@ -1,10 +1,18 @@
 # Copies a staged compose project to the node, starts it, and optionally waits
 # until it answers.
 #
+# A node runs one model service per engine. Deploying the same work key again
+# replaces the files in its folder (tasks/place-files.yml) and the containers
+# of its compose project; model services of other engines are left alone.
+#
 # Extra vars (passed by AI-App as the Semaphore task environment):
 #   stage_dir       staged folder with docker-compose.yml, as seen inside the
 #                   Semaphore container
-#   deployment_id   names the folder on the node: /opt/aiapp/<deployment_id>
+#   node_dir        folder on the node: /opt/aiapp/<work key>, where the work
+#                   key is ms-<engine>
+#   compose_project compose project name: aiapp-<work key>
+#   deployment_id   the deployment that ran; not used on the node, only
+#                   shown with the task in Semaphore
 #   wait_services   optional list of one-shot services that must exit 0 before
 #                   the service counts as ready, for example the ollama
 #                   model-pull service; waited for with `docker compose wait`
@@ -18,34 +26,23 @@
   hosts: all
   become: true
   gather_facts: false
-  vars:
-    app_root: /opt/aiapp
-    app_dir: "{{ app_root }}/{{ deployment_id }}"
   tasks:
-    - name: Check the required variables
+    - name: Check the compose project name
       ansible.builtin.assert:
         that:
-          - stage_dir is defined and stage_dir | length > 0
-          - deployment_id is defined and deployment_id is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
-        fail_msg: stage_dir and deployment_id are required, and deployment_id must be a plain name
+          - compose_project is defined and compose_project is match('^aiapp-[a-z0-9][a-z0-9_-]*$')
+        fail_msg: compose_project is required and must be aiapp-<work key>
         quiet: true
 
-    - name: Create the application folder
-      ansible.builtin.file:
-        path: "{{ app_dir }}"
-        state: directory
-        mode: "0755"
+    - name: Place the files
+      ansible.builtin.include_tasks: tasks/place-files.yml
 
-    - name: Copy the staged files
-      ansible.builtin.copy:
-        src: "{{ stage_dir }}/"
-        dest: "{{ app_dir }}/"
-        mode: preserve
-
-    - name: Start the project
+    # --force-recreate: a redeploy with the same compose file, as heal does,
+    # must replace an unhealthy container rather than leave it running.
+    - name: Start the project, replacing what the previous deployment left
       ansible.builtin.command:
-        cmd: docker compose up -d
-        chdir: "{{ app_dir }}"
+        argv: [docker, compose, -p, "{{ compose_project }}", up, -d, --remove-orphans, --force-recreate]
+        chdir: "{{ node_dir }}"
       register: compose_result
       changed_when: true
 
@@ -56,9 +53,9 @@
     - name: Wait until the one-shot services exit
       ansible.builtin.shell: >-
         timeout {{ wait_timeout | default(1800) | int }}
-        docker compose wait {{ item | quote }}
+        docker compose -p {{ compose_project | quote }} wait {{ item | quote }}
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ node_dir }}"
       loop: "{{ wait_services | default([]) }}"
       register: wait_result
       changed_when: false

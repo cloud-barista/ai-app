@@ -6,6 +6,10 @@
 // then compose-up or copy-and-run through Semaphore. A request is accepted at
 // once and followed in the background; its record says how every node went.
 //
+// On the node, a deployment lands in the folder and compose project of its
+// work key (see placement), not of its deployment ID, so that deploying the
+// same model service engine or application again replaces the previous one.
+//
 // With dry run on, only the look-up and the file placement are done, and
 // nothing is registered in Semaphore.
 package nodedeploy
@@ -107,6 +111,9 @@ type Service struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// locks keeps two deployments off the same placement of a node at once.
+	locks placementLocks
 }
 
 // NewService builds a Service. archive may be nil.
@@ -132,6 +139,8 @@ type plan struct {
 	engine   *model.EngineProfile
 	// appDir is the application version folder in the application store.
 	appDir string
+	// place is where the deployment lands on every node.
+	place placement
 }
 
 // Create accepts a deployment request.
@@ -204,7 +213,11 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 		app := *req.App
 		app.Version = version
 		req.App = &app
-		return &plan{appDir: dir}, nil
+		place, err := placementFor(req)
+		if err != nil {
+			return nil, err
+		}
+		return &plan{appDir: dir, place: place}, nil
 	}
 
 	ms := *req.ModelService
@@ -228,7 +241,11 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 		return nil, err
 	}
 	req.ModelService = &ms
-	return &plan{model: m, artifact: artifact, engine: engine}, nil
+	place, err := placementFor(req)
+	if err != nil {
+		return nil, err
+	}
+	return &plan{model: m, artifact: artifact, engine: engine, place: place}, nil
 }
 
 // execute runs every node of a deployment and records the outcome.
@@ -366,6 +383,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 			n.Notes = append(n.Notes, note)
 		}
 		n.StageDir = dir
+		n.WorkKey, n.NodeDir = p.place.WorkKey, p.place.NodeDir
 	})
 
 	rendered, err := s.stage(id, dir, req, p, gpu)
@@ -380,7 +398,8 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 			n.ServiceURL = serviceURL
 		})
 	}
-	logger.Info().Str("stageDir", dir).Bool("gpu", gpu).Msg("Placed deployment files")
+	logger.Info().Str("stageDir", dir).Str("workKey", p.place.WorkKey).Str("nodeDir", p.place.NodeDir).
+		Bool("gpu", gpu).Msg("Placed deployment files")
 
 	if s.opts.DryRun {
 		s.finishNode(id, idx, model.NodeDeployDryRun, "")
@@ -392,7 +411,10 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		Host: access.Host, Port: access.Port, User: access.User, PrivateKey: access.PrivateKey,
 	}
 	steps := []semaphore.RunSpec{withPlaybook(base, PlaybookInstallDocker, map[string]any{"gpu": gpu})}
-	common := map[string]any{"stage_dir": dir, "deployment_id": id}
+	common := map[string]any{
+		"stage_dir": dir, "deployment_id": id,
+		"work_key": p.place.WorkKey, "node_dir": p.place.NodeDir, "compose_project": p.place.Project,
+	}
 	if req.Type == model.NodeDeployTypeModelService {
 		vars := copyVars(common)
 		vars["health_url"] = healthURL(p.engine)
@@ -406,6 +428,12 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		steps = append(steps, withPlaybook(base, PlaybookCopyAndRun, vars))
 	}
 
+	unlock, err := s.locks.lock(ctx, target.Key()+" "+p.place.WorkKey)
+	if err != nil {
+		fail(fmt.Errorf("waiting for another deployment of %s on the node: %w", p.place.WorkKey, err))
+		return
+	}
+	defer unlock()
 	for _, spec := range steps {
 		if err := s.runStep(ctx, id, idx, spec); err != nil {
 			fail(err)
@@ -487,7 +515,10 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 		if err := stageApp(p.appDir, dir); err != nil {
 			return "", err
 		}
-		return "", writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.App.Env), stageFilePerm)
+		if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.App.Env), stageFilePerm); err != nil {
+			return "", err
+		}
+		return "", writeManifest(dir)
 	}
 
 	rendered, err := compose.Render(p.model, p.artifact, p.engine, compose.Options{GPU: gpu, Env: req.ModelService.Env})
@@ -500,7 +531,7 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 	if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.ModelService.Env), stageFilePerm); err != nil {
 		return "", err
 	}
-	return rendered, nil
+	return rendered, writeManifest(dir)
 }
 
 // healthURL is the engine health endpoint as seen from the node itself.

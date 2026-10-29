@@ -216,9 +216,9 @@ definitions:
     properties:
       name:
         description: |-
-          Name identifies the application: lower case letters, digits, ".", "_"
-          and "-", at most 63 characters. Uploading again under the same name adds
-          a version.
+          Name identifies the application: lower case letters, digits, "_" and
+          "-", at most 63 characters. Uploading again under the same name adds a
+          version.
         example: open-webui
         type: string
       versions:
@@ -646,6 +646,12 @@ definitions:
         description: |-
           Node is how the node was reached, as read from CB-Tumblebug. Absent
           when the node could not be read. The SSH key is never included.
+      nodeDir:
+        description: |-
+          NodeDir is the folder on the node the files were copied to,
+          /opt/aiapp/<work key>. Its compose project is aiapp-<work key>.
+        example: /opt/aiapp/ms-vllm
+        type: string
       notes:
         description: |-
           Notes record decisions made for this node, such as why the spec could
@@ -692,6 +698,13 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.NodeDeployTarget'
         description: Target is the target as requested.
+      workKey:
+        description: |-
+          WorkKey names what the deployment occupies on the node: ms-<engine> for
+          a model service, app-<name> for an application. A later deployment of
+          the same work key to the same node replaces this one there.
+        example: ms-vllm
+        type: string
     type: object
   model.NodeDeployStep:
     properties:
@@ -789,8 +802,8 @@ definitions:
         type: string
       id:
         description: |-
-          ID is a UUID (version 4). It names the stage folder and, on each node,
-          /opt/aiapp/<id>.
+          ID is a UUID (version 4). It names the stage folder. The folder on each
+          node is named after the work key instead; see NodeDeployResult.NodeDir.
         example: 3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48
         type: string
       nodes:
@@ -1023,8 +1036,9 @@ paths:
       operationId: PostApp
       parameters:
       - default: open-webui
-        description: 'Application name: lower case letters, digits, dot, underscore
-          and hyphen, starting with a letter or digit, at most 63 characters'
+        description: 'Application name: lower case letters, digits, underscore and
+          hyphen, starting with a letter or digit, at most 63 characters. No dot:
+          the name becomes part of a docker compose project name on the node'
         in: formData
         name: name
         required: true
@@ -1251,7 +1265,7 @@ paths:
 
         Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 
-        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to, /opt/aiapp/<id> on the node). The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
+        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<engine> for a model service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 
         The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
       operationId: PostNodeDeployment

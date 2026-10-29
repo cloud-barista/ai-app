@@ -1,0 +1,51 @@
+# Replaces the files of a work key folder on the node with a staged folder.
+# Included by compose-up.yml and copy-and-run.yml.
+#
+# Vars:
+#   stage_dir  staged folder, as seen inside the Semaphore container. Its
+#              .aiapp-files lists the other files in it, one name per line.
+#   node_dir   folder of the work key on the node, /opt/aiapp/<work key>
+#
+# Files the previous deployment listed in its .aiapp-files and the new one does
+# not are removed. Anything else in the folder, such as data a container wrote
+# through a bind mount, is left, and so are docker volumes.
+- name: Check the placement variables
+  ansible.builtin.assert:
+    that:
+      - stage_dir is defined and stage_dir | length > 0
+      - node_dir is defined and node_dir is match('^/opt/aiapp/[a-z0-9][a-z0-9._-]*$')
+    fail_msg: stage_dir and node_dir are required, and node_dir must be a folder right under /opt/aiapp
+    quiet: true
+
+- name: Create the work key folder
+  ansible.builtin.file:
+    path: "{{ node_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Read the file list the previous deployment left
+  ansible.builtin.slurp:
+    src: "{{ node_dir }}/.aiapp-files"
+  register: previous_manifest
+  failed_when: false
+
+- name: Work out the files the new deployment no longer has
+  ansible.builtin.set_fact:
+    stale_files: >-
+      {{ ((previous_manifest.content | b64decode).splitlines()
+          if previous_manifest.content is defined else [])
+         | difference(lookup('ansible.builtin.file', stage_dir ~ '/.aiapp-files').splitlines())
+         | select('match', '^[A-Za-z0-9_][A-Za-z0-9._+-]*$|^\.(env|aiapp-run\.sh)$')
+         | list }}
+
+- name: Remove the files the new deployment no longer has
+  ansible.builtin.file:
+    path: "{{ node_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ stale_files }}"
+
+- name: Copy the staged files
+  ansible.builtin.copy:
+    src: "{{ stage_dir }}/"
+    dest: "{{ node_dir }}/"
+    mode: preserve

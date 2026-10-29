@@ -730,3 +730,143 @@ func TestMalformedKeyFailsTheNodeWithoutSemaphore(t *testing.T) {
 		t.Errorf("%d Semaphore runs with a malformed key, want 0", f.runner.count())
 	}
 }
+
+// placementRun deploys req, waits for it, and returns the extra vars of its
+// last playbook, which places the files on the node.
+func placementRun(t *testing.T, f *fixture, req model.NodeDeploymentReq) (*model.NodeDeployment, map[string]any) {
+	t.Helper()
+	created, err := f.svc.Create(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	d := waitFinished(t, f.svc, created.ID)
+	if d.Status != model.NodeDeploySucceeded {
+		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
+	}
+	f.runner.mu.Lock()
+	defer f.runner.mu.Unlock()
+	last := f.runner.runs[len(f.runner.runs)-1]
+	if last.Playbook != PlaybookComposeUp && last.Playbook != PlaybookCopyAndRun {
+		t.Fatalf("last run = %s, want the playbook that places the files", last.Playbook)
+	}
+	return d, last.ExtraVars
+}
+
+func TestRedeployLandsInTheSameNodeFolderAndProject(t *testing.T) {
+	f := newFixture(t, false)
+	if _, err := f.svc.models.Register(context.Background(), model.Model{
+		ID: "tiny-hf", Name: "Tiny HF", Tasks: []string{"embedding"},
+		Artifacts: []model.Artifact{{
+			ID: "hf", Source: "huggingface", Ref: "org/tiny", Format: model.FormatHF,
+			Engines: []model.EngineCompat{{Engine: model.EngineVLLM}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.apps.Register(context.Background(), "api", "docker compose up -d", []appstore.File{
+		{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vllm := modelReq("vm1")
+	vllm.ModelService = &model.NodeModelServiceReq{ModelID: "tiny-hf", ArtifactID: "hf"}
+	api := appReq("vm1")
+	api.App.Name = "api"
+
+	cases := []struct {
+		name    string
+		req     model.NodeDeploymentReq
+		key     string
+		project string
+	}{
+		{"ollama", modelReq("vm1"), "ms-ollama", "aiapp-ms-ollama"},
+		{"ollama again", modelReq("vm1"), "ms-ollama", "aiapp-ms-ollama"},
+		{"vllm", vllm, "ms-vllm", "aiapp-ms-vllm"},
+		{"app web", appReq("vm1"), "app-web", "aiapp-app-web"},
+		{"app web again", appReq("vm1"), "app-web", "aiapp-app-web"},
+		{"app api", api, "app-api", "aiapp-app-api"},
+	}
+	stageDirs := map[string]bool{}
+	for _, c := range cases {
+		d, vars := placementRun(t, f, c.req)
+		if vars["work_key"] != c.key || vars["node_dir"] != "/opt/aiapp/"+c.key || vars["compose_project"] != c.project {
+			t.Errorf("%s: vars = %v, want work key %s and project %s", c.name, vars, c.key, c.project)
+		}
+		if n := d.Nodes[0]; n.WorkKey != c.key || n.NodeDir != "/opt/aiapp/"+c.key {
+			t.Errorf("%s: record has work key %q and node dir %q, want %s", c.name, n.WorkKey, n.NodeDir, c.key)
+		}
+		if vars["deployment_id"] != d.ID {
+			t.Errorf("%s: deployment_id = %v, want %s", c.name, vars["deployment_id"], d.ID)
+		}
+		dir := d.Nodes[0].StageDir
+		if stageDirs[dir] || !strings.HasPrefix(dir, filepath.Join(f.stage, d.ID)) {
+			t.Errorf("%s: stage folder %q is not one of its own deployment", c.name, dir)
+		}
+		stageDirs[dir] = true
+	}
+}
+
+func TestStageFolderListsItsFilesInTheManifest(t *testing.T) {
+	f := newFixture(t, false)
+	app, _ := placementRun(t, f, appReq("vm1"))
+	ms, _ := placementRun(t, f, modelReq("vm1"))
+	for name, c := range map[string]struct {
+		d    *model.NodeDeployment
+		want string
+	}{
+		"app":           {app, ScriptFile + "\n" + EnvFile + "\ndocker-compose.yml\nindex.html\n"},
+		"model service": {ms, EnvFile + "\ndocker-compose.yml\n"},
+	} {
+		got, err := os.ReadFile(filepath.Join(c.d.Nodes[0].StageDir, ManifestFile))
+		if err != nil || string(got) != c.want {
+			t.Errorf("%s manifest = %q, %v; want %q", name, got, err, c.want)
+		}
+	}
+}
+
+func TestAppNameComposeCannotTakeIsRefused(t *testing.T) {
+	f := newFixture(t, false)
+	if _, err := f.svc.apps.Register(context.Background(), "my.web", "true", nil); !errors.Is(err, model.ErrValidation) {
+		t.Errorf("upload of an app name with a dot = %v, want a validation error", err)
+	}
+	req := appReq("vm1")
+	req.App.Name = "my.web"
+	if _, err := f.svc.Create(context.Background(), req); !errors.Is(err, model.ErrValidation) {
+		t.Errorf("app name with a dot = %v, want a validation error", err)
+	}
+	if f.runner.count() != 0 || len(f.svc.List(context.Background())) != 0 {
+		t.Error("a refused request left a run or a record")
+	}
+}
+
+func TestSamePlacementOfANodeRunsOneDeploymentAtATime(t *testing.T) {
+	f := newFixture(t, false)
+	f.runner.block = make(chan struct{})
+	first, err := f.svc.Create(context.Background(), modelReq("vm1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.svc.Create(context.Background(), modelReq("vm1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each deployment runs install-docker and compose-up. While the runner
+	// holds every run, only one deployment may have started its steps.
+	deadline := time.Now().Add(2 * time.Second)
+	for f.runner.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := f.runner.count(); n != 1 {
+		t.Errorf("%d runs started while the first deployment holds the node, want 1", n)
+	}
+	close(f.runner.block)
+	for _, id := range []string{first.ID, second.ID} {
+		if d := waitFinished(t, f.svc, id); d.Status != model.NodeDeploySucceeded {
+			t.Errorf("deployment %s = %q", id, d.Status)
+		}
+	}
+	if n := f.runner.count(); n != 4 {
+		t.Errorf("%d runs, want 4", n)
+	}
+}

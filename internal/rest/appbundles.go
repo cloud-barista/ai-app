@@ -27,7 +27,7 @@ const multipartOverhead = 1 << 20
 // @Tags [App] AI Applications
 // @Accept multipart/form-data
 // @Produce json
-// @Param name formData string true "Application name: lower case letters, digits, dot, underscore and hyphen, starting with a letter or digit, at most 63 characters" default(open-webui)
+// @Param name formData string true "Application name: lower case letters, digits, underscore and hyphen, starting with a letter or digit, at most 63 characters. No dot: the name becomes part of a docker compose project name on the node" default(open-webui)
 // @Param script formData string true "Deployment script. Send it as this text field or as a file part named script (with a filename), exactly once"
 // @Param files formData file false "Files the script uses, such as docker-compose.yml. Repeat the part for each file"
 // @Success 200 {object} model.AppVersion "The version registered, with the size and SHA-256 of every file"

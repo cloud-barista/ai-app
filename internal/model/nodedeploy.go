@@ -231,8 +231,8 @@ func ValidateDeployEnv(field string, env map[string]string) error {
 
 // NodeDeployment is the record of one deployment request.
 type NodeDeployment struct {
-	// ID is a UUID (version 4). It names the stage folder and, on each node,
-	// /opt/aiapp/<id>.
+	// ID is a UUID (version 4). It names the stage folder. The folder on each
+	// node is named after the work key instead; see NodeDeployResult.NodeDir.
 	ID string `json:"id" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
 	// Type is the request type.
 	Type string `json:"type" enums:"model-service,app" example:"model-service"`
@@ -277,6 +277,13 @@ type NodeDeployResult struct {
 	// StageDir is the folder the files were placed in on the shared stage
 	// volume: <AIAPP_STAGE_ROOT>/<deployment id>/<csp>-<node id>.
 	StageDir string `json:"stageDir,omitempty" example:"/var/lib/aiapp/stage/3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48/aws-vm1"`
+	// WorkKey names what the deployment occupies on the node: ms-<engine> for
+	// a model service, app-<name> for an application. A later deployment of
+	// the same work key to the same node replaces this one there.
+	WorkKey string `json:"workKey,omitempty" example:"ms-vllm"`
+	// NodeDir is the folder on the node the files were copied to,
+	// /opt/aiapp/<work key>. Its compose project is aiapp-<work key>.
+	NodeDir string `json:"nodeDir,omitempty" example:"/opt/aiapp/ms-vllm"`
 	// Compose is the rendered docker-compose.yml of a model service.
 	Compose string `json:"compose,omitempty"`
 	// ServiceURL is the model service API on the node, built from the public
