@@ -153,6 +153,36 @@ func TestModelStoreFile(t *testing.T) {
 	}
 }
 
+func TestAppStoreDefaultsAndOverrides(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_APP_STORE_DIR", "")
+	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AppStore.Dir != "./data/apps" || cfg.AppStore.UploadMaxBytes != 256<<20 {
+		t.Errorf("app store = %+v, want ./data/apps and 256 MiB by default", cfg.AppStore)
+	}
+
+	t.Setenv("AIAPP_APP_STORE_DIR", " /srv/aiapp/apps ")
+	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "1048576")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AppStore.Dir != "/srv/aiapp/apps" || cfg.AppStore.UploadMaxBytes != 1<<20 {
+		t.Errorf("app store = %+v, want /srv/aiapp/apps and 1 MiB", cfg.AppStore)
+	}
+
+	for _, bad := range []string{"0", "-1", "256MiB"} {
+		t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", bad)
+		if _, err := Load(); err == nil {
+			t.Errorf("upload bound %q accepted", bad)
+		}
+	}
+}
+
 func TestEngineAndPartnerNLDefaults(t *testing.T) {
 	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL"} {
 		t.Setenv(env, "")

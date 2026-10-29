@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/ish-hcc/ai-agent-proto/api/docs"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
@@ -39,6 +40,8 @@ type AppDependencies struct {
 	Tools   *tools.Registry
 	// Models is the AI model catalog.
 	Models *modelcat.Store
+	// Apps is the store of uploaded AI applications.
+	Apps *appstore.Store
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -51,6 +54,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		archive: deps.Archive,
 		tools:   deps.Tools,
 		models:  deps.Models,
+		apps:    deps.Apps,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -66,13 +70,13 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// bearer token the operator enters on every call it makes.
 	g.GET("/ui", RestGetConsole)
 
-	// AI application catalog: the metadata specification, as a live surface.
-	g.GET("/apps", handler.RestGetAllApps)
-	g.POST("/apps", handler.RestPostApp)
-	g.GET("/apps/search", handler.RestGetAppMatches)
-	g.GET("/apps/:appId", handler.RestGetApp)
-	g.DELETE("/apps/:appId", handler.RestDeleteApp)
-	g.GET("/apps/:appId/specs", handler.RestGetAppSpecs)
+	// AI applications: uploaded files and the script a node runs, by name and
+	// version.
+	g.POST("/apps", handler.RestPostAppBundle)
+	g.GET("/apps", handler.RestGetAllAppBundles)
+	g.GET("/apps/:name", handler.RestGetAppBundle)
+	g.GET("/apps/:name/versions/:version", handler.RestGetAppBundleVersion)
+	g.DELETE("/apps/:name", handler.RestDeleteAppBundle)
 
 	// AI model catalog: models, the artifacts each is published as, and the
 	// inference engine profiles those artifacts run on.

@@ -26,20 +26,20 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List every AI application in the catalog with its runtime, model and accelerator requirement",
+                "description": "List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256) and upload time. Versions are listed oldest first.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "[App] AI Application Catalog"
+                    "[App] AI Applications"
                 ],
-                "summary": "List registered AI applications",
+                "summary": "List AI applications",
                 "operationId": "GetAllApps",
                 "responses": {
                     "200": {
                         "description": "AI application list",
                         "schema": {
-                            "$ref": "#/definitions/model.AppSpecListResp"
+                            "$ref": "#/definitions/model.AppListResp"
                         }
                     }
                 }
@@ -50,89 +50,62 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Register or replace an AI application metadata record. Replacing an existing id publishes a new version",
+                "description": "Upload the files of an AI application and the script that deploys it, as one multipart/form-data body. Uploading again under a registered name adds the next version (the highest version plus one); earlier versions are kept. A node receiving a version gets every file in one folder and runs the script from that folder; the target node and the addresses of other nodes are given by the deployment request, not here. File names are the filename of each files part, used as is: one name of letters, digits, \".\", \"_\", \"+\" and \"-\", not starting with \".\" (.env is written by the deployment request), at most 255 characters, each name once. A name with a path such as ../x or conf/x is refused, not shortened. The script is at most 64 KiB, at most 256 files are accepted, and the script and files together may not exceed the upload bound of the service (AIAPP_APP_UPLOAD_MAX_BYTES, 256 MiB by default).",
                 "consumes": [
-                    "application/json"
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "[App] AI Application Catalog"
+                    "[App] AI Applications"
                 ],
-                "summary": "Register an AI application",
+                "summary": "Upload an AI application",
                 "operationId": "PostApp",
                 "parameters": [
                     {
-                        "description": "AI application metadata",
-                        "name": "appSpec",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/model.AppSpec"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "AI application registered",
-                        "schema": {
-                            "$ref": "#/definitions/model.AppSpec"
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed or incomplete metadata",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    }
-                }
-            }
-        },
-        "/apps/search": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Rank registered AI applications against an operator's own words and report the signals that matched. An empty list means the catalog holds nothing that fits",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "[App] AI Application Catalog"
-                ],
-                "summary": "Find AI applications matching a description",
-                "operationId": "GetAppMatches",
-                "parameters": [
-                    {
                         "type": "string",
-                        "description": "The operator's instruction, in their own words",
-                        "name": "q",
-                        "in": "query",
+                        "default": "open-webui",
+                        "description": "Application name: lower case letters, digits, dot, underscore and hyphen, starting with a letter or digit, at most 63 characters",
+                        "name": "name",
+                        "in": "formData",
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "default": 5,
-                        "description": "How many candidates to return",
-                        "name": "limit",
-                        "in": "query"
+                        "type": "string",
+                        "description": "Deployment script. Send it as this text field or as a file part named script (with a filename), exactly once",
+                        "name": "script",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Files the script uses, such as docker-compose.yml. Repeat the part for each file",
+                        "name": "files",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Ranked candidates",
+                        "description": "The version registered, with the size and SHA-256 of every file",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/catalog.Match"
-                            }
+                            "$ref": "#/definitions/model.AppVersion"
                         }
                     },
                     "400": {
-                        "description": "Query required",
+                        "description": "Not multipart, name or script missing, script given twice, or a file name not allowed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "413": {
+                        "description": "The script and files exceed the upload bound",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The upload could not be written to the store",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -140,37 +113,37 @@ const docTemplate = `{
                 }
             }
         },
-        "/apps/{appId}": {
+        "/apps/{name}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read one registered AI application, including its install commands and serving port",
+                "description": "Read one AI application with every version, oldest first",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "[App] AI Application Catalog"
+                    "[App] AI Applications"
                 ],
                 "summary": "Get an AI application",
                 "operationId": "GetApp",
                 "parameters": [
                     {
                         "type": "string",
-                        "default": "vllm-llama31-8b",
-                        "description": "AI application ID",
-                        "name": "appId",
+                        "default": "open-webui",
+                        "description": "Application name",
+                        "name": "name",
                         "in": "path",
                         "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "AI application metadata",
+                        "description": "AI application",
                         "schema": {
-                            "$ref": "#/definitions/model.AppSpec"
+                            "$ref": "#/definitions/model.App"
                         }
                     },
                     "404": {
@@ -187,20 +160,20 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Remove an AI application from the catalog. Deployments already running are untouched",
+                "description": "Remove an AI application with every version and its stored files. Applications already deployed on nodes are untouched",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "[App] AI Application Catalog"
+                    "[App] AI Applications"
                 ],
                 "summary": "Delete an AI application",
                 "operationId": "DeleteApp",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "AI application ID",
-                        "name": "appId",
+                        "description": "Application name",
+                        "name": "name",
                         "in": "path",
                         "required": true
                     }
@@ -217,73 +190,65 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
+                    },
+                    "500": {
+                        "description": "The stored files could not be removed",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
                     }
                 }
             }
         },
-        "/apps/{appId}/specs": {
+        "/apps/{name}/versions/{version}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node specs that satisfy the accelerator requirement. Without a recommender API this answers 422.",
+                "description": "Read one version of an AI application: its script and the name, size and SHA-256 of every file",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "[App] AI Application Catalog"
+                    "[App] AI Applications"
                 ],
-                "summary": "Recommend accelerator specs for an AI application",
-                "operationId": "GetAppSpecs",
+                "summary": "Get one version of an AI application",
+                "operationId": "GetAppVersion",
                 "parameters": [
                     {
                         "type": "string",
-                        "default": "vllm-llama31-8b",
-                        "description": "AI application ID",
-                        "name": "appId",
+                        "default": "open-webui",
+                        "description": "Application name",
+                        "name": "name",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "default": 5,
-                        "description": "How many candidates to return",
-                        "name": "limit",
-                        "in": "query"
+                        "default": 1,
+                        "description": "Version number, from 1",
+                        "name": "version",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Matching node specs",
+                        "description": "AI application version",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.SpecCandidate"
-                            }
+                            "$ref": "#/definitions/model.AppVersion"
+                        }
+                    },
+                    "400": {
+                        "description": "version is not a positive integer",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
                         }
                     },
                     "404": {
-                        "description": "AI application not found",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "422": {
-                        "description": "No recommender configured",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "500": {
-                        "description": "Spec recommendation failed",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "502": {
-                        "description": "Remote placement service failed",
+                        "description": "AI application or version not found",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1623,44 +1588,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "catalog.Match": {
-            "type": "object",
-            "properties": {
-                "appId": {
-                    "type": "string"
-                },
-                "kind": {
-                    "$ref": "#/definitions/model.AppKind"
-                },
-                "modelId": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "reasons": {
-                    "description": "Reasons names the signals that matched, so an operator can see why a\ncandidate came up rather than being handed an unexplained ranking.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "requires": {
-                    "description": "Requires names the model services an application needs deployed first.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.AppRequirement"
-                    }
-                },
-                "runtime": {
-                    "type": "string"
-                },
-                "score": {
-                    "description": "Score is comparable only within one Resolve call. It ranks candidates; it\nis not a probability and must not be compared across queries.",
-                    "type": "integer"
-                }
-            }
-        },
         "engine.Card": {
             "type": "object",
             "properties": {
@@ -2036,35 +1963,6 @@ const docTemplate = `{
                 }
             }
         },
-        "model.AcceleratorRequirement": {
-            "type": "object",
-            "required": [
-                "minCount",
-                "type"
-            ],
-            "properties": {
-                "minCount": {
-                    "description": "MinCount is the smallest acceptable number of devices per node.",
-                    "type": "integer",
-                    "example": 1
-                },
-                "minMemoryGiB": {
-                    "description": "MinMemoryGiB is the smallest acceptable per-device memory. Zero means unset.",
-                    "type": "number",
-                    "example": 22
-                },
-                "model": {
-                    "description": "Model narrows the search to a device model. Empty means any model of Type.",
-                    "type": "string",
-                    "example": "NVIDIA L4"
-                },
-                "type": {
-                    "description": "Type is the accelerator class, matched against the spec acceleratorType.",
-                    "type": "string",
-                    "example": "gpu"
-                }
-            }
-        },
         "model.AgentCardTool": {
             "type": "object",
             "properties": {
@@ -2099,148 +1997,78 @@ const docTemplate = `{
                 }
             }
         },
-        "model.AppKind": {
-            "type": "string",
-            "enum": [
-                "model-service",
-                "application"
-            ],
-            "x-enum-varnames": [
-                "KindModelService",
-                "KindApplication"
-            ]
-        },
-        "model.AppRequirement": {
+        "model.App": {
             "type": "object",
-            "required": [
-                "appId",
-                "env"
-            ],
             "properties": {
-                "appId": {
-                    "type": "string",
-                    "example": "vllm-llama31-8b"
-                },
-                "env": {
-                    "type": "string",
-                    "example": "OPENAI_API_BASE_URL"
-                }
-            }
-        },
-        "model.AppSpec": {
-            "type": "object",
-            "required": [
-                "id",
-                "install",
-                "name",
-                "runtime",
-                "serving",
-                "version"
-            ],
-            "properties": {
-                "accelerator": {
-                    "description": "Accelerator is required for a model service. An application that leaves\nthe type empty is placed on a CPU node.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.AcceleratorRequirement"
-                        }
-                    ]
-                },
-                "aliases": {
-                    "description": "Aliases are the other names an operator uses for this application, in any\nlanguage. They exist because an instruction arrives as \"라마 추론서버\", not\nas the registered id, and nothing else in the record carries that word.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "llama"
-                    ]
-                },
-                "deployTargets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.DeployTarget"
-                    }
-                },
-                "description": {
-                    "type": "string",
-                    "example": "OpenAI compatible inference endpoint"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "vllm-llama31-8b"
-                },
-                "install": {
-                    "$ref": "#/definitions/model.InstallSpec"
-                },
-                "kind": {
-                    "enum": [
-                        "model-service",
-                        "application"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.AppKind"
-                        }
-                    ],
-                    "example": "model-service"
-                },
-                "labels": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "model": {
-                    "description": "Model is required for a model service and optional for an application.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.ModelRef"
-                        }
-                    ]
-                },
                 "name": {
+                    "description": "Name identifies the application: lower case letters, digits, \".\", \"_\"\nand \"-\", at most 63 characters. Uploading again under the same name adds\na version.",
                     "type": "string",
-                    "example": "vLLM Llama 3.1 8B Instruct"
+                    "example": "open-webui"
                 },
-                "requires": {
+                "versions": {
+                    "description": "Versions are the uploaded versions, oldest first.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/model.AppRequirement"
+                        "$ref": "#/definitions/model.AppVersion"
                     }
-                },
-                "resources": {
-                    "$ref": "#/definitions/model.ResourceRequirement"
-                },
-                "runtime": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.Runtime"
-                        }
-                    ],
-                    "example": "vllm"
-                },
-                "runtimeVersion": {
-                    "type": "string",
-                    "example": "0.6.3"
-                },
-                "serving": {
-                    "$ref": "#/definitions/model.ServingSpec"
-                },
-                "version": {
-                    "type": "string",
-                    "example": "0.1.0"
                 }
             }
         },
-        "model.AppSpecListResp": {
+        "model.AppFile": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the file name on the node: letters, digits, \".\", \"_\", \"+\" and\n\"-\", not starting with \".\", at most 255 characters.",
+                    "type": "string",
+                    "example": "docker-compose.yml"
+                },
+                "sha256": {
+                    "description": "SHA256 is the hex encoded SHA-256 digest of the file content.",
+                    "type": "string",
+                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                },
+                "sizeBytes": {
+                    "description": "SizeBytes is the file size in bytes.",
+                    "type": "integer",
+                    "example": 812
+                }
+            }
+        },
+        "model.AppListResp": {
             "type": "object",
             "properties": {
                 "apps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/model.AppSpec"
+                        "$ref": "#/definitions/model.App"
                     }
+                }
+            }
+        },
+        "model.AppVersion": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "CreatedAt is when the version was registered.",
+                    "type": "string",
+                    "example": "2026-10-29T12:00:00Z"
+                },
+                "files": {
+                    "description": "Files are the uploaded files, in upload order. They are copied flat into\nthe folder the script runs in.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AppFile"
+                    }
+                },
+                "script": {
+                    "description": "Script is the shell script run on the node from the folder the files\nare copied to. At most 64 KiB.",
+                    "type": "string",
+                    "example": "docker compose up -d"
+                },
+                "version": {
+                    "description": "Version numbers the uploads of one name from 1, one higher than the\nhighest version present when it was uploaded.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -2423,17 +2251,6 @@ const docTemplate = `{
                     "example": "aws+us-west-2+g6.xlarge"
                 }
             }
-        },
-        "model.DeployTarget": {
-            "type": "string",
-            "enum": [
-                "vm",
-                "container"
-            ],
-            "x-enum-varnames": [
-                "DeployTargetVM",
-                "DeployTargetContainer"
-            ]
         },
         "model.DeploymentPlan": {
             "type": "object",
@@ -2620,33 +2437,6 @@ const docTemplate = `{
                 }
             }
         },
-        "model.InstallSpec": {
-            "type": "object",
-            "required": [
-                "commands"
-            ],
-            "properties": {
-                "commands": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "osType": {
-                    "description": "OSType selects the node image family. Empty uses the service default.",
-                    "type": "string",
-                    "example": "ubuntu 22.04"
-                },
-                "timeoutMinutes": {
-                    "type": "integer",
-                    "example": 30
-                },
-                "userName": {
-                    "type": "string",
-                    "example": "cb-user"
-                }
-            }
-        },
         "model.Model": {
             "type": "object",
             "required": [
@@ -2728,29 +2518,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.Model"
                     }
-                }
-            }
-        },
-        "model.ModelRef": {
-            "type": "object",
-            "required": [
-                "id"
-            ],
-            "properties": {
-                "format": {
-                    "description": "Format is the artifact format the runtime loads.",
-                    "type": "string",
-                    "example": "safetensors"
-                },
-                "id": {
-                    "description": "ID is the model identifier in the AI model registry.",
-                    "type": "string",
-                    "example": "meta-llama/Llama-3.1-8B-Instruct"
-                },
-                "sizeGiB": {
-                    "description": "SizeGiB is the on-disk footprint, used to size the root disk.",
-                    "type": "number",
-                    "example": 16
                 }
             }
         },
@@ -2856,23 +2623,6 @@ const docTemplate = `{
                 }
             }
         },
-        "model.ResourceRequirement": {
-            "type": "object",
-            "properties": {
-                "minMemoryGiB": {
-                    "type": "integer",
-                    "example": 32
-                },
-                "minVCPU": {
-                    "type": "integer",
-                    "example": 8
-                },
-                "rootDiskGiB": {
-                    "type": "integer",
-                    "example": 100
-                }
-            }
-        },
         "model.ReviewSummary": {
             "type": "object",
             "properties": {
@@ -2898,23 +2648,6 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
-        },
-        "model.Runtime": {
-            "type": "string",
-            "enum": [
-                "vllm",
-                "triton",
-                "tgi",
-                "ollama",
-                "app"
-            ],
-            "x-enum-varnames": [
-                "RuntimeVLLM",
-                "RuntimeTriton",
-                "RuntimeTGI",
-                "RuntimeOllama",
-                "RuntimeOther"
-            ]
         },
         "model.ServingAccess": {
             "type": "object",
@@ -2988,72 +2721,12 @@ const docTemplate = `{
                 }
             }
         },
-        "model.ServingSpec": {
-            "type": "object",
-            "required": [
-                "port"
-            ],
-            "properties": {
-                "apiBasePath": {
-                    "description": "APIBasePath is appended to the endpoint handed to an application that\nrequires this service, for example \"/v1\" for an OpenAI compatible API.",
-                    "type": "string",
-                    "example": "/v1"
-                },
-                "healthPath": {
-                    "type": "string",
-                    "example": "/health"
-                },
-                "port": {
-                    "type": "integer",
-                    "example": 8000
-                },
-                "protocol": {
-                    "type": "string",
-                    "example": "http"
-                }
-            }
-        },
         "model.SimpleMsg": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string",
                     "example": "AI application not found"
-                }
-            }
-        },
-        "model.SpecCandidate": {
-            "type": "object",
-            "properties": {
-                "acceleratorCount": {
-                    "type": "integer"
-                },
-                "acceleratorMemoryGB": {
-                    "type": "number"
-                },
-                "acceleratorModel": {
-                    "type": "string"
-                },
-                "acceleratorType": {
-                    "type": "string"
-                },
-                "costPerHour": {
-                    "type": "number"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "memoryGiB": {
-                    "type": "number"
-                },
-                "providerName": {
-                    "type": "string"
-                },
-                "regionName": {
-                    "type": "string"
-                },
-                "vCPU": {
-                    "type": "integer"
                 }
             }
         },

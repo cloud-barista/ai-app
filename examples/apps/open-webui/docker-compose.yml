@@ -1,0 +1,20 @@
+# Open WebUI: a chat web interface for an Ollama or OpenAI compatible model
+# server. One container; chats and settings are kept in the open-webui volume.
+#
+# Settings come from .env beside this file, which the deployment request
+# writes:
+#   OLLAMA_BASE_URL   Ollama server the chats go to, e.g. http://10.0.0.5:11434 (required)
+#   OPEN_WEBUI_PORT   host port of the web interface (default 3000)
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.12.4
+    restart: unless-stopped
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    environment:
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:?set OLLAMA_BASE_URL to the Ollama server, e.g. http://10.0.0.5:11434}"
+    volumes:
+      - open-webui:/app/backend/data
+
+volumes:
+  open-webui:

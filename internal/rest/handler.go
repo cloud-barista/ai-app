@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/compose"
@@ -24,6 +25,7 @@ type Handler struct {
 	archive *archive.Store
 	tools   *tools.Registry
 	models  *modelcat.Store
+	apps    *appstore.Store
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
@@ -42,6 +44,10 @@ func statusCodeFor(err error) int {
 	case errors.Is(err, modelcat.ErrNotFound), errors.Is(err, modelcat.ErrArtifactNotFound),
 		errors.Is(err, modelcat.ErrEngineNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, appstore.ErrNotFound), errors.Is(err, appstore.ErrVersionNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, appstore.ErrTooLarge):
+		return http.StatusRequestEntityTooLarge
 	case errors.Is(err, compose.ErrIncompatible):
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, compose.ErrInvalidOption):
@@ -97,10 +103,12 @@ func messageFor(err error, fallback string) string {
 	if errors.Is(err, deploy.ErrNoRecommender) {
 		return deploy.ErrNoRecommender.Error()
 	}
-	// The model catalog and compose errors name only identifiers the caller
-	// sent and the reason a pairing does not fit.
+	// The model catalog, compose and application store errors name only
+	// identifiers the caller sent, the reason a pairing does not fit and the
+	// upload bound.
 	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrEngineNotFound,
-		compose.ErrIncompatible, compose.ErrInvalidOption} {
+		compose.ErrIncompatible, compose.ErrInvalidOption,
+		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge} {
 		if errors.Is(err, own) {
 			return err.Error()
 		}

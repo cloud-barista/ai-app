@@ -1,0 +1,25 @@
+# Langflow: builds LangChain based agents and flows from connected nodes and
+# serves them over an API. One container with its built-in SQLite database,
+# kept with logs and secret keys in the langflow volume.
+#
+# Settings come from .env beside this file, which the deployment request
+# writes:
+#   MODEL_BASE_URL   OpenAI compatible model server, e.g. http://10.0.0.7:8000/v1.
+#                    Langflow stores it as the global variable MODEL_BASE_URL,
+#                    which a model component's base URL field can select.
+#   LANGFLOW_PORT    host port of the web interface and API (default 7860)
+services:
+  langflow:
+    image: langflowai/langflow:1.13.0
+    restart: unless-stopped
+    ports:
+      - "${LANGFLOW_PORT:-7860}:7860"
+    environment:
+      LANGFLOW_CONFIG_DIR: /app/langflow
+      MODEL_BASE_URL: "${MODEL_BASE_URL:-}"
+      LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT: MODEL_BASE_URL
+    volumes:
+      - langflow:/app/langflow
+
+volumes:
+  langflow:

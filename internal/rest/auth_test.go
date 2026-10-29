@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
@@ -39,6 +40,10 @@ func newTestServers(t *testing.T, token string) *Server {
 	if err != nil {
 		t.Fatalf("app archive: %v", err)
 	}
+	appStore, err := appstore.Open(t.TempDir(), 0)
+	if err != nil {
+		t.Fatalf("app store: %v", err)
+	}
 	tbCfg := config.TumblebugConfig{DryRun: true}
 	apps := catalog.NewStore()
 	registry := tools.NewRegistry(tbCfg.DryRun)
@@ -54,6 +59,7 @@ func newTestServers(t *testing.T, token string) *Server {
 		Deploy:  deployService,
 		Archive: appArchive,
 		Tools:   registry,
+		Apps:    appStore,
 	})
 }
 

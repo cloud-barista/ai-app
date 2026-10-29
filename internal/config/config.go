@@ -51,6 +51,7 @@ type Config struct {
 	App       AppConfig
 	Archive   ArchiveConfig
 	Model     ModelConfig
+	AppStore  AppStoreConfig
 	Auth      AuthConfig
 	Health    HealthConfig
 	// Recommender is the partner recommender API that picks the spec and image
@@ -170,6 +171,15 @@ type ModelConfig struct {
 	StoreFile string
 }
 
+// AppStoreConfig holds where uploaded AI applications are kept.
+type AppStoreConfig struct {
+	// Dir is the directory every uploaded version is written under and read
+	// back from at startup.
+	Dir string
+	// UploadMaxBytes bounds the script and files of one upload together.
+	UploadMaxBytes int64
+}
+
 // Load reads configuration from environment variables and validates it.
 func Load() (*Config, error) {
 	v := viper.New()
@@ -191,6 +201,8 @@ func Load() (*Config, error) {
 	v.SetDefault("mock_nl.url", "http://127.0.0.1:8093")
 	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
+	v.SetDefault("app.store_dir", "./data/apps")
+	v.SetDefault("app.upload_max_bytes", 256<<20)
 	v.SetDefault("health.timeout", 15*time.Minute)
 	v.SetDefault("health.interval", 20*time.Second)
 	v.SetDefault("placement.provisioner", BackendLocal)
@@ -217,6 +229,8 @@ func Load() (*Config, error) {
 		"app.token",
 		"archive.dir",
 		"model.store_file",
+		"app.store_dir",
+		"app.upload_max_bytes",
 		"auth.token",
 		"health.timeout",
 		"health.interval",
@@ -278,6 +292,10 @@ func Load() (*Config, error) {
 		},
 		Model: ModelConfig{
 			StoreFile: strings.TrimSpace(v.GetString("model.store_file")),
+		},
+		AppStore: AppStoreConfig{
+			Dir:            strings.TrimSpace(v.GetString("app.store_dir")),
+			UploadMaxBytes: v.GetInt64("app.upload_max_bytes"),
 		},
 		Auth: AuthConfig{
 			Token: v.GetString("auth.token"),
@@ -346,6 +364,12 @@ func (c *Config) validate() error {
 	}
 	if c.Archive.Dir == "" {
 		return fmt.Errorf("%s_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.AppStore.Dir == "" {
+		return fmt.Errorf("%s_APP_STORE_DIR is required", envPrefix)
+	}
+	if c.AppStore.UploadMaxBytes <= 0 {
+		return fmt.Errorf("%s_APP_UPLOAD_MAX_BYTES must be a positive number of bytes", envPrefix)
 	}
 	if c.Health.Timeout <= 0 {
 		return fmt.Errorf("invalid health timeout: %s", c.Health.Timeout)

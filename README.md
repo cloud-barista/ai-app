@@ -536,12 +536,11 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | GET | `/aiapp/ui` | **운영자 콘솔** (이 서비스의 API 를 실제로 호출하는 화면) |
 | GET | `/aiapp/readyz` | 준비 상태 |
 | GET | `/aiapp/api/*` | Swagger UI |
-| GET | `/aiapp/apps` | 등록된 AI 응용 목록 |
-| POST | `/aiapp/apps` | AI 응용 등록 (같은 id 면 새 버전으로 교체) |
-| GET | `/aiapp/apps/search?q=` | **검색어로 AI 응용 후보 순위 조회** (규칙 매처, LLM 미사용, 근거 신호 포함) |
-| GET | `/aiapp/apps/{appId}` | AI 응용 조회 |
-| DELETE | `/aiapp/apps/{appId}` | AI 응용 삭제 |
-| GET | `/aiapp/apps/{appId}/specs` | 가속기 요구사항에 맞는 스펙을 추천 API 에 물음. 추천 API 가 없으면 `422` |
+| POST | `/aiapp/apps` | AI 응용 업로드 (multipart: `name`, `script` 텍스트 또는 파일 파트, `files` 파트 여러 개). 같은 이름이면 다음 버전으로 추가. 상한 초과는 `413` |
+| GET | `/aiapp/apps` | 업로드한 AI 응용 목록 (버전·script·파일 크기와 SHA-256 포함) |
+| GET | `/aiapp/apps/{name}` | AI 응용 조회 (모든 버전) |
+| GET | `/aiapp/apps/{name}/versions/{version}` | AI 응용 한 버전 조회 |
+| DELETE | `/aiapp/apps/{name}` | AI 응용 삭제 (모든 버전과 저장된 파일) |
 | POST | `/aiapp/ns/{nsId}/deployments/plan` | 배포 계획만 만듦 (클라우드 미접촉). `specId`·`imageId` 를 비우면 추천 API 에 물음 |
 | POST | `/aiapp/ns/{nsId}/deployments` | 배포 (review 후, 게이트 통과 시 생성). `sgTemplateId` 로 보안그룹 템플릿 지정 가능. 생성 뒤 서빙 포트 응답을 한 번 확인해 `health` 에 담음. `?waitHealthy=true` 면 모든 노드가 응답하거나 `AIAPP_HEALTH_TIMEOUT` 이 지날 때까지 다시 확인 (응답이 없어도 배포는 실패로 안 바뀜) |
 | GET | `/aiapp/ns/{nsId}/deployments` | 배포 목록 |
@@ -651,8 +650,9 @@ open http://localhost:8090/aiapp/ui                       # 운영자 콘솔 (�
 curl localhost:8090/aiapp/readyz                          # {"message":"Service is ready"}
 curl localhost:8090/aiapp/engine/readyz                   # 엔진 준비 상태 (AI-App 이 넘겨줌)
 curl localhost:8090/aiapp/partner/nl/readyz               # 모의 자연어 에이전트 준비 상태 (AI-App 이 넘겨줌)
-curl localhost:8090/aiapp/apps                            # 등록된 응용 4건
-curl -G localhost:8090/aiapp/apps/search      --data-urlencode "q=라마 추론서버"                     # 후보 순위 + 판정 근거
+curl localhost:8090/aiapp/apps                            # 업로드한 응용 (처음에는 비어 있음)
+curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
+     -F files=@examples/apps/open-webui/docker-compose.yml localhost:8090/aiapp/apps   # 응용 업로드, 다시 올리면 version 2
 curl localhost:8090/aiapp/tools                           # AI-App 도구 15개와 등급
 curl localhost:8090/aiapp/engine/card                     # 엔진 카드
 curl localhost:8090/aiapp/archive                         # 배포·제어 아카이브
@@ -664,8 +664,6 @@ open http://localhost:8090/aiapp/api/index.html           # Swagger UI
 클라우드에 닿는 경로와, 추천 API·계획 모델이 필요한 경로만 실패합니다 (2026-10-13 실측).
 
 ```sh
-curl localhost:8090/aiapp/apps/vllm-llama31-8b/specs
-# HTTP 422  {"message":"no recommender configured: pin specId and imageId"}
 curl -X POST 'localhost:8090/aiapp/engine/workflows/status?ns=default' -H 'Content-Type: application/json' -d '{"deploymentId":"none-01"}'
 # HTTP 200  {"runId":"eng-...","workflow":"status", ... 단계마다 CB-Tumblebug 접속 실패, "status":"failed"}
 curl -X POST localhost:8090/aiapp/partner/nl/ns/default/intents -H 'Content-Type: application/json' -d '{"intent":"x"}'
@@ -814,6 +812,8 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_PROVISIONER` | `local` | App | Infra 검토·생성·업데이트를 누가 하나. `local` = CB-Tumblebug 직접, `remote` = 외부 배포 서비스(Provisioner 계약) |
 | `AIAPP_PROVISIONER_URL` / `_TOKEN` | | App | `remote` 일 때 주소(필수)와 bearer 토큰 |
 | `AIAPP_ARCHIVE_DIR` | `./data/archive` | App | 배포·제어 아카이브 위치 |
+| `AIAPP_APP_STORE_DIR` | `./data/apps` | App | 업로드한 응용 저장 위치. `<name>/<version>/` 아래 `files/`, `script.sh`, `meta.json`. 기동 때 다시 읽음 |
+| `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` (256 MiB) | App | 업로드 한 번의 script 와 파일 합계 상한 (바이트) |
 | `AIAPP_ENGINE_ARCHIVE_DIR` | `./data/engine-archive` | Engine | 엔진 실행 기록 위치 |
 | `AIAPP_ENGINE_REGISTRY_URL` / `_TOKEN` | | Engine | 기동할 때 엔진 카드를 등록할 레지스트리(`POST <url>/agents`)와 그 bearer 토큰. 비우면 등록 안 함 |
 | `AIAPP_MOCK_RECOMMENDER_PORT` | `8092` | Rec | 모의 추천 API 리스닝 포트 |

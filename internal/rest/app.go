@@ -9,32 +9,13 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
-// RestGetAllApps godoc
-// @ID GetAllApps
-// @Summary List registered AI applications
-// @Description List every AI application in the catalog with its runtime, model and accelerator requirement
-// @Tags [App] AI Application Catalog
-// @Produce json
-// @Success 200 {object} model.AppSpecListResp "AI application list"
-// @Security BearerAuth
-// @Router /apps [get]
+// RestGetAllApps lists registered AI applications.
 func (h *Handler) RestGetAllApps(c echo.Context) error {
 	ctx := c.Request().Context()
 	return c.JSON(http.StatusOK, model.AppSpecListResp{Apps: h.catalog.List(ctx)})
 }
 
-// RestPostApp godoc
-// @ID PostApp
-// @Summary Register an AI application
-// @Description Register or replace an AI application metadata record. Replacing an existing id publishes a new version
-// @Tags [App] AI Application Catalog
-// @Accept json
-// @Produce json
-// @Param appSpec body model.AppSpec true "AI application metadata"
-// @Success 200 {object} model.AppSpec "AI application registered"
-// @Failure 400 {object} model.SimpleMsg "Malformed or incomplete metadata"
-// @Security BearerAuth
-// @Router /apps [post]
+// RestPostApp registers an AI application.
 func (h *Handler) RestPostApp(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -51,18 +32,7 @@ func (h *Handler) RestPostApp(c echo.Context) error {
 	return c.JSON(http.StatusOK, registered)
 }
 
-// RestGetAppMatches godoc
-// @ID GetAppMatches
-// @Summary Find AI applications matching a description
-// @Description Rank registered AI applications against an operator's own words and report the signals that matched. An empty list means the catalog holds nothing that fits
-// @Tags [App] AI Application Catalog
-// @Produce json
-// @Param q query string true "The operator's instruction, in their own words"
-// @Param limit query int false "How many candidates to return" default(5)
-// @Success 200 {array} catalog.Match "Ranked candidates"
-// @Failure 400 {object} model.SimpleMsg "Query required"
-// @Security BearerAuth
-// @Router /apps/search [get]
+// RestGetAppMatches finds AI applications matching a description.
 func (h *Handler) RestGetAppMatches(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -77,17 +47,7 @@ func (h *Handler) RestGetAppMatches(c echo.Context) error {
 	return c.JSON(http.StatusOK, h.catalog.Resolve(ctx, query, limit))
 }
 
-// RestGetApp godoc
-// @ID GetApp
-// @Summary Get an AI application
-// @Description Read one registered AI application, including its install commands and serving port
-// @Tags [App] AI Application Catalog
-// @Produce json
-// @Param appId path string true "AI application ID" default(vllm-llama31-8b)
-// @Success 200 {object} model.AppSpec "AI application metadata"
-// @Failure 404 {object} model.SimpleMsg "AI application not found"
-// @Security BearerAuth
-// @Router /apps/{appId} [get]
+// RestGetApp gets an AI application.
 func (h *Handler) RestGetApp(c echo.Context) error {
 	ctx := c.Request().Context()
 	appID := c.Param("appId")
@@ -100,17 +60,7 @@ func (h *Handler) RestGetApp(c echo.Context) error {
 	return c.JSON(http.StatusOK, spec)
 }
 
-// RestDeleteApp godoc
-// @ID DeleteApp
-// @Summary Delete an AI application
-// @Description Remove an AI application from the catalog. Deployments already running are untouched
-// @Tags [App] AI Application Catalog
-// @Produce json
-// @Param appId path string true "AI application ID"
-// @Success 200 {object} model.SimpleMsg "AI application deleted"
-// @Failure 404 {object} model.SimpleMsg "AI application not found"
-// @Security BearerAuth
-// @Router /apps/{appId} [delete]
+// RestDeleteApp deletes an AI application.
 func (h *Handler) RestDeleteApp(c echo.Context) error {
 	ctx := c.Request().Context()
 	appID := c.Param("appId")
@@ -122,21 +72,7 @@ func (h *Handler) RestDeleteApp(c echo.Context) error {
 	return c.JSON(http.StatusOK, model.SimpleMsg{Message: "AI application deleted"})
 }
 
-// RestGetAppSpecs godoc
-// @ID GetAppSpecs
-// @Summary Recommend accelerator specs for an AI application
-// @Description Ask the partner recommender API (AIAPP_RECOMMENDER_URL) for node specs that satisfy the accelerator requirement. Without a recommender API this answers 422.
-// @Tags [App] AI Application Catalog
-// @Produce json
-// @Param appId path string true "AI application ID" default(vllm-llama31-8b)
-// @Param limit query int false "How many candidates to return" default(5)
-// @Success 200 {array} model.SpecCandidate "Matching node specs"
-// @Failure 404 {object} model.SimpleMsg "AI application not found"
-// @Failure 422 {object} model.SimpleMsg "No recommender configured"
-// @Failure 500 {object} model.SimpleMsg "Spec recommendation failed"
-// @Failure 502 {object} model.SimpleMsg "Remote placement service failed"
-// @Security BearerAuth
-// @Router /apps/{appId}/specs [get]
+// RestGetAppSpecs recommends accelerator specs for an AI application.
 func (h *Handler) RestGetAppSpecs(c echo.Context) error {
 	ctx := c.Request().Context()
 	appID := c.Param("appId")

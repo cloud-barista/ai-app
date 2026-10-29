@@ -260,7 +260,6 @@ func TestNoRecommenderIsUnprocessable(t *testing.T) {
 		name string
 		rec  *httptest.ResponseRecorder
 	}{
-		{"specs", do(s, http.MethodGet, "/aiapp/apps/vllm-llama31-8b/specs", "")},
 		{"plan without spec", postJSON(s, "/aiapp/ns/default/deployments/plan",
 			`{"appId":"vllm-llama31-8b","infraName":"vllm-lab-02"}`)},
 		{"plan with spec only", postJSON(s, "/aiapp/ns/default/deployments/plan",

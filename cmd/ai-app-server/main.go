@@ -18,6 +18,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
@@ -83,6 +84,12 @@ func main() {
 		log.Warn().Msg("AIAPP_MODEL_STORE_FILE is not set: the AI model catalog is kept in memory and registered models are lost on restart")
 	}
 
+	appStore, err := appstore.Open(cfg.AppStore.Dir, cfg.AppStore.UploadMaxBytes)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open AI application store")
+		os.Exit(1)
+	}
+
 	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
 	deployOptions := append(deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner),
 		deploy.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
@@ -91,6 +98,7 @@ func main() {
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)
 	tools.RegisterModels(registry, modelCatalog)
+	tools.RegisterApps(registry, appStore)
 
 	// Which CB-Tumblebug this talks to is worth one line at startup whatever the
 	// answer, because a service pointed at the wrong platform behaves normally
@@ -125,6 +133,7 @@ func main() {
 		Archive: archiveStore,
 		Tools:   registry,
 		Models:  modelCatalog,
+		Apps:    appStore,
 	})
 	rest.MarkReady()
 
