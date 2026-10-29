@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	testKeyBody = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ"
+	testKeyBody = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ=="
 	// The PEM label is split so that secret scanners do not take this fake
 	// key for a real one.
 	testKeyLabel = "OPENSSH " + "PRIVATE KEY"
@@ -41,6 +41,9 @@ type fakeSemaphore struct {
 	failCreate string
 	// expireSessionOnce answers 401 to the first authenticated call after login.
 	expireSessionOnce bool
+	// lateLines are log lines stored one per output read after the task
+	// ended, the way Semaphore stores log lines after the final status.
+	lateLines int
 
 	nextID      int
 	sessions    map[string]bool
@@ -224,11 +227,20 @@ func (f *fakeSemaphore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, []map[string]any{
+		lines := []map[string]any{
 			{"task_id": itemID, "time": "2026-10-29T11:34:29Z", "output": "Task added to queue"},
 			{"task_id": itemID, "time": "2026-10-29T11:34:30Z", "output": "\x1b[0;32m  - hello from node\x1b[0m\n"},
 			{"task_id": itemID, "time": "2026-10-29T11:34:31Z", "output": "key line " + testKeyBody},
-		})
+		}
+		task := f.tasks[itemID]
+		stored, _ := task["late_stored"].(int)
+		for i := 0; i < stored; i++ {
+			lines = append(lines, map[string]any{"task_id": itemID, "time": "2026-10-29T11:34:32Z", "output": "late " + strconv.Itoa(i)})
+		}
+		if stored < f.lateLines {
+			task["late_stored"] = stored + 1
+		}
+		writeJSON(w, http.StatusOK, lines)
 
 	case r.Method == http.MethodPost && kind == "tasks" && sub == "stop":
 		f.stopped = true
@@ -293,9 +305,17 @@ func (f *fakeSemaphore) count(kind string) int {
 		}
 		return n
 	case "inventory":
-		return len(f.inventories)
+		n := 0
+		for _, inv := range f.inventories {
+			if inv["name"] != PlaceholderInventoryName {
+				n++
+			}
+		}
+		return n
 	case "templates":
 		return len(f.templates)
+	case "tasks":
+		return len(f.tasks)
 	}
 	return -1
 }
@@ -313,7 +333,12 @@ func (f *fakeSemaphore) only(kind string) map[string]any {
 		}
 		return nil
 	case "inventory":
-		store = f.inventories
+		for _, inv := range f.inventories {
+			if inv["name"] != PlaceholderInventoryName {
+				return inv
+			}
+		}
+		return nil
 	case "templates":
 		store = f.templates
 	case "tasks":
@@ -347,12 +372,17 @@ func testSpec() RunSpec {
 	}
 }
 
+// assertCleanedUp checks that no run key or inventory is left, and that the
+// template of the playbook and the tasks it ran are kept.
 func assertCleanedUp(t *testing.T, fake *fakeSemaphore) {
 	t.Helper()
-	for _, kind := range []string{"keys", "inventory", "templates"} {
+	for _, kind := range []string{"keys", "inventory"} {
 		if n := fake.count(kind); n != 0 {
 			t.Errorf("%d %s left in Semaphore, want 0", n, kind)
 		}
+	}
+	if n := fake.count("templates"); n != 1 {
+		t.Errorf("%d templates in Semaphore, want the one of the playbook", n)
 	}
 }
 
@@ -398,8 +428,23 @@ func TestRunRegistersRunsAndCleansUp(t *testing.T) {
 	if inv["type"] != inventoryStatic || !strings.HasPrefix(inv["inventory"].(string), wantInv) {
 		t.Errorf("inventory = %v", inv)
 	}
-	if tpl["playbook"] != "copy-and-run.yml" || tpl["app"] != appAnsible || tpl["environment_id"] == nil {
+	if tpl["playbook"] != "copy-and-run.yml" || tpl["app"] != appAnsible || tpl["environment_id"] == nil ||
+		tpl["name"] != "aiapp-copy-and-run" {
 		t.Errorf("template = %v", tpl)
+	}
+	invID := 0
+	fake.mu.Lock()
+	for id, item := range fake.inventories {
+		if item["name"] == PlaceholderInventoryName && tpl["inventory_id"] != float64(id) {
+			t.Errorf("template inventory = %v, want the placeholder %d", tpl["inventory_id"], id)
+		}
+	}
+	fake.mu.Unlock()
+	if v, ok := task["inventory_id"].(float64); ok {
+		invID = int(v)
+	}
+	if invID == 0 || invID == int(tpl["inventory_id"].(float64)) {
+		t.Errorf("task inventory_id = %v, want the run inventory, not the template one", task["inventory_id"])
 	}
 	vars := map[string]any{}
 	if err := json.Unmarshal([]byte(task["environment"].(string)), &vars); err != nil || vars["script"] != "run.sh" {
@@ -477,12 +522,12 @@ func TestRunCancelledStillCleansUp(t *testing.T) {
 
 func TestRunCleansUpWhatWasRegisteredBeforeAFailure(t *testing.T) {
 	fake := newFakeSemaphore()
-	fake.failCreate = "templates"
+	fake.failCreate = "tasks"
 	c := newTestClient(t, fake, 5*time.Second)
 
 	result, err := c.Run(context.Background(), testSpec())
-	if err == nil || !strings.Contains(err.Error(), "rejected templates") {
-		t.Fatalf("Run error = %v, want the template rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "rejected tasks") {
+		t.Fatalf("Run error = %v, want the task rejection", err)
 	}
 	if result.TaskID != 0 || result.Status != "" {
 		t.Errorf("result = %+v, want no task", result)
@@ -502,8 +547,8 @@ func TestRunReportsCleanupFailures(t *testing.T) {
 	if len(result.CleanupErrors) != 1 || !strings.Contains(result.CleanupErrors[0], "failed to delete semaphore key") {
 		t.Errorf("cleanup errors = %v, want the key", result.CleanupErrors)
 	}
-	if fake.count("inventory") != 0 || fake.count("templates") != 0 {
-		t.Error("inventory or template left behind")
+	if fake.count("inventory") != 0 {
+		t.Error("inventory left behind")
 	}
 }
 
@@ -542,6 +587,8 @@ func TestRunRejectsBadSpecsBeforeRegistering(t *testing.T) {
 		"user with a space":        func(s *RunSpec) { s.User = "cb user" },
 		"port out of range":        func(s *RunSpec) { s.Port = 70000 },
 		"no key":                   func(s *RunSpec) { s.PrivateKey = " " },
+		"key not pem":              func(s *RunSpec) { s.PrivateKey = "not-a-key" },
+		"pem but not a key":        func(s *RunSpec) { s.PrivateKey = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n" },
 		"playbook outside":         func(s *RunSpec) { s.Playbook = "../etc/x.yml" },
 		"not a playbook":           func(s *RunSpec) { s.Playbook = "run.sh" },
 	}
@@ -615,6 +662,119 @@ func TestRunReusesProjectRepositoryAndEnvironment(t *testing.T) {
 	for _, r := range fake.repos {
 		if r["git_url"] != "/ansible" {
 			t.Errorf("repository = %v", r)
+		}
+	}
+}
+
+func TestRunKeepsOneTemplatePerPlaybookAndTheTasks(t *testing.T) {
+	fake := newFakeSemaphore()
+	c := newTestClient(t, fake, 5*time.Second)
+	playbooks := []string{"install-docker.yml", "copy-and-run.yml", "install-docker.yml"}
+	taskIDs := map[int]bool{}
+	for i, playbook := range playbooks {
+		fake.mu.Lock()
+		fake.taskPolls = 0
+		fake.mu.Unlock()
+		spec := testSpec()
+		spec.Playbook = playbook
+		result, err := c.Run(context.Background(), spec)
+		if err != nil || !result.Succeeded() {
+			t.Fatalf("Run %d = %+v, %v", i, result, err)
+		}
+		taskIDs[result.TaskID] = true
+	}
+	if n := fake.count("templates"); n != 2 {
+		t.Errorf("%d templates, want one per playbook", n)
+	}
+	if n := fake.count("tasks"); n != len(playbooks) || len(taskIDs) != len(playbooks) {
+		t.Errorf("%d tasks kept, %d distinct, want %d", n, len(taskIDs), len(playbooks))
+	}
+	if fake.count("keys") != 0 || fake.count("inventory") != 0 {
+		t.Error("a run key or inventory was left behind")
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	names := map[string]bool{}
+	for _, tpl := range fake.templates {
+		names[tpl["name"].(string)] = true
+	}
+	if !names["aiapp-install-docker"] || !names["aiapp-copy-and-run"] {
+		t.Errorf("template names = %v", names)
+	}
+	placeholders := 0
+	for _, inv := range fake.inventories {
+		if inv["name"] == PlaceholderInventoryName {
+			placeholders++
+		}
+	}
+	if placeholders != 1 {
+		t.Errorf("%d placeholder inventories, want 1", placeholders)
+	}
+}
+
+func TestRunsStartedTogetherShareOneTemplate(t *testing.T) {
+	fake := newFakeSemaphore()
+	fake.statuses = []string{StatusSuccess}
+	c := newTestClient(t, fake, 5*time.Second)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := c.Run(context.Background(), testSpec()); err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := fake.count("templates"); n != 1 {
+		t.Errorf("%d templates, want 1", n)
+	}
+}
+
+func TestTemplateName(t *testing.T) {
+	for in, want := range map[string]string{
+		"compose-up.yml":     "aiapp-compose-up",
+		"install-docker.yml": "aiapp-install-docker",
+		"sub/x.yaml":         "aiapp-sub-x",
+	} {
+		if got := TemplateName(in); got != want {
+			t.Errorf("TemplateName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRunWaitsForLogLinesStoredAfterTheTaskEnded(t *testing.T) {
+	fake := newFakeSemaphore()
+	fake.lateLines = 3
+	c := newTestClient(t, fake, 5*time.Second)
+
+	result, err := c.Run(context.Background(), testSpec())
+	if err != nil || !result.Succeeded() {
+		t.Fatalf("Run = %+v, %v", result, err)
+	}
+	if last := result.Output[len(result.Output)-1]; last != "late 2" {
+		t.Errorf("last output line = %q, want the last late line; output = %q", last, result.Output)
+	}
+}
+
+func TestCheckPrivateKey(t *testing.T) {
+	if err := CheckPrivateKey(testKey); err != nil {
+		t.Errorf("CheckPrivateKey(valid) = %v", err)
+	}
+	rsa := "-----BEGIN RSA " + "PRIVATE KEY-----\nAAAA\n-----END RSA " + "PRIVATE KEY-----\n"
+	if err := CheckPrivateKey(rsa); err != nil {
+		t.Errorf("CheckPrivateKey(rsa) = %v", err)
+	}
+	for name, key := range map[string]string{
+		"empty":       "",
+		"not pem":     "not-a-key",
+		"bad base64":  "-----BEGIN " + testKeyLabel + "-----\n!!!\n-----END " + testKeyLabel + "-----\n",
+		"public key":  "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n",
+		"certificate": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+	} {
+		if err := CheckPrivateKey(key); err == nil {
+			t.Errorf("CheckPrivateKey(%s) accepted it", name)
 		}
 	}
 }

@@ -6,6 +6,8 @@
 #   deployment_id  names the folder on the node: /opt/aiapp/<deployment_id>
 #   script         file name of the script inside stage_dir, run with bash
 #                  from that folder. A .env in the folder is exported first.
+#                  It may start with "." (AI-App stages it as .aiapp-run.sh so
+#                  that it never clashes with an uploaded file name).
 - name: Copy staged files and run the application script
   hosts: all
   become: true
@@ -19,7 +21,7 @@
         that:
           - stage_dir is defined and stage_dir | length > 0
           - deployment_id is defined and deployment_id is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
-          - script is defined and script is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$') and '..' not in script
+          - script is defined and script is match('^[A-Za-z0-9.][A-Za-z0-9._/-]*$') and '..' not in script
         fail_msg: stage_dir, deployment_id and script are required, and deployment_id and script must be plain names
         quiet: true
 

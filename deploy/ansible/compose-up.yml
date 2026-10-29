@@ -5,6 +5,10 @@
 #   stage_dir       staged folder with docker-compose.yml, as seen inside the
 #                   Semaphore container
 #   deployment_id   names the folder on the node: /opt/aiapp/<deployment_id>
+#   wait_services   optional list of one-shot services that must exit 0 before
+#                   the service counts as ready, for example the ollama
+#                   model-pull service; waited for with `docker compose wait`
+#   wait_timeout    optional, seconds to wait for each of them (default 1800)
 #   health_url      optional; polled from the node itself with curl
 #   health_retries  optional, attempts before giving up (default 60)
 #   health_delay    optional, seconds between attempts (default 10)
@@ -48,6 +52,22 @@
     - name: Show the compose output
       ansible.builtin.debug:
         var: compose_result.stderr_lines
+
+    - name: Wait until the one-shot services exit
+      ansible.builtin.shell: >-
+        timeout {{ wait_timeout | default(1800) | int }}
+        docker compose wait {{ item | quote }}
+      args:
+        chdir: "{{ app_dir }}"
+      loop: "{{ wait_services | default([]) }}"
+      register: wait_result
+      changed_when: false
+      # Compose v5.6 prints 'container "<id>" exited with status code <n>'
+      # and exits with <n>; the output is checked too, in case a compose
+      # version exits 0 whatever the code it prints.
+      failed_when: >-
+        wait_result.rc != 0 or
+        (wait_result.stdout | trim) is not search('(^|\\s)0$')
 
     - name: Wait until the service answers
       ansible.builtin.command:

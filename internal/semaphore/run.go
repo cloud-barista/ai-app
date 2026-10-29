@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"regexp"
@@ -19,6 +20,12 @@ const (
 	// EnvironmentName is the empty environment every template is bound to. A
 	// template without an environment cannot start a task in v2.12.17.
 	EnvironmentName = "aiapp-empty"
+	// PlaceholderInventoryName is the empty inventory every template is bound
+	// to. v2.12.17 refuses a template without an inventory, and a template
+	// bound to a run's own inventory would keep that inventory, and its key,
+	// from being deleted. Tasks never run with it: each is started with the
+	// inventory of its run.
+	PlaceholderInventoryName = "aiapp-no-hosts"
 
 	defaultPollInterval = 5 * time.Second
 	defaultTimeout      = 30 * time.Minute
@@ -27,6 +34,9 @@ const (
 	cleanupTimeout = time.Minute
 	// stopPolls bounds how many times a stopped task is asked whether it ended.
 	stopPolls = 10
+	// outputPolls bounds how many more times the log of an ended task is read
+	// while it still grows.
+	outputPolls = 15
 	// maxNameLength keeps generated resource names readable in the Semaphore UI.
 	maxNameLength = 48
 
@@ -43,7 +53,7 @@ var (
 
 // RunSpec is one playbook run against one node.
 type RunSpec struct {
-	// Name labels the resources registered for the run, for example
+	// Name labels the key and inventory registered for the run, for example
 	// "<deployment id>-<csp>-<node id>". A random suffix keeps runs apart.
 	Name string
 	Host string
@@ -76,9 +86,15 @@ type RunResult struct {
 // Succeeded reports whether the task ended in success.
 func (r *RunResult) Succeeded() bool { return r != nil && r.Status == StatusSuccess }
 
-// Run registers a key, an inventory and a template for spec, runs the
-// template, waits for it to end, reads its log, and deletes what it
-// registered, whether the run succeeded, failed or was cancelled.
+// Run runs a playbook against one node and waits for it to end.
+//
+// Each playbook has one template, named TemplateName(playbook), created on
+// first use and kept, because Semaphore v2.12.17 deletes a template's tasks and
+// their logs with the template. The node's key and inventory are registered
+// for this run only: the task is started with the run's inventory, which
+// replaces the template's placeholder inventory, and both are deleted
+// afterwards, inventory first, whether the run succeeded, failed or was
+// cancelled. The finished task and its log stay in Semaphore.
 //
 // The returned error covers failures to register, start, follow or read the
 // task. A task that ran and failed is not an error: its Status says so. The
@@ -95,15 +111,7 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 		return result, err
 	}
 
-	projectID, err := c.EnsureProject(ctx, c.project)
-	if err != nil {
-		return result, err
-	}
-	repositoryID, err := c.EnsureRepository(ctx, projectID, RepositoryName, c.playbookDir)
-	if err != nil {
-		return result, err
-	}
-	environmentID, err := c.EnsureEnvironment(ctx, projectID, EnvironmentName)
+	projectID, templateID, err := c.setup(ctx, spec.Playbook)
 	if err != nil {
 		return result, err
 	}
@@ -114,7 +122,7 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 	}
 
 	// Cleanups run in reverse: Semaphore refuses to delete a key an inventory
-	// uses, or an inventory a template uses.
+	// uses.
 	var cleanups []func(context.Context) error
 	defer func() {
 		cctx, cancel := detached(ctx)
@@ -140,16 +148,7 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 	}
 	cleanups = append(cleanups, func(cctx context.Context) error { return c.DeleteInventory(cctx, projectID, inventoryID) })
 
-	templateID, err := c.CreateTemplate(ctx, projectID, Template{
-		Name: name, Playbook: spec.Playbook,
-		InventoryID: inventoryID, RepositoryID: repositoryID, EnvironmentID: environmentID,
-	})
-	if err != nil {
-		return result, err
-	}
-	cleanups = append(cleanups, func(cctx context.Context) error { return c.DeleteTemplate(cctx, projectID, templateID) })
-
-	task, err := c.StartTask(ctx, projectID, templateID, spec.ExtraVars)
+	task, err := c.StartTask(ctx, projectID, templateID, inventoryID, spec.ExtraVars)
 	if err != nil {
 		return result, err
 	}
@@ -159,17 +158,16 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 
 	waitErr := c.wait(ctx, projectID, result)
 	if waitErr != nil {
-		// The template is deleted below, which deletes the task with it, so the
-		// task is stopped first rather than left running.
+		// The task is stopped rather than left running with an inventory and a
+		// key that are about to be deleted.
 		cctx, cancel := detached(ctx)
 		c.stop(cctx, projectID, result)
 		cancel()
 	}
 
-	// The log is read before the template, and the task with it, is deleted.
 	cctx, cancel := detached(ctx)
 	defer cancel()
-	lines, outErr := c.TaskOutput(cctx, projectID, task.ID)
+	lines, outErr := c.settledOutput(cctx, projectID, task.ID)
 	if outErr == nil {
 		result.Output = outputLines(lines, spec.PrivateKey)
 	}
@@ -182,6 +180,50 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 		return result, outErr
 	}
 	return result, nil
+}
+
+// TemplateName is the name of the template that runs playbook: "aiapp-" and
+// the playbook path without its extension, for example aiapp-compose-up.
+func TemplateName(playbook string) string {
+	base := strings.TrimSuffix(strings.TrimSuffix(playbook, ".yml"), ".yaml")
+	return "aiapp-" + strings.Trim(namePattern.ReplaceAllString(base, "-"), "-")
+}
+
+// setup finds or creates the project, its playbook repository, the empty
+// environment, the placeholder inventory and the template of playbook, and
+// returns the project and template IDs.
+func (c *Client) setup(ctx context.Context, playbook string) (projectID, templateID int, err error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+
+	projectID, err = c.EnsureProject(ctx, c.project)
+	if err != nil {
+		return 0, 0, err
+	}
+	repositoryID, err := c.EnsureRepository(ctx, projectID, RepositoryName, c.playbookDir)
+	if err != nil {
+		return 0, 0, err
+	}
+	environmentID, err := c.EnsureEnvironment(ctx, projectID, EnvironmentName)
+	if err != nil {
+		return 0, 0, err
+	}
+	noneKeyID, err := c.EnsureNoneKey(ctx, projectID)
+	if err != nil {
+		return 0, 0, err
+	}
+	placeholderID, err := c.EnsureInventory(ctx, projectID, PlaceholderInventoryName, "", noneKeyID)
+	if err != nil {
+		return 0, 0, err
+	}
+	templateID, err = c.EnsureTemplate(ctx, projectID, Template{
+		Name: TemplateName(playbook), Playbook: playbook,
+		InventoryID: placeholderID, RepositoryID: repositoryID, EnvironmentID: environmentID,
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return projectID, templateID, nil
 }
 
 // wait polls the task until it ends, the run times out or ctx is done.
@@ -227,6 +269,39 @@ func (c *Client) wait(ctx context.Context, projectID int, result *RunResult) err
 		return nil
 	}
 	return fmt.Errorf("semaphore task %d did not end within %d status checks (last status %q)", result.TaskID, maxPolls, result.Status)
+}
+
+// settledOutput reads the log of an ended task until two reads a poll apart
+// return the same number of lines.
+//
+// Semaphore v2.12.17 stores log lines after the task status, not before it:
+// a compose-up task whose last step printed about 2000 lines answered
+// success with 186 of them stored, and the rest arrived within the second.
+func (c *Client) settledOutput(ctx context.Context, projectID, taskID int) ([]OutputLine, error) {
+	lines, err := c.TaskOutput(ctx, projectID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	interval := c.pollInterval
+	if interval <= 0 || interval > time.Second {
+		interval = time.Second
+	}
+	for i := 0; i < outputPolls; i++ {
+		select {
+		case <-ctx.Done():
+			return lines, nil
+		case <-time.After(interval):
+		}
+		next, err := c.TaskOutput(ctx, projectID, taskID)
+		if err != nil {
+			return lines, nil
+		}
+		if len(next) == len(lines) {
+			return next, nil
+		}
+		lines = next
+	}
+	return lines, nil
 }
 
 // stop asks Semaphore to stop the task and waits a bounded while for it to end.
@@ -276,11 +351,31 @@ func validateSpec(spec *RunSpec) error {
 	if !userPattern.MatchString(spec.User) {
 		return fmt.Errorf("invalid ssh user %q", spec.User)
 	}
-	if strings.TrimSpace(spec.PrivateKey) == "" {
-		return errors.New("no private key")
+	if err := CheckPrivateKey(spec.PrivateKey); err != nil {
+		return err
 	}
 	if !playbookPattern.MatchString(spec.Playbook) || strings.Contains(spec.Playbook, "..") {
 		return fmt.Errorf("invalid playbook %q", spec.Playbook)
+	}
+	return nil
+}
+
+// CheckPrivateKey reports why key is not a PEM private key block.
+//
+// Semaphore v2.12.17 does not refuse a malformed key when it is registered:
+// the task that uses it makes the whole Semaphore process panic ("close of nil
+// channel" in pkg/ssh/agent.go) and exit. A key is therefore checked here and
+// never sent unless it decodes.
+func CheckPrivateKey(key string) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("no private key")
+	}
+	block, _ := pem.Decode([]byte(strings.TrimSpace(key)))
+	if block == nil {
+		return errors.New("the private key is not a PEM block")
+	}
+	if !strings.HasSuffix(block.Type, "PRIVATE KEY") {
+		return fmt.Errorf("the PEM block is a %q, not a private key", block.Type)
 	}
 	return nil
 }

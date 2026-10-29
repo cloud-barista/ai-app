@@ -65,6 +65,8 @@ type Config struct {
 	Semaphore SemaphoreConfig
 	// Stage is the shared folder deployment files are placed in for Semaphore.
 	Stage StageConfig
+	// NodeDeploy holds where node deployment records are kept.
+	NodeDeploy NodeDeployConfig
 }
 
 // BackendConfig selects the local or a remote implementation of one AI-App
@@ -195,6 +197,15 @@ type StageConfig struct {
 	Root string
 }
 
+// NodeDeployConfig holds where the records of deployments onto existing nodes
+// are kept.
+type NodeDeployConfig struct {
+	// StoreFile is the JSON file every deployment record is written to after
+	// each change and read from at startup. Empty keeps the records in memory,
+	// so they are lost on restart.
+	StoreFile string
+}
+
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
 	Dir string
@@ -286,6 +297,7 @@ func Load() (*Config, error) {
 		"semaphore.poll_interval",
 		"semaphore.timeout",
 		"stage.root",
+		"deployment.store_file",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -379,6 +391,9 @@ func Load() (*Config, error) {
 		},
 		Stage: StageConfig{
 			Root: filepath.Clean(strings.TrimSpace(v.GetString("stage.root"))),
+		},
+		NodeDeploy: NodeDeployConfig{
+			StoreFile: strings.TrimSpace(v.GetString("deployment.store_file")),
 		},
 	}
 

@@ -35,6 +35,22 @@ var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // file so that it never appears in the rendered file itself.
 const hfTokenEnv = "HF_TOKEN"
 
+// ollamaPullService is the one-shot service of the ollama template that pulls
+// the model into the server.
+const ollamaPullService = "model-pull"
+
+// CompletionServices names the one-shot services of an engine's compose file
+// that must exit 0 before the model service is ready. The ollama server
+// answers its health path before the model is pulled, so a deployment waits
+// for the pull to finish as well. vLLM loads the model before /health answers
+// and has none.
+func CompletionServices(engineID string) []string {
+	if engineID == model.EngineOllama {
+		return []string{ollamaPullService}
+	}
+	return nil
+}
+
 // Options are the per-deployment choices of a render.
 type Options struct {
 	// GPU reserves every NVIDIA GPU of the node for the engine container.

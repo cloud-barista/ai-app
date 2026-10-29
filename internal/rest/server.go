@@ -20,6 +20,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -42,6 +43,8 @@ type AppDependencies struct {
 	Models *modelcat.Store
 	// Apps is the store of uploaded AI applications.
 	Apps *appstore.Store
+	// NodeDeploy deploys models and applications onto existing nodes.
+	NodeDeploy *nodedeploy.Service
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -55,6 +58,8 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		tools:   deps.Tools,
 		models:  deps.Models,
 		apps:    deps.Apps,
+
+		nodeDeploy: deps.NodeDeploy,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -87,6 +92,14 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/models/:modelId/artifacts/:artifactId/compose", handler.RestGetModelCompose)
 	g.GET("/engines", handler.RestGetAllEngineProfiles)
 	g.GET("/engines/:engineId", handler.RestGetEngineProfile)
+
+	// Deployment of model services and applications onto nodes CB-Tumblebug
+	// already runs, and control of those nodes.
+	g.POST("/deployments", handler.RestPostNodeDeployment)
+	g.GET("/deployments", handler.RestGetAllNodeDeployments)
+	g.GET("/deployments/:id", handler.RestGetNodeDeployment)
+	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
+	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
 
 	// Deployment and lifecycle, callable without going through the agent.
 	g.POST("/ns/:nsId/deployments/plan", handler.RestPostDeploymentPlan)

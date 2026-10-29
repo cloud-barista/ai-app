@@ -22,7 +22,7 @@ const testPrivateKey = "-----BEGIN OPENSSH " + "PRIVATE KEY-----\nc2VjcmV0LWtleS
 const nodeBody = `{
 	"id": "vm1", "name": "vm1", "status": "Running",
 	"publicIP": "203.0.113.10", "privateIP": "10.0.0.5", "sshPort": 22,
-	"nodeUserName": "cb-user", "sshKeyId": "aws-key",
+	"nodeUserName": "cb-user", "sshKeyId": "aws-key", "specId": "aws+ap-northeast-2+t3.small",
 	"connectionName": "aws-ap-northeast-2",
 	"connectionConfig": {
 		"configName": "aws-ap-northeast-2", "providerName": "AWS",
@@ -48,6 +48,8 @@ func newNodeServer(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, nodeBody)
 		case "GET /tumblebug/ns/etri/resources/sshKey/aws-key":
 			_, _ = w.Write(keyBody)
+		case "GET /tumblebug/ns/etri/control/infra/travel/node/vm1":
+			_, _ = io.WriteString(w, `{"message":"`+r.URL.Query().Get("action")+` vm1 done"}`)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = io.WriteString(w, `{"message":"not found"}`)
@@ -166,5 +168,27 @@ func TestResolveNodeAccess(t *testing.T) {
 				t.Errorf("access = %+v, want %+v", *got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGetNodeReadsTheSpec(t *testing.T) {
+	c := newTestClient(newNodeServer(t))
+
+	node, err := c.GetNode(context.Background(), "etri", "travel", "vm1")
+	if err != nil || node.SpecID != "aws+ap-northeast-2+t3.small" {
+		t.Errorf("GetNode = %+v, %v, want the spec id", node, err)
+	}
+}
+
+func TestControlNode(t *testing.T) {
+	c := newTestClient(newNodeServer(t))
+
+	msg, err := c.ControlNode(context.Background(), "etri", "travel", "vm1", NodeActionReboot)
+	if err != nil || msg != "reboot vm1 done" {
+		t.Errorf("ControlNode = %q, %v", msg, err)
+	}
+	if _, err := c.ControlNode(context.Background(), "etri", "travel", "vm9", NodeActionReboot); err == nil ||
+		!strings.Contains(err.Error(), `"vm9"`) {
+		t.Errorf("ControlNode on a missing node = %v, want an error naming it", err)
 	}
 }

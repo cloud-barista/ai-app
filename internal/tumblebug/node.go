@@ -17,14 +17,16 @@ const defaultSSHPort = 22
 // The fields follow model.NodeInfo of the CB-Tumblebug 0.13 OpenAPI document,
 // returned by GET /ns/{nsId}/infra/{infraId}/node/{nodeId}.
 type Node struct {
-	ID               string         `json:"id"`
-	Name             string         `json:"name"`
-	Status           string         `json:"status"`
-	PublicIP         string         `json:"publicIP"`
-	PrivateIP        string         `json:"privateIP"`
-	SSHPort          int            `json:"sshPort"`
-	NodeUserName     string         `json:"nodeUserName"`
-	SSHKeyID         string         `json:"sshKeyId"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	PublicIP     string `json:"publicIP"`
+	PrivateIP    string `json:"privateIP"`
+	SSHPort      int    `json:"sshPort"`
+	NodeUserName string `json:"nodeUserName"`
+	SSHKeyID     string `json:"sshKeyId"`
+	// SpecID names the node spec, read from the spec namespace with GetSpec.
+	SpecID           string         `json:"specId"`
 	ConnectionName   string         `json:"connectionName"`
 	ConnectionConfig NodeConnConfig `json:"connectionConfig"`
 	// Region is the region and zone as the node itself records them. It is
@@ -131,6 +133,33 @@ func (c *Client) GetSSHKey(ctx context.Context, nsID, sshKeyID string) (*SSHKey,
 		VerifiedUsername: wire.VerifiedUsername,
 		PrivateKey:       wire.PrivateKey,
 	}, nil
+}
+
+// Node lifecycle actions accepted by ControlNode, as CB-Tumblebug 0.13 lists
+// them for GET /ns/{nsId}/control/infra/{infraId}/node/{nodeId}.
+const (
+	NodeActionSuspend   = "suspend"
+	NodeActionResume    = "resume"
+	NodeActionReboot    = "reboot"
+	NodeActionTerminate = "terminate"
+)
+
+// ControlNode applies a lifecycle action to one node of an Infra and returns
+// the CB-Tumblebug message.
+//
+// CB-Tumblebug exposes this as GET, like ControlInfra.
+func (c *Client) ControlNode(ctx context.Context, nsID, infraID, nodeID, action string) (string, error) {
+	query := url.Values{"action": []string{action}}
+	path := fmt.Sprintf("/ns/%s/control/infra/%s/node/%s",
+		url.PathEscape(nsID), url.PathEscape(infraID), url.PathEscape(nodeID))
+
+	var result struct {
+		Message string `json:"message"`
+	}
+	if err := c.Do(ctx, http.MethodGet, path, query, nil, &result); err != nil {
+		return "", fmt.Errorf("failed to run action %q on node %q of infra %q: %w", action, nodeID, infraID, err)
+	}
+	return result.Message, nil
 }
 
 // GetNodeAccess reads a node and its SSH key, and resolves how to reach it.

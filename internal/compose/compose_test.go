@@ -146,3 +146,23 @@ func TestRenderRefusesBadEnvName(t *testing.T) {
 		t.Errorf("error = %v, want ErrInvalidOption", err)
 	}
 }
+
+func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
+	m, a := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
+	rendered, err := Render(m, a, engineOf(t, model.EngineOllama), Options{})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	services := CompletionServices(model.EngineOllama)
+	if len(services) == 0 {
+		t.Fatal("ollama has no completion service; the pull would not be waited for")
+	}
+	for _, name := range services {
+		if !strings.Contains(rendered, "\n  "+name+":\n") {
+			t.Errorf("service %q is not in the rendered ollama file", name)
+		}
+	}
+	if got := CompletionServices(model.EngineVLLM); len(got) != 0 {
+		t.Errorf("vllm completion services = %v, want none", got)
+	}
+}

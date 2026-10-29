@@ -50,6 +50,10 @@ type Client struct {
 
 	loginMu  sync.Mutex
 	loggedIn bool
+
+	// setupMu serialises the look-up-or-create calls of Run, so that runs
+	// started together do not each create the shared template of a playbook.
+	setupMu sync.Mutex
 }
 
 // NewClient builds a Client from configuration.

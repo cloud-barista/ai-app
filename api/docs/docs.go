@@ -350,6 +350,241 @@ const docTemplate = `{
                 }
             }
         },
+        "/deployments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List every deployment made through POST /deployments, newest first, with the status of every node. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "List deployments onto nodes",
+                "operationId": "GetAllNodeDeployments",
+                "responses": {
+                    "200": {
+                        "description": "Deployments, newest first",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeploymentListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype model-service needs modelService: modelId and artifactId from GET /models, and optionally engine (an engine profile the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the engine profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to, /opt/aiapp/\u003cid\u003e on the node). The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Deploy onto existing nodes",
+                "operationId": "PostNodeDeployment",
+                "parameters": [
+                    {
+                        "description": "What to deploy and where",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeploymentReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dry run: the files were placed and nothing was run",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeployment"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted; the deployment goes on in the background",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed request",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Model, artifact, engine profile or application not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "A k8s target, or an artifact the engine cannot run",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The record could not be written",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/deployments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of a model service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Get a deployment onto nodes",
+                "operationId": "GetNodeDeployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment record",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeployment"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/deployments/{id}/control": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Apply a CB-Tumblebug lifecycle action (suspend, resume, reboot or terminate) to every node of a deployment, one call per node. A node CB-Tumblebug refuses is reported failed and the others still get the action. Nothing is sent, and every node is reported blocked, when dry run is on or the deployment was a dry run. Every call is archived (kind node-control).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Control the nodes of a deployment",
+                "operationId": "PostNodeDeploymentControl",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Lifecycle action",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeControlReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Per node result",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeControlResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Unknown action",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/deployments/{id}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. A step's output appears when its task ends. The tasks and their logs are also kept in Semaphore under the template of each playbook.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Get the task output of a deployment",
+                "operationId": "GetNodeDeploymentLogs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task output per node and step",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeploymentLogs"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
         "/engine/card": {
             "get": {
                 "security": [
@@ -2521,6 +2756,470 @@ const docTemplate = `{
                 }
             }
         },
+        "model.NodeAppReq": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "env": {
+                    "description": "Env is written to the .env file in the folder the script runs in, and\nexported before the script starts. Names match [A-Z_][A-Z0-9_]*; values\nhold no line break and no single quote. Addresses of other nodes go\nhere.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is an uploaded application (GET /apps).",
+                    "type": "string",
+                    "example": "open-webui"
+                },
+                "version": {
+                    "description": "Version is the version to deploy. 0 takes the latest; the record keeps\nthe version taken.",
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "model.NodeControlReq": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "description": "Action is passed to CB-Tumblebug node control.",
+                    "type": "string",
+                    "enum": [
+                        "suspend",
+                        "resume",
+                        "reboot",
+                        "terminate"
+                    ],
+                    "example": "reboot"
+                }
+            }
+        },
+        "model.NodeControlResp": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "reboot"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
+                },
+                "nodes": {
+                    "description": "Nodes are the per node results, in deployment order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeControlResult"
+                    }
+                }
+            }
+        },
+        "model.NodeControlResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Message is the CB-Tumblebug answer, or why nothing was sent.",
+                    "type": "string",
+                    "example": "Rebooting the node vm1"
+                },
+                "status": {
+                    "description": "Status is done, failed, or blocked when nothing was sent because the\nservice or the deployment is in dry run.",
+                    "type": "string",
+                    "enum": [
+                        "done",
+                        "failed",
+                        "blocked"
+                    ],
+                    "example": "done"
+                },
+                "target": {
+                    "$ref": "#/definitions/model.NodeDeployTarget"
+                }
+            }
+        },
+        "model.NodeDeployNode": {
+            "type": "object",
+            "properties": {
+                "csp": {
+                    "description": "CSP is the cloud, from connectionConfig.providerName, in lower case.",
+                    "type": "string",
+                    "example": "aws"
+                },
+                "host": {
+                    "description": "Host is the public IP, or the private IP when the node has none.",
+                    "type": "string",
+                    "example": "203.0.113.10"
+                },
+                "port": {
+                    "description": "Port is the SSH port.",
+                    "type": "integer",
+                    "example": 22
+                },
+                "region": {
+                    "description": "Region and Zone are where the node runs.",
+                    "type": "string",
+                    "example": "ap-northeast-2"
+                },
+                "specId": {
+                    "description": "SpecID is the node spec in CB-Tumblebug.",
+                    "type": "string",
+                    "example": "aws+ap-northeast-2+g4dn.xlarge"
+                },
+                "user": {
+                    "description": "User is the SSH user.",
+                    "type": "string",
+                    "example": "cb-user"
+                },
+                "zone": {
+                    "type": "string",
+                    "example": "ap-northeast-2a"
+                }
+            }
+        },
+        "model.NodeDeployNodeLogs": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "succeeded"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployStep"
+                    }
+                },
+                "target": {
+                    "$ref": "#/definitions/model.NodeDeployTarget"
+                }
+            }
+        },
+        "model.NodeDeployResult": {
+            "type": "object",
+            "properties": {
+                "compose": {
+                    "description": "Compose is the rendered docker-compose.yml of a model service.",
+                    "type": "string"
+                },
+                "error": {
+                    "description": "Error is why the node failed.",
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "description": "FinishedAt is when work on the node ended.",
+                    "type": "string",
+                    "example": "2026-10-29T12:04:59Z"
+                },
+                "gpu": {
+                    "description": "GPU is whether the engine was given the node's GPUs and the NVIDIA\nContainer Toolkit was installed.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "gpuSource": {
+                    "description": "GPUSource says where GPU came from: request, spec, or default when the\nspec could not be read.",
+                    "type": "string",
+                    "enum": [
+                        "request",
+                        "spec",
+                        "default"
+                    ],
+                    "example": "spec"
+                },
+                "node": {
+                    "description": "Node is how the node was reached, as read from CB-Tumblebug. Absent\nwhen the node could not be read. The SSH key is never included.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeDeployNode"
+                        }
+                    ]
+                },
+                "notes": {
+                    "description": "Notes record decisions made for this node, such as why the spec could\nnot be read.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "serviceUrl": {
+                    "description": "ServiceURL is the model service API on the node, built from the public\nor private IP the node was reached at, the engine port and its API base\npath. Model services only.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/v1"
+                },
+                "stageDir": {
+                    "description": "StageDir is the folder the files were placed in on the shared stage\nvolume: \u003cAIAPP_STAGE_ROOT\u003e/\u003cdeployment id\u003e/\u003ccsp\u003e-\u003cnode id\u003e.",
+                    "type": "string",
+                    "example": "/var/lib/aiapp/stage/3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48/aws-vm1"
+                },
+                "startedAt": {
+                    "description": "StartedAt is when work on the node began.",
+                    "type": "string",
+                    "example": "2026-10-29T12:00:01Z"
+                },
+                "status": {
+                    "description": "Status is pending, running, succeeded, failed, dry-run or interrupted.",
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "dry-run",
+                        "interrupted"
+                    ],
+                    "example": "succeeded"
+                },
+                "steps": {
+                    "description": "Steps are the playbooks run on the node, in order. A step that failed\nends the node.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployStep"
+                    }
+                },
+                "target": {
+                    "description": "Target is the target as requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeDeployTarget"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.NodeDeployStep": {
+            "type": "object",
+            "properties": {
+                "cleanupErrors": {
+                    "description": "CleanupErrors name the Semaphore key or inventory of this run that\ncould not be deleted. A key named here may still be stored in Semaphore.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "error": {
+                    "description": "Error is why the run could not be registered, started or followed.",
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "type": "string",
+                    "example": "2026-10-29T12:02:10Z"
+                },
+                "output": {
+                    "description": "Output is the task log, one line per entry. It is returned by\nGET /deployments/{id}/logs and left out of the deployment record.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "playbook": {
+                    "description": "Playbook is install-docker.yml, compose-up.yml or copy-and-run.yml.",
+                    "type": "string",
+                    "example": "compose-up.yml"
+                },
+                "startedAt": {
+                    "type": "string",
+                    "example": "2026-10-29T12:00:02Z"
+                },
+                "status": {
+                    "description": "Status is the final Semaphore task status: success, error, stopped or\nrejected, or empty when the task never started.",
+                    "type": "string",
+                    "example": "success"
+                },
+                "taskId": {
+                    "description": "TaskID is the Semaphore task, kept in Semaphore with its log.",
+                    "type": "integer",
+                    "example": 2147483645
+                }
+            }
+        },
+        "model.NodeDeployTarget": {
+            "type": "object",
+            "required": [
+                "kind",
+                "nsId"
+            ],
+            "properties": {
+                "infraId": {
+                    "description": "InfraID is the CB-Tumblebug Infra the node belongs to.",
+                    "type": "string",
+                    "example": "travel"
+                },
+                "k8sClusterId": {
+                    "description": "K8sClusterID is reserved for kind \"k8s\".",
+                    "type": "string",
+                    "example": ""
+                },
+                "kind": {
+                    "description": "Kind is \"node\". \"k8s\" is reserved for Kubernetes clusters and refused\nwith 422.",
+                    "type": "string",
+                    "enum": [
+                        "node",
+                        "k8s"
+                    ],
+                    "example": "node"
+                },
+                "nodeGroupId": {
+                    "description": "NodeGroupID is reserved for kind \"k8s\".",
+                    "type": "string",
+                    "example": ""
+                },
+                "nodeId": {
+                    "description": "NodeID is the node within the Infra.",
+                    "type": "string",
+                    "example": "vm1"
+                },
+                "nsId": {
+                    "description": "NsID is the CB-Tumblebug namespace of the Infra.",
+                    "type": "string",
+                    "example": "etri"
+                }
+            }
+        },
+        "model.NodeDeployment": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "CreatedAt is when the request was accepted.",
+                    "type": "string",
+                    "example": "2026-10-29T12:00:00Z"
+                },
+                "dryRun": {
+                    "description": "DryRun is true when the service ran with dry run on: only the node\nlook-up and file placement were done.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "error": {
+                    "description": "Error is why the deployment as a whole stopped, when it did.",
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "description": "FinishedAt is when the last node finished. Absent while it runs.",
+                    "type": "string",
+                    "example": "2026-10-29T12:05:00Z"
+                },
+                "id": {
+                    "description": "ID is a UUID (version 4). It names the stage folder and, on each node,\n/opt/aiapp/\u003cid\u003e.",
+                    "type": "string",
+                    "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
+                },
+                "nodes": {
+                    "description": "Nodes are the per node results, in request order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployResult"
+                    }
+                },
+                "request": {
+                    "description": "Request is the request as accepted, with the engine and app version\nthat were taken filled in.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeDeploymentReq"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Status is pending, running, succeeded (every node), failed (every node),\npartial (some nodes), dry-run (files placed, nothing run) or interrupted\n(the service stopped while it ran).",
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "partial",
+                        "dry-run",
+                        "interrupted"
+                    ],
+                    "example": "succeeded"
+                },
+                "type": {
+                    "description": "Type is the request type.",
+                    "type": "string",
+                    "enum": [
+                        "model-service",
+                        "app"
+                    ],
+                    "example": "model-service"
+                }
+            }
+        },
+        "model.NodeDeploymentListResp": {
+            "type": "object",
+            "properties": {
+                "deployments": {
+                    "description": "Deployments are ordered newest first, without task output.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployment"
+                    }
+                }
+            }
+        },
+        "model.NodeDeploymentLogs": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
+                },
+                "nodes": {
+                    "description": "Nodes hold, per target, the steps with their output.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployNodeLogs"
+                    }
+                },
+                "status": {
+                    "type": "string",
+                    "example": "succeeded"
+                }
+            }
+        },
+        "model.NodeDeploymentReq": {
+            "type": "object",
+            "required": [
+                "targets",
+                "type"
+            ],
+            "properties": {
+                "app": {
+                    "description": "App is required when type is app.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeAppReq"
+                        }
+                    ]
+                },
+                "modelService": {
+                    "description": "ModelService is required when type is model-service.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeModelServiceReq"
+                        }
+                    ]
+                },
+                "targets": {
+                    "description": "Targets are the nodes to deploy to, at most 32, each once.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeDeployTarget"
+                    }
+                },
+                "type": {
+                    "description": "Type is \"model-service\" or \"app\"; the field of the same name below\ncarries what to deploy.",
+                    "type": "string",
+                    "enum": [
+                        "model-service",
+                        "app"
+                    ],
+                    "example": "model-service"
+                }
+            }
+        },
         "model.NodeHealth": {
             "type": "object",
             "properties": {
@@ -2539,6 +3238,42 @@ const docTemplate = `{
                 },
                 "ready": {
                     "type": "boolean"
+                }
+            }
+        },
+        "model.NodeModelServiceReq": {
+            "type": "object",
+            "required": [
+                "artifactId",
+                "modelId"
+            ],
+            "properties": {
+                "artifactId": {
+                    "description": "ArtifactID is an artifact of that model.",
+                    "type": "string",
+                    "example": "hf-bf16"
+                },
+                "engine": {
+                    "description": "Engine is an engine profile ID (GET /engines) the artifact lists. Empty\ntakes the first engine the artifact lists.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "env": {
+                    "description": "Env is added to the engine container environment and written to the\n.env file beside the compose file. Names match [A-Z_][A-Z0-9_]*;\nvalues hold no line break and no single quote.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "gpu": {
+                    "description": "GPU reserves every NVIDIA GPU of the node for the engine and installs\nthe NVIDIA Container Toolkit. Omitted, it is true when the node spec in\nCB-Tumblebug has acceleratorType gpu, and false when the spec cannot be\nread; the node result says which.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "modelId": {
+                    "description": "ModelID is a model of the model catalog (GET /models).",
+                    "type": "string",
+                    "example": "qwen3-embedding-0.6b"
                 }
             }
         },

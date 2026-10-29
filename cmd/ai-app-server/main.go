@@ -24,12 +24,19 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
+	"github.com/ish-hcc/ai-agent-proto/internal/semaphore"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 const shutdownTimeout = 10 * time.Second
+
+// nodeDeployShutdownTimeout bounds the wait for running node deployments at
+// shutdown. Each stops its Semaphore task and deletes the SSH key it
+// registered, which may take up to a minute when Semaphore is slow.
+const nodeDeployShutdownTimeout = 70 * time.Second
 
 // @title AI-MCMP AI-App Service (Prototype)
 // @version 0.1.0
@@ -95,10 +102,29 @@ func main() {
 		deploy.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
 	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug, deployOptions...)
 
+	deploymentStore, err := nodedeploy.OpenStore(cfg.NodeDeploy.StoreFile)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open node deployment records")
+		os.Exit(1)
+	}
+	if cfg.NodeDeploy.StoreFile == "" {
+		log.Warn().Msg("AIAPP_DEPLOYMENT_STORE_FILE is not set: node deployment records are kept in memory and lost on restart")
+	}
+	nodeDeployService := nodedeploy.NewService(tumblebugClient, semaphore.NewClient(cfg.Semaphore),
+		modelCatalog, appStore, deploymentStore, archiveStore, nodedeploy.Options{
+			StageRoot:     cfg.Stage.Root,
+			SpecNamespace: cfg.Tumblebug.SpecNamespace,
+			DryRun:        cfg.Tumblebug.DryRun,
+		})
+	if cfg.Semaphore.URL == "" {
+		log.Warn().Msg("AIAPP_SEMAPHORE_URL is not set: deployments onto nodes fail when they reach Semaphore, unless dry run is on")
+	}
+
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)
 	tools.RegisterModels(registry, modelCatalog)
 	tools.RegisterApps(registry, appStore)
+	tools.RegisterNodeDeploy(registry, nodeDeployService)
 
 	// Which CB-Tumblebug this talks to is worth one line at startup whatever the
 	// answer, because a service pointed at the wrong platform behaves normally
@@ -134,6 +160,8 @@ func main() {
 		Tools:   registry,
 		Models:  modelCatalog,
 		Apps:    appStore,
+
+		NodeDeploy: nodeDeployService,
 	})
 	rest.MarkReady()
 
@@ -151,10 +179,21 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
+	// Node deployments are shut down whether or not the HTTP server stopped
+	// cleanly: each deletes the SSH key it registered in Semaphore.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("Graceful shutdown failed")
+	serverErr := server.Shutdown(shutdownCtx)
+	cancel()
+	deployCtx, cancelDeploy := context.WithTimeout(context.Background(), nodeDeployShutdownTimeout)
+	deployErr := nodeDeployService.Shutdown(deployCtx)
+	cancelDeploy()
+	if serverErr != nil {
+		log.Error().Err(serverErr).Msg("Graceful shutdown failed")
+	}
+	if deployErr != nil {
+		log.Error().Err(deployErr).Msg("Node deployments did not finish cleaning up")
+	}
+	if serverErr != nil || deployErr != nil {
 		os.Exit(1)
 	}
 	log.Info().Msg("Server stopped")

@@ -31,6 +31,10 @@ services:
     container_name: ai-app-server
     command: ["/usr/local/bin/ai-app-server"]
     restart: unless-stopped
+    # On stop, running node deployments stop their Semaphore tasks and delete
+    # the SSH keys they registered, which may take up to 70 seconds; the
+    # default 10 seconds would kill the process with a key still stored.
+    stop_grace_period: 80s
     ports:
       - "${AIAPP_SERVER_PORT:-8090}:8090"
     environment:
@@ -95,6 +99,8 @@ services:
       # Deployment files are placed here and read by Semaphore at the same
       # path, so this must match the stage mount of both services.
       AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
+      # Records of deployments onto nodes, kept on the archive volume.
+      AIAPP_DEPLOYMENT_STORE_FILE: "/app/data/archive/node-deployments.json"
 
     # The archive is the first-year deliverable and the second-year input, so it
     # outlives the container it was written by.

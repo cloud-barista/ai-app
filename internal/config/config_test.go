@@ -153,6 +153,27 @@ func TestModelStoreFile(t *testing.T) {
 	}
 }
 
+func TestDeploymentStoreFile(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_DEPLOYMENT_STORE_FILE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.StoreFile != "" {
+		t.Errorf("deployment store file = %q, want empty (memory only) by default", cfg.NodeDeploy.StoreFile)
+	}
+
+	t.Setenv("AIAPP_DEPLOYMENT_STORE_FILE", " ./data/deployments.json ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.StoreFile != "./data/deployments.json" {
+		t.Errorf("deployment store file = %q, want ./data/deployments.json", cfg.NodeDeploy.StoreFile)
+	}
+}
+
 func TestAppStoreDefaultsAndOverrides(t *testing.T) {
 	clearBackendEnv(t)
 	t.Setenv("AIAPP_APP_STORE_DIR", "")

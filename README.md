@@ -12,7 +12,7 @@
 
 | 담당 | 프로세스 (바이너리) | 소스 | 포트 | 맡는 것 |
 |---|---|---|---|---|
-| 이노그리드 | `ai-app-server` | `cmd/ai-app-server` | `8090` | 응용 카탈로그(등록·버전), 배포·업데이트·라이프사이클, 서빙 헬스·가속기 실측, 도구 15개와 dry-run 게이트, **MCP 서버(`/aiapp/mcp`)**, 운영자 콘솔, 배포·제어 아카이브 |
+| 이노그리드 | `ai-app-server` | `cmd/ai-app-server` | `8090` | 응용 카탈로그(등록·버전), 배포·업데이트·라이프사이클, 서빙 헬스·가속기 실측, 도구 25개와 dry-run 게이트, **MCP 서버(`/aiapp/mcp`)**, 운영자 콘솔, 배포·제어 아카이브 |
 | 이노그리드 | `ai-automation-engine` | `cmd/ai-automation-engine` | `8091` | 자동배포/자동제어 엔진. `deploy`·`heal`·`control`·`status` 워크플로, 엔진 도구 5개의 **MCP 서버(`/aiapp/engine/mcp`)**, 엔진 실행 기록, 엔진 카드 |
 | 협력 기관 · **모의** | `mock-partner-recommender` | `mock/partner/recommender` | `8092` | 인프라 추천 API 계약(`POST /recommendations/specs`, `POST /recommendations/image`)의 모의 구현 |
 | 협력 기관 · **모의** | `mock-partner-nl-agent` | `mock/partner/nlagent` | `8093` | 자연어 지원 에이전트의 모의 구현. LLM 이 지시를 해석해 엔진 MCP 도구를 부름 |
@@ -22,7 +22,7 @@
      │ MCP (엔진 도구 5개)
      ▼
 [이노그리드] 자동배포/자동제어 엔진 (LLM 없음)      cmd/ai-automation-engine   :8091
-     │ MCP (AI-App 도구 15개)
+     │ MCP (AI-App 도구 25개)
      ▼
 [이노그리드] AI-App 서비스                          cmd/ai-app-server          :8090
      ├─▶ [협력 기관 · 모의] 인프라 추천 API          mock/partner/recommender   :8092
@@ -125,7 +125,7 @@ POST /aiapp/partner/nl/ns/{ns}/intents  [ mock/partner/nlagent ]          :8093
 POST /aiapp/engine/workflows/{workflow} ─▶  deploy · heal · control · status
                                           단계마다 도구·입력·결과·게이트 차단 여부를 기록
                                                │  [ internal/mcpclient ]
-  - - - - - - - - - - - - - - - - - - - - - - -│- MCP  /aiapp/mcp  (AI-App 도구 15개) - - - -
+  - - - - - - - - - - - - - - - - - - - - - - -│- MCP  /aiapp/mcp  (AI-App 도구 25개) - - - -
                                                v
                                          [ internal/mcpserver ]            cmd/ai-app-server :8090
                                                │
@@ -294,13 +294,13 @@ AppSpec.resources
 
 ### 6-1. 도구 등급
 
-AI-App 도구 15개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대로 확인할 수 있습니다.
+AI-App 도구 25개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대로 확인할 수 있습니다.
 
 | 등급 | AI-App 도구 | dry-run 게이트 |
 |---|---|---|
-| `read` | `list_ai_apps`, `find_ai_apps`, `get_ai_app`, `recommend_accelerator_spec`, `resolve_node_image`, `plan_deployment`, `list_deployments`, `get_deployment_status`, `probe_accelerator`, `check_serving_health` | 해당 없음. 항상 실행 |
+| `read` | `list_ai_apps`, `find_ai_apps`, `get_ai_app`, `recommend_accelerator_spec`, `resolve_node_image`, `plan_deployment`, `list_deployments`, `get_deployment_status`, `probe_accelerator`, `check_serving_health`, `list_models`, `get_model`, `list_engines`, `list_apps`, `get_app`, `get_deployment`, `list_node_deployments`, `get_deployment_logs` | 해당 없음. 항상 실행 |
 | `review` | `review_deployment` | 해당 없음. 아무것도 안 만듦 |
-| `write` | `deploy_ai_app`, `update_deployment`, `control_deployment` | **걸림** |
+| `write` | `deploy_ai_app`, `update_deployment`, `control_deployment`, `create_deployment`, `control_node` | **걸림**. `create_deployment` 는 dry-run 이면 공유 저장소에 파일만 두고 Semaphore 에 아무것도 안 올린 기록(`dry-run`)을 돌려주고, `control_node` 는 노드마다 `blocked` 를 돌려줌 |
 | `destructive` | `delete_deployment` | **걸림** |
 
 `recommend_accelerator_spec`·`resolve_node_image`, 그리고 `specId`·`imageId` 를 비운 `plan_deployment` 는
@@ -496,7 +496,7 @@ review 가 `"image 'ubuntu22.04' not found in DB or CSP"` 로 잡아냈고, 그�
 
 | 아카이브 | 쓰는 쪽 | 위치 (기본값) | 무엇이 남나 | 조회 (AI-App 주소) |
 |---|---|---|---|---|
-| 배포·제어 | AI-App 서비스 | `AIAPP_ARCHIVE_DIR` (`./data/archive`) | MCP 를 거치지 않은 직접 REST 호출 (`kind`: `deployment` / `control`) | `GET /aiapp/archive` |
+| 배포·제어 | AI-App 서비스 | `AIAPP_ARCHIVE_DIR` (`./data/archive`) | MCP 를 거치지 않은 직접 REST 호출 (`kind`: `deployment` / `control`), 노드 배포가 끝날 때 한 줄(`kind`: `node-deployment`, `runId` 는 배포 ID)과 노드 제어 한 번에 한 줄(`node-control`). 노드 배포·제어는 REST·MCP 어느 쪽으로 불러도 남음 | `GET /aiapp/archive` |
 | 엔진 실행 기록 | 자동화 엔진 | `AIAPP_ENGINE_ARCHIVE_DIR` (`./data/engine-archive`) | 워크플로 한 번의 단계 전체 | `GET /aiapp/engine/runs` |
 | 지시 실행 (모의) | 모의 자연어 에이전트 | `AIAPP_MOCK_NL_ARCHIVE_DIR` (`./data/partner-nl-archive`) | 자연어 지시 한 건의 반복 루프 전체 | `GET /aiapp/partner/nl/runs` |
 
@@ -550,7 +550,12 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | POST | `/aiapp/ns/{nsId}/deployments/{infraId}/update` | 등록된 응용의 현재 버전을 노드를 그대로 둔 채 다시 설치 (설치 명령 재실행). 게이트에 걸림 |
 | POST | `/aiapp/ns/{nsId}/deployments/{infraId}/control` | suspend / resume / reboot / terminate |
 | DELETE | `/aiapp/ns/{nsId}/deployments/{infraId}` | 배포 삭제 |
-| GET | `/aiapp/tools` | AI-App 도구 15개와 등급, dry-run 상태 |
+| POST | `/aiapp/deployments` | **이미 있는 CB-Tumblebug 노드에 배포** (`type`: `model-service` 또는 `app`, `targets[]`: `{kind: node, nsId, infraId, nodeId}`). 받으면 `202` 와 기록(`pending`)을 돌려주고 뒤에서 진행. 노드마다 Semaphore 로 `install-docker` 다음 `compose-up`(모델 서비스) 또는 `copy-and-run`(응용). dry-run 이면 파일 배치까지만 하고 `200` 과 `dry-run` 기록. `kind: k8s` 는 `422` |
+| GET | `/aiapp/deployments` | 노드 배포 기록 목록 (최신순, 태스크 출력 제외) |
+| GET | `/aiapp/deployments/{id}` | 노드 배포 기록. 상태 `pending`/`running`/`succeeded`/`failed`/`partial`/`dry-run`/`interrupted`, 노드별 접속 정보(키 제외)·GPU 판단·렌더한 compose·단계별 Semaphore 태스크 |
+| GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력 |
+| POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`/`resume`/`reboot`/`terminate`). dry-run 이면 `blocked` |
+| GET | `/aiapp/tools` | AI-App 도구 25개와 등급, dry-run 상태 |
 | (any) | `/aiapp/mcp` | **같은 도구의 MCP 서버** (Streamable HTTP). 엔진이 여기로 도구를 부름 |
 | GET | `/aiapp/archive` | 배포·제어 아카이브 목록 (최신순) |
 | GET | `/aiapp/archive/{runId}` | 배포·제어 아카이브 단건 |
@@ -819,10 +824,11 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_SEMAPHORE_URL` | | App | 노드에 playbook 을 돌릴 Semaphore 주소. 비우면 노드 배포만 안 됨 |
 | `AIAPP_SEMAPHORE_TOKEN` | | App | Semaphore API 토큰. 있으면 사용자·비밀번호 대신 씀 |
 | `AIAPP_SEMAPHORE_USERNAME` / `_PASSWORD` | | App | Semaphore 로그인. 토큰도 이것도 없으면 배포가 Semaphore 에 닿을 때 오류 |
-| `AIAPP_SEMAPHORE_PROJECT` | `aiapp` | App | 배포마다 key·inventory·template 을 등록할 프로젝트. 없으면 만듦 |
+| `AIAPP_SEMAPHORE_PROJECT` | `aiapp` | App | 배포에 쓰는 프로젝트. 없으면 만듦. template 은 playbook 마다 하나(`aiapp-<playbook>`)를 만들어 두고 태스크 이력을 남김. 노드의 key·inventory 는 실행마다 등록하고 끝나면 지움 |
 | `AIAPP_SEMAPHORE_PLAYBOOK_DIR` | `/ansible` | App | Semaphore 컨테이너 안의 playbook 폴더. 프로젝트 repository 로 등록됨 |
 | `AIAPP_SEMAPHORE_POLL_INTERVAL` / `_TIMEOUT` | `5s` / `30m` | App | 태스크 상태 확인 간격과 태스크 하나의 상한. 넘으면 태스크를 멈추고 등록한 것을 지움 |
 | `AIAPP_STAGE_ROOT` | `/var/lib/aiapp/stage` | App | 배포 파일을 두는 곳. Semaphore 가 같은 절대경로로 봐야 하므로 절대경로만 받음 |
+| `AIAPP_DEPLOYMENT_STORE_FILE` | | App | `POST /aiapp/deployments` 기록을 쓰고 기동 때 다시 읽는 JSON 파일. 비우면 메모리에만 둠(재기동하면 사라짐). 이전 기동에서 진행 중이던 기록은 `interrupted` 로 바뀜. docker compose 는 아카이브 볼륨의 `/app/data/archive/node-deployments.json` 으로 고정 |
 | `AIAPP_ENGINE_ARCHIVE_DIR` | `./data/engine-archive` | Engine | 엔진 실행 기록 위치 |
 | `AIAPP_ENGINE_REGISTRY_URL` / `_TOKEN` | | Engine | 기동할 때 엔진 카드를 등록할 레지스트리(`POST <url>/agents`)와 그 bearer 토큰. 비우면 등록 안 함 |
 | `AIAPP_MOCK_RECOMMENDER_PORT` | `8092` | Rec | 모의 추천 API 리스닝 포트 |

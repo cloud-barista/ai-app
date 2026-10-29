@@ -118,6 +118,8 @@ type Task struct {
 	// Environment is the extra variables of the run, as a JSON string.
 	Environment string `json:"environment"`
 	Message     string `json:"message"`
+	// InventoryID is the inventory the task ran with.
+	InventoryID int `json:"inventory_id"`
 }
 
 // taskRequest starts a task. InventoryID, when set, overrides the template's
@@ -255,7 +257,25 @@ func (c *Client) CreateInventory(ctx context.Context, projectID int, name, text 
 	return created.ID, nil
 }
 
-// DeleteInventory removes an inventory. Semaphore refuses while a template uses it.
+// EnsureInventory returns the ID of the static inventory named name, creating
+// it with text and keyID when it does not exist. An existing inventory is
+// returned as it is.
+func (c *Client) EnsureInventory(ctx context.Context, projectID int, name, text string, keyID int) (int, error) {
+	var inventories []Inventory
+	if err := c.Do(ctx, http.MethodGet, projectPath(projectID, "inventory"), nil, &inventories); err != nil {
+		return 0, fmt.Errorf("failed to list semaphore inventories: %w", err)
+	}
+	for _, inv := range inventories {
+		if inv.Name == name {
+			return inv.ID, nil
+		}
+	}
+	return c.CreateInventory(ctx, projectID, name, text, keyID)
+}
+
+// DeleteInventory removes an inventory. Semaphore refuses while a template
+// uses it, and allows it while only finished tasks refer to it: v2.12.17
+// keeps those tasks and their logs.
 func (c *Client) DeleteInventory(ctx context.Context, projectID, inventoryID int) error {
 	if err := c.Do(ctx, http.MethodDelete, projectPath(projectID, fmt.Sprintf("inventory/%d", inventoryID)), nil, nil); err != nil {
 		return fmt.Errorf("failed to delete semaphore inventory %d: %w", inventoryID, err)
@@ -276,6 +296,22 @@ func (c *Client) CreateTemplate(ctx context.Context, projectID int, tpl Template
 	return created.ID, nil
 }
 
+// EnsureTemplate returns the ID of the template named tpl.Name, creating it
+// from tpl when it does not exist. An existing template is returned as it is,
+// so the tasks it ran, and their logs, stay with it.
+func (c *Client) EnsureTemplate(ctx context.Context, projectID int, tpl Template) (int, error) {
+	var templates []Template
+	if err := c.Do(ctx, http.MethodGet, projectPath(projectID, "templates"), nil, &templates); err != nil {
+		return 0, fmt.Errorf("failed to list semaphore templates: %w", err)
+	}
+	for _, t := range templates {
+		if t.Name == tpl.Name {
+			return t.ID, nil
+		}
+	}
+	return c.CreateTemplate(ctx, projectID, tpl)
+}
+
 // DeleteTemplate removes a template. Semaphore deletes its tasks and their
 // logs with it.
 func (c *Client) DeleteTemplate(ctx context.Context, projectID, templateID int) error {
@@ -285,9 +321,10 @@ func (c *Client) DeleteTemplate(ctx context.Context, projectID, templateID int) 
 	return nil
 }
 
-// StartTask runs a template with extraVars as its extra variables.
-func (c *Client) StartTask(ctx context.Context, projectID, templateID int, extraVars map[string]any) (*Task, error) {
-	req := taskRequest{TemplateID: templateID}
+// StartTask runs a template with extraVars as its extra variables. A non-zero
+// inventoryID replaces the template's inventory for this task only.
+func (c *Client) StartTask(ctx context.Context, projectID, templateID, inventoryID int, extraVars map[string]any) (*Task, error) {
+	req := taskRequest{TemplateID: templateID, InventoryID: inventoryID}
 	if len(extraVars) > 0 {
 		encoded, err := json.Marshal(extraVars)
 		if err != nil {

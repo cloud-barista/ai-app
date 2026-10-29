@@ -13,6 +13,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
@@ -26,6 +27,8 @@ type Handler struct {
 	tools   *tools.Registry
 	models  *modelcat.Store
 	apps    *appstore.Store
+	// nodeDeploy deploys onto existing nodes through Semaphore.
+	nodeDeploy *nodedeploy.Service
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
@@ -48,8 +51,10 @@ func statusCodeFor(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, appstore.ErrTooLarge):
 		return http.StatusRequestEntityTooLarge
-	case errors.Is(err, compose.ErrIncompatible):
+	case errors.Is(err, compose.ErrIncompatible), errors.Is(err, model.ErrUnsupportedTarget):
 		return http.StatusUnprocessableEntity
+	case errors.Is(err, nodedeploy.ErrNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, compose.ErrInvalidOption):
 		return http.StatusBadRequest
 	case errors.Is(err, deploy.ErrAlreadyExists):
@@ -108,7 +113,8 @@ func messageFor(err error, fallback string) string {
 	// upload bound.
 	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrEngineNotFound,
 		compose.ErrIncompatible, compose.ErrInvalidOption,
-		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge} {
+		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge,
+		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound} {
 		if errors.Is(err, own) {
 			return err.Error()
 		}
