@@ -41,7 +41,9 @@ func fakeEngine(t *testing.T, gotNS *[]string) string {
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		Handle: func(_ context.Context, nsID string, _ json.RawMessage) (any, error) {
 			record(nsID)
-			return map[string]any{"candidates": []map[string]string{{"id": "open-webui-llama31"}}}, nil
+			return engine.Catalog{Models: []engine.CatalogModel{{ID: "qwen3-vl-8b", Artifacts: []engine.CatalogArtifact{
+				{ID: "ollama-gguf", Source: "ollama", Ref: "qwen3-vl:8b", Format: "gguf", Engines: []string{"ollama"}}}}},
+				Apps: []engine.CatalogApp{{Name: "open-webui", Versions: []int{1}, Latest: 1}}}, nil
 		},
 	})
 	registry.Add(tools.Tool{
@@ -78,10 +80,11 @@ func (f *fakeLLM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch turn {
 	case 1:
 		resp.Content = []llm.Block{{Type: llm.BlockToolUse, ID: "t1", Name: engine.ToolApplications,
-			Input: json.RawMessage(`{"query":"Open WebUI"}`)}}
+			Input: json.RawMessage(`{"modality":"image"}`)}}
 	case 2:
 		resp.Content = []llm.Block{{Type: llm.BlockToolUse, ID: "t2", Name: engine.ToolDeploy,
-			Input: json.RawMessage(`{"appId":"open-webui-llama31","deploymentName":"webui"}`)}}
+			Input: json.RawMessage(`{"type":"model-service","targets":[{"kind":"node","nsId":"etri","infraId":"travel",` +
+				`"nodeId":"vm2"}],"modelService":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf"}}`)}}
 	default:
 		resp.StopReason = "end_turn"
 		resp.Content = []llm.Block{llm.TextBlock("Planned, blocked by dry run.")}

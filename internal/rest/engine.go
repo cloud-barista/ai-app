@@ -14,20 +14,25 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
-// workflowBodyLimit caps a workflow request body. The inputs are a handful of
-// identifiers.
+// workflowBodyLimit caps a workflow request body. The largest input is a
+// deployment request of at most 32 targets with its env.
 const workflowBodyLimit = 64 << 10
 
 // RestPostEngineWorkflow godoc
 // @ID PostEngineWorkflow
 // @Summary Run an automation engine workflow
-// @Description Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run. deploy takes {appId, deploymentName, specId?, imageId?} and deploys any required model service that is not running first; heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service
+// @Description Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.
+// @Description deploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, modelService | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. A model service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.
+// @Description heal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A succeeded deployment is left alone, a running one is refused.
+// @Description control takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).
+// @Description status takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).
+// @Description A step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service
 // @Tags [Engine] AI Application Automation Engine
 // @Accept json
 // @Produce json
 // @Param workflow path string true "Workflow" Enums(deploy, heal, control, status)
 // @Param ns query string false "Namespace ID" default(default)
-// @Param input body object true "Workflow input"
+// @Param input body object true "Workflow input: model.NodeDeploymentReq for deploy, {deploymentId} for heal and status, {deploymentId, action} for control"
 // @Success 200 {object} engine.Run "Run finished; see its status"
 // @Failure 400 {object} model.SimpleMsg "Malformed or incomplete input"
 // @Failure 404 {object} model.SimpleMsg "Unknown workflow"

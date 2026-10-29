@@ -2,285 +2,232 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
-	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
-const (
-	// appIDLabel is the label the AI-App service puts on every deployment it
-	// creates, naming the application. It is how the AI-App service itself
-	// finds a running model service for an application, so the engine reads
-	// the same label to decide whether one has to be deployed first.
-	appIDLabel = "ai-mcmp.app-id"
-	// statusRunning is the CB-Tumblebug status word of a serving deployment or
-	// node. A deployment status carries counts after it, so it is matched as a
-	// substring there.
-	statusRunning = "Running"
-)
+// waitStepName names the step that follows a deployment until it ends.
+const waitStepName = "wait for the deployment to end"
 
-// deployArgs is the input of plan_deployment, review_deployment and
-// deploy_ai_app.
-type deployArgs struct {
-	AppID     string `json:"appId"`
-	InfraName string `json:"infraName"`
-	SpecID    string `json:"specId,omitempty"`
-	ImageID   string `json:"imageId,omitempty"`
-}
-
-// target is one deployment the deploy workflow makes.
-type target struct {
-	appID   string
-	kind    model.AppKind
-	name    string
-	specID  string
-	imageID string
-	// needs are the model services deployed earlier in this run that this
-	// target cannot be planned without.
-	needs []string
-}
-
-func (t target) label() string {
-	return fmt.Sprintf("%s %s", t.kind, t.appID)
-}
-
-// Deploy deploys an AI application. For an application, every model service
-// it requires that is not running in the namespace is deployed first, under a
-// name derived from DeploymentName. Each deployment is planned, reviewed,
-// deployed and checked until it answers. Every deployment records all four
-// steps: one the dry-run gate keeps from running is recorded as waiting, one
-// an earlier failure keeps from running as skipped.
+// Deploy deploys a model service or an uploaded application onto existing
+// nodes. It reads what the request names, creates the deployment and follows
+// it until every node ended. The model service health is checked by the
+// compose-up playbook inside the deployment, so the wait step reports it.
+//
+// A deployment the dry-run gate holds is recorded as blocked and the wait as
+// waiting. A deployment that succeeded on some nodes only fails the run.
 func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run, error) {
-	switch {
-	case in.AppID == "":
-		return nil, required("appId")
-	case in.DeploymentName == "":
-		return nil, required("deploymentName")
+	if err := in.Validate(); err != nil {
+		var validation *model.ValidationError
+		if errors.As(err, &validation) {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidInput, validation.Message)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	r, err := e.start(ctx, nsID, WorkflowDeploy, in)
 	if err != nil {
 		return nil, err
 	}
 
-	var app model.AppSpec
-	if _, ok := r.call(ctx, "read application "+in.AppID, toolGetApp, map[string]string{"appId": in.AppID}, &app); !ok {
+	if !r.readTarget(ctx, in) {
+		r.add("create the deployment", toolCreateDeployment, in, StepSkipped, r.skipMessage())
+		r.add(waitStepName, toolGetDeployment, nil, StepSkipped, r.skipMessage())
 		return r.finish(), nil
 	}
-
-	targets := []target{}
-	var needs []string
-	if app.EffectiveKind() == model.KindApplication && len(app.Requires) > 0 {
-		var list struct {
-			Deployments []tumblebug.InfraInfo `json:"deployments"`
-		}
-		step, ok := r.call(ctx, "find running model services", toolListDeployments, map[string]string{}, &list)
-		if !ok {
-			return r.finish(), nil
-		}
-		notes := make([]string, 0, len(app.Requires))
-		for _, req := range app.Requires {
-			if infraID := runningDeployment(list.Deployments, req.AppID); infraID != "" {
-				notes = append(notes, fmt.Sprintf("model service %s runs as %s", req.AppID, infraID))
-				continue
-			}
-			name := in.DeploymentName + "-" + req.AppID
-			notes = append(notes, fmt.Sprintf("model service %s is not running, deploying it first as %s", req.AppID, name))
-			targets = append(targets, target{appID: req.AppID, kind: model.KindModelService, name: name})
-			needs = append(needs, req.AppID)
-		}
-		step.Message = strings.Join(notes, "; ")
-	}
-	targets = append(targets, target{
-		appID:   app.ID,
-		kind:    app.EffectiveKind(),
-		name:    in.DeploymentName,
-		specID:  in.SpecID,
-		imageID: in.ImageID,
-		needs:   needs,
-	})
-
-	outcome := map[string]StepStatus{}
-	for _, t := range targets {
-		outcome[t.appID] = e.deployTarget(ctx, r, t, outcome)
+	if d, ok := r.createAndWait(ctx, in); ok {
+		r.message = fmt.Sprintf("deployment %s succeeded on every node", d.ID)
 	}
 	return r.finish(), nil
 }
 
-// deployTarget runs the steps of one deployment and reports how it ended:
-// succeeded, failed, blocked, waiting or skipped.
-func (e *Engine) deployTarget(ctx context.Context, r *runner, t target, outcome map[string]StepStatus) StepStatus {
-	args := deployArgs{AppID: t.appID, InfraName: t.name, SpecID: t.specID, ImageID: t.imageID}
-	label := t.label()
-	pending := []struct{ name, tool string }{
-		{"plan " + label, toolPlanDeployment},
-		{"review " + label, toolReviewDeployment},
-		{"deploy " + label, toolDeployApp},
-	}
-	healthName := "check " + label + " answers"
-	healthArgs := healthInput(t.name, t.appID)
-	// waitHealth records the health check as held back because the
-	// deployment it checks was not provisioned.
-	waitHealth := func() {
-		r.add(healthName, toolCheckServingHealth, healthArgs, StepWaiting,
-			fmt.Sprintf("waits for %s to be provisioned (blocked by dry run)", t.name))
-	}
-	// skipFrom records pending[from:] and the health check as skipped.
-	skipFrom := func(from int) {
-		for _, p := range pending[from:] {
-			r.add(p.name, p.tool, args, StepSkipped, r.skipMessage())
-		}
-		r.add(healthName, toolCheckServingHealth, healthArgs, StepSkipped, r.skipMessage())
-	}
-
-	if r.failed {
-		skipFrom(0)
-		return StepSkipped
-	}
-
-	var waitsFor []string
-	for _, need := range t.needs {
-		if status := outcome[need]; status == StepBlocked || status == StepWaiting {
-			waitsFor = append(waitsFor, need)
-		}
-	}
-	if len(waitsFor) > 0 {
-		message := fmt.Sprintf("waits for model service %s to be running (blocked by dry run)", strings.Join(waitsFor, ", "))
-		for _, p := range pending {
-			r.add(p.name, p.tool, args, StepWaiting, message)
-		}
-		waitHealth()
-		return StepWaiting
-	}
-
-	var plan model.DeploymentPlan
-	step, ok := r.call(ctx, pending[0].name, pending[0].tool, args, &plan)
-	if !ok {
-		skipFrom(1)
-		return StepFailed
-	}
-	// The rest of this deployment uses what the plan chose, so a recommender
-	// that would answer differently the next time cannot make the review and
-	// the deployment disagree with the plan.
-	args.SpecID, args.ImageID = plan.SpecID, plan.ImageID
-	step.Message = fmt.Sprintf("spec %s (%s), image %s (%s)", plan.SpecID, plan.SpecSource, plan.ImageID, plan.ImageSource)
-
-	var reviewed struct {
-		Review *model.ReviewSummary `json:"review"`
-	}
-	step, ok = r.call(ctx, pending[1].name, pending[1].tool, args, &reviewed)
-	if !ok {
-		skipFrom(2)
-		return StepFailed
-	}
-	if reviewed.Review == nil || !reviewed.Review.CreationViable {
-		reason := "the review returned no verdict"
-		if reviewed.Review != nil {
-			reason = fmt.Sprintf("the review says creation is not viable: %s %s",
-				reviewed.Review.OverallStatus, reviewed.Review.OverallMessage)
-		}
-		r.fail(step, reason)
-		skipFrom(2)
-		return StepFailed
-	}
-	step.Message = fmt.Sprintf("creation viable, estimated cost %s", reviewed.Review.EstimatedCost)
-
-	var result model.DeploymentResult
-	step, ok = r.call(ctx, pending[2].name, pending[2].tool, args, &result)
-	if !ok {
-		skipFrom(3)
-		return StepFailed
-	}
-	if result.DryRun {
-		step.Status = StepBlocked
-		step.Message = result.Message
-		waitHealth()
-		return StepBlocked
-	}
-	step.Message = result.Message
-
-	if !r.waitHealthy(ctx, healthName, t.name, t.appID) {
-		return StepFailed
-	}
-	return StepSucceeded
-}
-
-// healthInput is the check_serving_health input for a deployment. An empty
-// appID leaves the application to the one the deployment was created with.
-func healthInput(infraID, appID string) map[string]string {
-	input := map[string]string{"infraId": infraID}
-	if appID != "" {
-		input["appId"] = appID
-	}
-	return input
-}
-
-// waitHealthy records one check_serving_health step that asks until the
-// deployment answers on every node or the health timeout passes. A call that
-// fails is asked again too: right after provisioning a node may not take
-// remote commands yet. It reports whether the deployment answered.
-func (r *runner) waitHealthy(ctx context.Context, name, infraID, appID string) bool {
-	input := healthInput(infraID, appID)
-	step := r.add(name, toolCheckServingHealth, input, StepSucceeded, "")
-	started := time.Now().UTC()
-	step.StartedAt = &started
-
-	deadline := started.Add(r.engine.healthTimeout)
-	attempts := 0
-	var lastErr error
-	for {
-		attempts++
-		raw, err := r.invoke(ctx, toolCheckServingHealth, input)
-		step.Output = raw
-		lastErr = err
-		if err == nil {
-			var health model.ServingHealth
-			if derr := decodeRaw(raw, &health); derr != nil {
-				lastErr = derr
-			} else if health.Ready {
-				ended := time.Now().UTC()
-				step.EndedAt = &ended
-				step.Message = fmt.Sprintf("ready after %d checks: %s", attempts, health.Message)
-				return true
-			} else {
-				lastErr = fmt.Errorf("not ready: %s", health.Message)
+// readTarget records the step that reads the model or the application the
+// request names, and reports whether it is there.
+func (r *runner) readTarget(ctx context.Context, in DeployInput) bool {
+	if in.Type == model.NodeDeployTypeApp {
+		args := map[string]any{"name": in.App.Name}
+		if in.App.Version > 0 {
+			args["version"] = in.App.Version
+			var version model.AppVersion
+			step, ok := r.call(ctx, "read application "+in.App.Name, toolGetApp, args, &version)
+			if ok {
+				step.Message = fmt.Sprintf("version %d, %d files", version.Version, len(version.Files))
 			}
+			return ok
 		}
-		if !time.Now().Add(r.engine.healthInterval).Before(deadline) {
-			break
+		var app model.App
+		step, ok := r.call(ctx, "read application "+in.App.Name, toolGetApp, args, &app)
+		if !ok {
+			return false
 		}
-		select {
-		case <-ctx.Done():
-			lastErr = ctx.Err()
-			deadline = time.Time{}
-		case <-time.After(r.engine.healthInterval):
+		if len(app.Versions) == 0 {
+			r.fail(step, "the application has no version")
+			return false
 		}
-		if deadline.IsZero() {
-			break
-		}
+		latest := app.Versions[len(app.Versions)-1]
+		step.Message = fmt.Sprintf("latest version %d, %d files", latest.Version, len(latest.Files))
+		return true
 	}
-	ended := time.Now().UTC()
-	step.EndedAt = &ended
-	r.fail(step, fmt.Sprintf("did not answer after %d checks over %s: %v",
-		attempts, ended.Sub(started).Round(time.Second), lastErr))
+
+	ms := in.ModelService
+	var m model.Model
+	step, ok := r.call(ctx, "read model "+ms.ModelID, toolGetModel, map[string]string{"modelId": ms.ModelID}, &m)
+	if !ok {
+		return false
+	}
+	ids := make([]string, 0, len(m.Artifacts))
+	for _, artifact := range m.Artifacts {
+		if artifact.ID != ms.ArtifactID {
+			ids = append(ids, artifact.ID)
+			continue
+		}
+		engines := make([]string, 0, len(artifact.Engines))
+		for _, compat := range artifact.Engines {
+			engines = append(engines, compat.Engine)
+		}
+		step.Message = fmt.Sprintf("artifact %s: %s %s (%s), engines %s",
+			artifact.ID, artifact.Source, artifact.Ref, artifact.Format, strings.Join(engines, ", "))
+		return true
+	}
+	r.fail(step, fmt.Sprintf("model %s has no artifact %s; it has %s", ms.ModelID, ms.ArtifactID, strings.Join(ids, ", ")))
 	return false
 }
 
-// runningDeployment returns the ID of the first running deployment of appID
-// that has a running node with a public address, the same test the AI-App
-// service applies when it wires an application to its model service, or "".
-func runningDeployment(infras []tumblebug.InfraInfo, appID string) string {
-	for _, infra := range infras {
-		if infra.Label[appIDLabel] != appID || !strings.Contains(infra.Status, statusRunning) {
-			continue
-		}
-		for _, node := range infra.Node {
-			if node.PublicIP != "" && (node.Status == "" || node.Status == statusRunning) {
-				return infra.ID
+// createAndWait records the create_deployment step for req and the step that
+// follows the deployment until it ends. It returns the last record read and
+// whether the deployment succeeded on every node.
+func (r *runner) createAndWait(ctx context.Context, req model.NodeDeploymentReq) (*model.NodeDeployment, bool) {
+	var created model.NodeDeployment
+	step, ok := r.call(ctx, "create the deployment", toolCreateDeployment, req, &created)
+	if !ok {
+		r.add(waitStepName, toolGetDeployment, nil, StepSkipped, r.skipMessage())
+		return nil, false
+	}
+	waitInput := map[string]string{"id": created.ID}
+
+	switch {
+	case created.Status == model.NodeDeployDryRun:
+		step.Status = StepBlocked
+		step.Message = fmt.Sprintf("deployment %s is a dry run: the files were placed on %d nodes and nothing ran",
+			created.ID, len(created.Nodes))
+		r.add(waitStepName, toolGetDeployment, waitInput, StepWaiting,
+			"waits for create_deployment to run (blocked by dry run)")
+		return &created, false
+	case created.DryRun:
+		// A dry run that could not place the files on every node.
+		r.fail(step, "dry run: "+outcome(&created))
+		r.add(waitStepName, toolGetDeployment, waitInput, StepSkipped, r.skipMessage())
+		return &created, false
+	}
+	step.Message = fmt.Sprintf("deployment %s accepted for %d nodes, status %s", created.ID, len(created.Nodes), created.Status)
+	return r.waitDeployment(ctx, created.ID)
+}
+
+// ended reports whether a deployment status is final.
+func ended(status string) bool {
+	switch status {
+	case model.NodeDeployPending, model.NodeDeployRunning:
+		return false
+	}
+	return true
+}
+
+// waitDeployment records one get_deployment step that asks until the
+// deployment ended, at most once per wait interval and at most as many times
+// as the wait timeout holds intervals. A failed read is asked again too. It
+// returns the last record read and whether every node succeeded.
+func (r *runner) waitDeployment(ctx context.Context, id string) (*model.NodeDeployment, bool) {
+	input := map[string]string{"id": id}
+	step := r.add(waitStepName, toolGetDeployment, input, StepSucceeded, "")
+	started := time.Now().UTC()
+	step.StartedAt = &started
+
+	interval := r.engine.waitInterval
+	maxPolls := int(r.engine.waitTimeout/interval) + 1
+	var last *model.NodeDeployment
+	var lastErr error
+	polls := 0
+poll:
+	for polls < maxPolls {
+		if polls > 0 {
+			select {
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				break poll
+			case <-time.After(interval):
 			}
 		}
+		polls++
+		raw, err := r.invoke(ctx, toolGetDeployment, input)
+		step.Output = raw
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var d model.NodeDeployment
+		if err := decodeRaw(raw, &d); err != nil {
+			lastErr = err
+			continue
+		}
+		last, lastErr = &d, nil
+		if ended(d.Status) {
+			break
+		}
 	}
-	return ""
+	endedAt := time.Now().UTC()
+	step.EndedAt = &endedAt
+	took := endedAt.Sub(started).Round(time.Second)
+
+	switch {
+	case last != nil && last.Status == model.NodeDeploySucceeded:
+		step.Message = fmt.Sprintf("%s after %d reads over %s", outcome(last), polls, took)
+		return last, true
+	case last != nil && ended(last.Status):
+		r.fail(step, outcome(last))
+		return last, false
+	case lastErr != nil:
+		r.fail(step, fmt.Sprintf("not ended after %d reads over %s: %v", polls, took, lastErr))
+	default:
+		r.fail(step, fmt.Sprintf("still %s after %d reads over %s; follow it with %s",
+			last.Status, polls, took, ToolStatus))
+	}
+	return last, false
+}
+
+// outcome says how a deployment ended, naming every node that did not
+// succeed and the service URL of every node that did.
+func outcome(d *model.NodeDeployment) string {
+	succeeded := 0
+	var good, bad []string
+	for _, n := range d.Nodes {
+		key := n.Target.Key()
+		switch n.Status {
+		case model.NodeDeploySucceeded:
+			succeeded++
+			if n.ServiceURL != "" {
+				good = append(good, key+" "+n.ServiceURL)
+			}
+		case model.NodeDeployDryRun:
+		default:
+			reason := n.Status
+			if n.Error != "" {
+				reason += ": " + n.Error
+			}
+			bad = append(bad, key+" "+reason)
+		}
+	}
+	message := fmt.Sprintf("deployment %s %s, %d of %d nodes succeeded", d.ID, d.Status, succeeded, len(d.Nodes))
+	if len(bad) > 0 {
+		message += "; not succeeded on " + strings.Join(bad, "; ")
+	}
+	if len(good) > 0 {
+		message += "; serving at " + strings.Join(good, ", ")
+	}
+	if d.Error != "" {
+		message += "; " + d.Error
+	}
+	return message
 }

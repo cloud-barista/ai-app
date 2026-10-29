@@ -19,6 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -35,10 +36,10 @@ const (
 var Workflows = []string{WorkflowDeploy, WorkflowHeal, WorkflowControl, WorkflowStatus}
 
 const (
-	// defaultHealthTimeout and defaultHealthInterval bound how long a step
-	// waiting for an application to answer keeps asking, and how often.
-	defaultHealthTimeout  = 15 * time.Minute
-	defaultHealthInterval = 20 * time.Second
+	// defaultWaitTimeout and defaultWaitInterval bound how long a step
+	// waiting for a deployment to end keeps asking, and how often.
+	defaultWaitTimeout  = 15 * time.Minute
+	defaultWaitInterval = 20 * time.Second
 	// defaultRunLimit bounds a run listing.
 	defaultRunLimit = 20
 )
@@ -64,31 +65,36 @@ type AppClient interface {
 
 // Engine runs workflows against the AI-App service.
 type Engine struct {
-	app            AppClient
-	runs           *archive.Log[Run]
-	healthTimeout  time.Duration
-	healthInterval time.Duration
+	app          AppClient
+	runs         *archive.Log[Run]
+	waitTimeout  time.Duration
+	waitInterval time.Duration
 }
 
 // Option configures an Engine.
 type Option func(*Engine)
 
-// WithHealthWait sets how long a step waiting for an application to answer
-// keeps asking, and how often.
-func WithHealthWait(timeout, interval time.Duration) Option {
+// WithDeploymentWait sets how long a step waiting for a deployment to end
+// keeps asking, and how often. Values that are not positive keep the
+// defaults.
+func WithDeploymentWait(timeout, interval time.Duration) Option {
 	return func(e *Engine) {
-		e.healthTimeout = timeout
-		e.healthInterval = interval
+		if timeout > 0 {
+			e.waitTimeout = timeout
+		}
+		if interval > 0 {
+			e.waitInterval = interval
+		}
 	}
 }
 
 // New builds an Engine calling app and archiving into runs.
 func New(app AppClient, runs *archive.Log[Run], opts ...Option) *Engine {
 	e := &Engine{
-		app:            app,
-		runs:           runs,
-		healthTimeout:  defaultHealthTimeout,
-		healthInterval: defaultHealthInterval,
+		app:          app,
+		runs:         runs,
+		waitTimeout:  defaultWaitTimeout,
+		waitInterval: defaultWaitInterval,
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -149,22 +155,38 @@ func (e *Engine) Execute(ctx context.Context, nsID, workflow string, input json.
 }
 
 // ListApplications answers a catalog lookup from the AI-App service: the
-// ranked candidates of find_ai_apps when in has a query, every application in
-// short form from list_ai_apps otherwise. It is a read and runs no workflow, so
-// nothing is archived.
-func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQuery) (json.RawMessage, error) {
+// models of list_models, narrowed by the filters of in, and the uploaded
+// applications of list_apps, both in short form. It is a read and runs no
+// workflow, so nothing is archived.
+func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQuery) (*Catalog, error) {
 	if err := e.app.Prepare(ctx); err != nil {
 		return nil, err
 	}
-	query := strings.TrimSpace(in.Query)
-	if query == "" {
-		return callApp(ctx, e.app, nsID, toolListApps, map[string]any{})
+	filter := map[string]string{}
+	for name, value := range map[string]string{
+		"task": in.Task, "modality": in.Modality, "format": in.Format, "engine": in.Engine, "source": in.Source,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			filter[name] = value
+		}
 	}
-	args := map[string]any{"query": query}
-	if in.Limit > 0 {
-		args["limit"] = in.Limit
+	raw, err := callApp(ctx, e.app, nsID, toolListModels, filter)
+	if err != nil {
+		return nil, err
 	}
-	return callApp(ctx, e.app, nsID, toolFindApps, args)
+	var models model.ModelListResp
+	if err := decodeRaw(raw, &models); err != nil {
+		return nil, fmt.Errorf("%s: %w", toolListModels, err)
+	}
+	raw, err = callApp(ctx, e.app, nsID, toolListApps, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var apps model.AppListResp
+	if err := decodeRaw(raw, &apps); err != nil {
+		return nil, fmt.Errorf("%s: %w", toolListApps, err)
+	}
+	return summarizeCatalog(models.Models, apps.Apps), nil
 }
 
 // ListRuns reads the most recent runs, newest first.

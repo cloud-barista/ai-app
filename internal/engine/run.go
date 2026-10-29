@@ -3,6 +3,8 @@ package engine
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // StepStatus is how one workflow step ended.
@@ -37,9 +39,9 @@ const (
 // Step is one AI-App tool call a workflow made, or would have made.
 type Step struct {
 	Index int    `json:"index"`
-	Name  string `json:"name" example:"plan model service vllm-llama31-8b"`
+	Name  string `json:"name" example:"create the deployment"`
 	// Tool is the AI-App MCP tool the step calls.
-	Tool   string     `json:"tool" example:"plan_deployment"`
+	Tool   string     `json:"tool" example:"create_deployment"`
 	Input  any        `json:"input"`
 	Status StepStatus `json:"status" example:"succeeded" enums:"succeeded,failed,blocked,waiting,skipped"`
 	// Output is the tool result as the AI-App service returned it.
@@ -75,44 +77,73 @@ type RunListResp struct {
 	Runs []Run `json:"runs"`
 }
 
-// DeployInput asks for an AI application, and any model service it needs that
-// is not running yet, to be deployed.
-type DeployInput struct {
-	AppID string `json:"appId" example:"open-webui-llama31"`
-	// DeploymentName names the deployment of AppID. A model service deployed
-	// on its behalf is named "<deploymentName>-<model service appId>".
-	DeploymentName string `json:"deploymentName" example:"demo-webui"`
-	// SpecID and ImageID pin the node of AppID itself. Empty asks the
-	// recommender through the AI-App service.
-	SpecID  string `json:"specId,omitempty"`
-	ImageID string `json:"imageId,omitempty"`
-}
+// DeployInput is the node deployment request create_deployment takes: a
+// model service or an uploaded application, onto nodes CB-Tumblebug already
+// runs.
+type DeployInput = model.NodeDeploymentReq
 
-// HealInput asks for a deployment that does not answer to be updated once.
+// HealInput asks for a deployment that did not succeed on every node to be
+// run again once.
 type HealInput struct {
-	DeploymentID string `json:"deploymentId" example:"demo-webui"`
-	// AppID is the application whose install commands are applied. Empty takes
-	// the one the deployment was created with.
-	AppID string `json:"appId,omitempty"`
+	// DeploymentID is the id create_deployment returned.
+	DeploymentID string `json:"deploymentId" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
 }
 
-// ControlInput applies a lifecycle action to a deployment.
+// ControlInput applies a lifecycle action to every node of a deployment.
 type ControlInput struct {
-	DeploymentID string `json:"deploymentId" example:"demo-webui"`
-	Action       string `json:"action" example:"suspend" enums:"suspend,resume,reboot,terminate"`
+	DeploymentID string `json:"deploymentId" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
+	Action       string `json:"action" example:"reboot" enums:"suspend,resume,reboot,terminate"`
 }
 
 // StatusInput asks for the state of a deployment.
 type StatusInput struct {
-	DeploymentID string `json:"deploymentId" example:"demo-webui"`
-	// AppID is the application to check against. Empty takes the one the
-	// deployment was created with.
-	AppID string `json:"appId,omitempty"`
+	DeploymentID string `json:"deploymentId" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
 }
 
-// CatalogQuery asks for the registered AI applications, ranked against Query
-// when it is set.
+// CatalogQuery asks for the models and the uploaded applications. Every
+// filter is optional and narrows the models only, as list_models does.
 type CatalogQuery struct {
-	Query string `json:"query,omitempty" example:"Open WebUI chatbot"`
-	Limit int    `json:"limit,omitempty" example:"5"`
+	Task     string `json:"task,omitempty" example:"vision-chat"`
+	Modality string `json:"modality,omitempty" example:"image"`
+	Format   string `json:"format,omitempty" example:"gguf"`
+	Engine   string `json:"engine,omitempty" example:"ollama"`
+	Source   string `json:"source,omitempty" example:"ollama"`
+}
+
+// Catalog is the short form of the models and the uploaded applications a
+// caller chooses a deployment request from.
+type Catalog struct {
+	Models []CatalogModel `json:"models"`
+	Apps   []CatalogApp   `json:"apps"`
+}
+
+// CatalogModel is one model with the artifacts a model-service request can
+// name.
+type CatalogModel struct {
+	ID              string            `json:"id" example:"qwen3-vl-8b"`
+	Name            string            `json:"name" example:"Qwen3-VL-8B-Instruct"`
+	Tasks           []string          `json:"tasks,omitempty"`
+	InputModalities []string          `json:"inputModalities,omitempty"`
+	Artifacts       []CatalogArtifact `json:"artifacts"`
+}
+
+// CatalogArtifact is one artifact of a model and the engines it runs on.
+type CatalogArtifact struct {
+	ID        string  `json:"id" example:"ollama-gguf"`
+	Source    string  `json:"source" example:"ollama"`
+	Ref       string  `json:"ref" example:"qwen3-vl:8b"`
+	Format    string  `json:"format" example:"gguf"`
+	Precision string  `json:"precision,omitempty"`
+	SizeGiB   float64 `json:"sizeGiB,omitempty"`
+	// Engines are the engine profile ids, the first being the one taken when
+	// a request names none.
+	Engines []string `json:"engines"`
+}
+
+// CatalogApp is one uploaded application and its version numbers.
+type CatalogApp struct {
+	Name     string `json:"name" example:"open-webui"`
+	Versions []int  `json:"versions"`
+	// Latest is the version an app request without a version takes.
+	Latest int `json:"latest" example:"2"`
 }

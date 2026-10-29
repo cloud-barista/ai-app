@@ -711,7 +711,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run. deploy takes {appId, deploymentName, specId?, imageId?} and deploys any required model service that is not running first; heal takes {deploymentId, appId?}; control takes {deploymentId, action}; status takes {deploymentId, appId?}. A step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
+                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.\ndeploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, modelService | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. A model service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.\nheal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A succeeded deployment is left alone, a running one is refused.\ncontrol takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).\nstatus takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).\nA step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
                 "consumes": [
                     "application/json"
                 ],
@@ -745,7 +745,7 @@
                         "in": "query"
                     },
                     {
-                        "description": "Workflow input",
+                        "description": "Workflow input: model.NodeDeploymentReq for deploy, {deploymentId} for heal and status, {deploymentId, action} for control",
                         "name": "input",
                         "in": "body",
                         "required": true,
@@ -2027,7 +2027,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "example": "plan model service vllm-llama31-8b"
+                    "example": "create the deployment"
                 },
                 "output": {
                     "description": "Output is the tool result as the AI-App service returned it.",
@@ -2055,7 +2055,7 @@
                 "tool": {
                     "description": "Tool is the AI-App MCP tool the step calls.",
                     "type": "string",
-                    "example": "plan_deployment"
+                    "example": "create_deployment"
                 }
             }
         },

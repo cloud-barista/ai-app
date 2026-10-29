@@ -51,7 +51,7 @@ func main() {
 	}
 
 	appClient := mcpclient.NewNamed(mcpClientName, cfg.App.MCPURL, cfg.App.Token)
-	automation := engine.New(appClient, runs, engine.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
+	automation := engine.New(appClient, runs, engine.WithDeploymentWait(cfg.Health.Timeout, cfg.Health.Interval))
 	registry := engine.NewRegistry(automation)
 	registrar := registration.New(cfg.Engine.RegistryURL, cfg.Engine.RegistryToken, engine.RegistryEnv)
 	card := engine.NewCardBuilder(automation, registry, registrar)
