@@ -20,6 +20,11 @@ const enginePrefix = BasePath + "/engine"
 // language agent mount its routes.
 const partnerNLPrefix = BasePath + "/partner/nl"
 
+// partnerRecPrefix is where the AI-App service mounts the partner
+// recommendation API. The API serves its contract at the root
+// (/recommendations/specs), so the prefix is taken off when forwarding.
+const partnerRecPrefix = BasePath + "/partner/rec"
+
 // newEngineProxy forwards engine routes to the automation engine with their
 // path unchanged.
 //
@@ -35,7 +40,22 @@ func newPartnerNLProxy(agentURL string) http.Handler {
 	return newForwardProxy("Partner natural language agent", agentURL, samePath)
 }
 
+// newPartnerRecProxy forwards /aiapp/partner/rec/<path> to <path> of the
+// partner recommendation API. Headers pass through unchanged, as on the other
+// proxies, so the API sees the bearer token the caller sent here.
+func newPartnerRecProxy(apiURL string) http.Handler {
+	return newForwardProxy("Partner recommendation API", apiURL, stripPartnerRecPrefix)
+}
+
 func samePath(path string) string { return path }
+
+func stripPartnerRecPrefix(path string) string {
+	rest := strings.TrimPrefix(path, partnerRecPrefix)
+	if rest == "" {
+		return "/"
+	}
+	return rest
+}
 
 // newForwardProxy forwards to the service called name at serviceURL, mapping
 // each path with mapPath.

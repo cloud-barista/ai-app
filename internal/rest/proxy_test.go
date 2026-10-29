@@ -32,6 +32,36 @@ func TestPartnerNLProxyKeepsPathAndReports502(t *testing.T) {
 	}
 }
 
+func TestPartnerRecProxyStripsPrefixAndReports502(t *testing.T) {
+	var gotPath, gotQuery, gotAuth string
+	recSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery, gotAuth = r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy := newPartnerRecProxy(recSrv.URL)
+	for _, tc := range []struct{ in, want string }{
+		{"/aiapp/partner/rec/recommendations/specs", "/recommendations/specs"},
+		{"/aiapp/partner/rec/recommendations/image", "/recommendations/image"},
+		{"/aiapp/partner/rec/", "/"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.in+"?x=1", nil)
+		req.Header.Set("Authorization", "Bearer t")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || gotPath != tc.want || gotQuery != "x=1" || gotAuth != "Bearer t" {
+			t.Errorf("%s forwarded %d path=%q query=%q auth=%q, want path %q", tc.in, rec.Code, gotPath, gotQuery, gotAuth, tc.want)
+		}
+	}
+
+	recSrv.Close()
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/aiapp/partner/rec/recommendations/specs", nil))
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("status with the API down = %d, want 502", rec.Code)
+	}
+}
+
 func TestOldAgentRoutesAreGone(t *testing.T) {
 	s := newTestServers(t, "")
 	for _, tc := range []struct{ method, path string }{

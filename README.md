@@ -33,7 +33,8 @@
   (`POST /aiapp/engine/workflows/{workflow}`)을 보내면 배포부터 확인까지 전 과정이 돕니다.
 - 콘솔과 운영자는 AI-App 주소(`8090`) 하나만 알면 됩니다. AI-App 이 `/aiapp/engine/*` 을 엔진(`AIAPP_ENGINE_URL`)으로,
   `/aiapp/partner/nl/*` 을 모의 자연어 에이전트(`AIAPP_MOCK_NL_URL`)로 경로 그대로 넘깁니다.
-  모의 추천 API 는 넘기지 않고 AI-App 도 더 부르지 않습니다. 협력 기관 계약 예시로 남겨 두었습니다.
+  `/aiapp/partner/rec/*` 은 앞의 `/aiapp/partner/rec` 를 떼고 모의 추천 API(`AIAPP_PARTNER_REC_URL`)로 넘깁니다.
+  AI-App 자신은 추천 API 를 부르지 않고, 콘솔이 협력 기관 계약을 시험해 보는 길로만 둡니다.
 - **dry-run 게이트는 AI-App 쪽에 있으므로** 엔진이든 모의 에이전트든 어떻게 부르든 게이트를 건너뛸 수 없습니다.
 - 모의 구현은 같은 Go 모듈에 있지만 이노그리드 패키지(`cmd/`, `internal/`)는 `mock/` 를 import 하지 않습니다.
   `internal/boundary/boundary_test.go` 가 이것을 검사합니다.
@@ -47,7 +48,7 @@
 
 | 연동 지점 | 지금 이 저장소에 있는 것 | 협력 기관이 실제로 할 것 |
 |---|---|---|
-| 인프라 추천 API | 제안 계약 `POST /recommendations/specs`, `POST /recommendations/image` (요청의 `app` 은 `mock/partner/recommender/app.go`). 모의 구현 `mock/partner/recommender`. AI-App 은 부르지 않음 | 요구 분석, 추천 알고리즘, 추천 근거 |
+| 인프라 추천 API | 제안 계약 `POST /recommendations/specs`, `POST /recommendations/image` (요청의 `app` 은 `mock/partner/recommender/app.go`). 모의 구현 `mock/partner/recommender`. AI-App 은 부르지 않고 `/aiapp/partner/rec/*` 로 넘기기만 함 | 요구 분석, 추천 알고리즘, 추천 근거 |
 | 자연어 지원 에이전트 | 엔진 MCP 도구(`/aiapp/engine/mcp`)를 부르는 MCP 클라이언트 + Anthropic Messages 형식 LLM. 모의 구현 `mock/partner/nlagent` | LLM 선정·실행(OpsLLM), 자연어 해석 |
 | 에이전트 등록 | 엔진이 `GET /aiapp/engine/card` 로 기술서를 내고, `AIAPP_ENGINE_REGISTRY_URL` 을 주면 기동할 때 `POST {registry}/agents` 로 등록 | 에이전트 등록 관리 체계 |
 | 배포 자동화·업데이트 | Provisioner 계약과 `AIAPP_PROVISIONER` 는 VM 생성 경로와 함께 지웠습니다. AI-App 은 CB-Tumblebug 이 이미 띄운 노드에 Semaphore 로 배포합니다 | 실행 주체가 정해진 뒤 구현 |
@@ -550,6 +551,7 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | GET | `/aiapp/archive/{runId}` | 배포·제어 아카이브 단건 |
 | (any) | `/aiapp/engine/*` | 엔진(`AIAPP_ENGINE_URL`)으로 넘김. 아래 8-2 |
 | (any) | `/aiapp/partner/nl/*` | 모의 자연어 에이전트(`AIAPP_MOCK_NL_URL`)로 넘김. 아래 8-3 |
+| (any) | `/aiapp/partner/rec/*` | 모의 추천 API(`AIAPP_PARTNER_REC_URL`)로 넘김. `/aiapp/partner/rec` 를 떼므로 `/aiapp/partner/rec/recommendations/specs` 는 `/recommendations/specs` 에 닿음 |
 
 ### 8-2. 자동화 엔진 (`cmd/ai-automation-engine`, `8091`)
 
@@ -689,7 +691,7 @@ make docker-down
 |---|---|---|
 | `ai-app-server` | `8090` | 아카이브는 named volume `archive` |
 | `ai-automation-engine` | `8091` | `ai-app-server` 가 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-app-server:8090/aiapp/mcp`, 실행 기록은 named volume `engine-archive` |
-| `mock-partner-recommender` | `8092` | 협력 기관 · 모의. AI-App 은 부르지 않음(계약 예시). CB-Tumblebug 설정을 읽음 |
+| `mock-partner-recommender` | `8092` | 협력 기관 · 모의. AI-App 은 부르지 않고 `/aiapp/partner/rec/*` 로 넘기기만 함(계약 예시). CB-Tumblebug 설정을 읽음 |
 | `mock-partner-nl-agent` | `8093` | 협력 기관 · 모의. `ai-automation-engine` 이 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-automation-engine:8091/aiapp/engine/mcp`, 기록은 named volume `partner-nl-archive` |
 | `semaphore` | `127.0.0.1:3001` | `deploy` 프로필이라 `docker compose --profile deploy up -d` 일 때만 뜸. `deploy/ansible` 을 `/ansible` 로, named volume `stage` 를 `ai-app-server` 와 같은 `/var/lib/aiapp/stage` 로 마운트. `AIAPP_SEMAPHORE_PASSWORD` 가 없으면 기동을 거부함(Semaphore 는 빈 비밀번호로도 로그인시킴) |
 
@@ -785,6 +787,7 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_ENGINE_PORT` | `8091` | Engine | 엔진 리스닝 포트 |
 | `AIAPP_ENGINE_URL` | `http://127.0.0.1:8091` | App | `/aiapp/engine/*` 을 넘길 엔진 주소 |
 | `AIAPP_MOCK_NL_URL` | `http://127.0.0.1:8093` | App | `/aiapp/partner/nl/*` 을 넘길 자연어 에이전트 주소. 지금은 모의 |
+| `AIAPP_PARTNER_REC_URL` | `http://127.0.0.1:8092` | App | `/aiapp/partner/rec/*` 을 넘길 추천 API 주소. 지금은 모의 |
 | `AIAPP_APP_MCP_URL` | `http://127.0.0.1:8090/aiapp/mcp` | Engine | 도구를 받아 올 AI-App MCP 서버 |
 | `AIAPP_AUTH_TOKEN` | | App, Engine, NL | 설정하면 준비 상태·콘솔·Swagger 를 뺀 전부가 이 bearer 토큰을 요구 (8절). 비우면 인증 꺼짐(기동 로그가 경고). 넘긴 요청은 헤더를 그대로 달고 가므로 세 프로세스에 같은 값을 넣음 |
 | `AIAPP_APP_TOKEN` | | Engine, NL | 엔진이 AI-App MCP 서버에 보내는 bearer 토큰. NL 은 `AIAPP_MOCK_NL_ENGINE_TOKEN` 이 비었을 때 이것을 엔진에 보냄 |

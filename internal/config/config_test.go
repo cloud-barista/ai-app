@@ -125,7 +125,7 @@ func TestAppStoreDefaultsAndOverrides(t *testing.T) {
 }
 
 func TestEngineAndPartnerNLDefaults(t *testing.T) {
-	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL"} {
+	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL", "AIAPP_PARTNER_REC_URL"} {
 		t.Setenv(env, "")
 	}
 	cfg, err := Load()
@@ -138,14 +138,21 @@ func TestEngineAndPartnerNLDefaults(t *testing.T) {
 	if cfg.PartnerNL.URL != "http://127.0.0.1:8093" {
 		t.Errorf("partner nl = %+v, want port 8093", cfg.PartnerNL)
 	}
+	if cfg.PartnerRec.URL != "http://127.0.0.1:8092" {
+		t.Errorf("partner rec = %+v, want port 8092", cfg.PartnerRec)
+	}
 
 	t.Setenv("AIAPP_MOCK_NL_URL", "http://nl.example:8093/")
+	t.Setenv("AIAPP_PARTNER_REC_URL", "http://rec.example:8092/")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.PartnerNL.URL != "http://nl.example:8093" {
 		t.Errorf("partner nl = %q, want the configured URL without the trailing slash", cfg.PartnerNL.URL)
+	}
+	if cfg.PartnerRec.URL != "http://rec.example:8092" {
+		t.Errorf("partner rec = %q, want the configured URL without the trailing slash", cfg.PartnerRec.URL)
 	}
 
 	t.Setenv("AIAPP_ENGINE_REGISTRY_URL", "http://registry.example/api/")

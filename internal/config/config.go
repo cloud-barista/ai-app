@@ -33,12 +33,14 @@ type Config struct {
 	Engine    EngineConfig
 	// PartnerNL is where the partner natural language agent is reached.
 	PartnerNL PartnerNLConfig
-	App       AppConfig
-	Archive   ArchiveConfig
-	Model     ModelConfig
-	AppStore  AppStoreConfig
-	Auth      AuthConfig
-	Health    HealthConfig
+	// PartnerRec is where the partner recommendation API is reached.
+	PartnerRec PartnerRecConfig
+	App        AppConfig
+	Archive    ArchiveConfig
+	Model      ModelConfig
+	AppStore   AppStoreConfig
+	Auth       AuthConfig
+	Health     HealthConfig
 	// Semaphore runs the playbooks that install onto a node.
 	Semaphore SemaphoreConfig
 	// Stage is the shared folder deployment files are placed in for Semaphore.
@@ -103,6 +105,15 @@ type EngineConfig struct {
 // interpretation is the partner institution's area; until its agent exists,
 // this points at the mock of it.
 type PartnerNLConfig struct {
+	URL string
+}
+
+// PartnerRecConfig holds where the AI-App service forwards
+// /aiapp/partner/rec/*: the partner institution's infrastructure
+// recommendation API. The AI-App service does not call it itself; the route
+// lets the console reach it from the same origin. Until the partner's API
+// exists, this points at the mock of it.
+type PartnerRecConfig struct {
 	URL string
 }
 
@@ -212,6 +223,7 @@ func Load() (*Config, error) {
 	v.SetDefault("engine.url", "http://127.0.0.1:8091")
 	v.SetDefault("engine.archive_dir", "./data/engine-archive")
 	v.SetDefault("mock_nl.url", "http://127.0.0.1:8093")
+	v.SetDefault("partner_rec.url", "http://127.0.0.1:8092")
 	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
 	v.SetDefault("archive.dir", "./data/archive")
 	v.SetDefault("app.store_dir", "./data/apps")
@@ -242,6 +254,7 @@ func Load() (*Config, error) {
 		"engine.registry_url",
 		"engine.registry_token",
 		"mock_nl.url",
+		"partner_rec.url",
 		"app.mcp_url",
 		"app.token",
 		"archive.dir",
@@ -294,6 +307,9 @@ func Load() (*Config, error) {
 		},
 		PartnerNL: PartnerNLConfig{
 			URL: strings.TrimRight(v.GetString("mock_nl.url"), "/"),
+		},
+		PartnerRec: PartnerRecConfig{
+			URL: strings.TrimRight(v.GetString("partner_rec.url"), "/"),
 		},
 		App: AppConfig{
 			MCPURL: v.GetString("app.mcp_url"),
@@ -370,6 +386,9 @@ func (c *Config) validate() error {
 	}
 	if c.PartnerNL.URL == "" {
 		return fmt.Errorf("%s_MOCK_NL_URL is required", envPrefix)
+	}
+	if c.PartnerRec.URL == "" {
+		return fmt.Errorf("%s_PARTNER_REC_URL is required", envPrefix)
 	}
 	if c.App.MCPURL == "" {
 		return fmt.Errorf("%s_APP_MCP_URL is required", envPrefix)

@@ -61,6 +61,11 @@ services:
       # forwarded, path unchanged. Here the mock of that agent.
       AIAPP_MOCK_NL_URL: "http://mock-partner-nl-agent:8093"
 
+      # Where partner recommendation API routes (/aiapp/partner/rec/*) are
+      # forwarded, with /aiapp/partner/rec taken off the path. AI-App does not
+      # call it; the console reaches it here. Here the mock of that API.
+      AIAPP_PARTNER_REC_URL: "${AIAPP_PARTNER_REC_URL:-http://mock-partner-recommender:8092}"
+
       # Empty leaves authentication off. The engine and the agent mock get the
       # same token because forwarded routes carry the caller's Authorization
       # header unchanged.
@@ -200,8 +205,8 @@ services:
 
   # Partner institution recommender (mock implementation). It answers the
   # proposed recommendation contract from the CB-Tumblebug spec and image
-  # catalogs. The AI-App service no longer calls it; it is kept as an example of
-  # that contract.
+  # catalogs. The AI-App service does not call it; it forwards
+  # /aiapp/partner/rec/* to it so that the console can try the contract.
   mock-partner-recommender:
     build:
       context: .
@@ -214,8 +219,9 @@ services:
       - "${AIAPP_MOCK_RECOMMENDER_PORT:-8092}:8092"
     environment:
       AIAPP_MOCK_RECOMMENDER_PORT: "8092"
-      # Required of callers when set.
-      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_MOCK_RECOMMENDER_TOKEN:-}"
+      # Required of callers when set. Calls forwarded by the AI-App service
+      # carry the caller's AIAPP_AUTH_TOKEN, so it defaults to that.
+      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_MOCK_RECOMMENDER_TOKEN:-${AIAPP_AUTH_TOKEN:-}}"
 
       AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
       AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"

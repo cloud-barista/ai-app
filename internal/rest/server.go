@@ -110,6 +110,10 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// agent, here a mock, is reached the same way, path unchanged.
 	g.Any("/partner/nl/*", echo.WrapHandler(newPartnerNLProxy(cfg.PartnerNL.URL)))
 
+	// Infrastructure recommendation is the partner institution's area too.
+	// AI-App does not call it; the console reaches it here, under one origin.
+	g.Any("/partner/rec/*", echo.WrapHandler(newPartnerRecProxy(cfg.PartnerRec.URL)))
+
 	// Deploy and control archive.
 	g.GET("/archive", handler.RestGetArchive)
 	g.GET("/archive/:runId", handler.RestGetArchiveRun)

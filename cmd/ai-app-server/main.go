@@ -145,7 +145,7 @@ func main() {
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
 			Int("tools", len(registry.Names())).Str("engineUrl", cfg.Engine.URL).Str("partnerNlUrl", cfg.PartnerNL.URL).
-			Msg("Starting server")
+			Str("partnerRecUrl", cfg.PartnerRec.URL).Msg("Starting server")
 		if err := server.Start(); err != nil {
 			log.Error().Err(err).Msg("Server stopped unexpectedly")
 			os.Exit(1)
