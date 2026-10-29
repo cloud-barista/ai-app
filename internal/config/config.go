@@ -17,30 +17,14 @@ const envPrefix = "AIAPP"
 // nothing says otherwise.
 //
 // It is a default rather than a required value so that the service starts with
-// no configuration at all. Everything that does not touch a cloud - the
-// application catalog, the matcher, the tool listing, the archive, the API
+// no configuration at all. Everything that does not touch a cloud - the model
+// catalog, the application store, the tool listing, the archive, the API
 // documentation - works without CB-Tumblebug, and refusing to start took all of
 // that away to enforce a setting the deployment path would have reported anyway.
 // The startup log says which URL is in use and whether it came from the
 // environment, so a service pointed at the wrong place says so on the first line
 // instead of at the first deployment.
 const DefaultTumblebugBaseURL = "http://localhost:1323/tumblebug"
-
-// Backend kinds of the recommender and the provisioner.
-const (
-	// BackendLocal works against CB-Tumblebug directly. Only the provisioner
-	// has a local implementation.
-	BackendLocal = "local"
-	// BackendRemote calls an external placement service over HTTP.
-	BackendRemote = "remote"
-	// BackendNone means no recommender API is configured, so a plan must pin
-	// its spec and image.
-	BackendNone = "none"
-)
-
-// recommenderTimeout bounds a remote recommendation. A recommendation reads
-// catalogs and creates nothing, so it has no reason to take minutes.
-const recommenderTimeout = time.Minute
 
 // Config holds all runtime configuration for the service.
 type Config struct {
@@ -55,32 +39,12 @@ type Config struct {
 	AppStore  AppStoreConfig
 	Auth      AuthConfig
 	Health    HealthConfig
-	// Recommender is the partner recommender API that picks the spec and image
-	// of a plan. Its kind is remote when AIAPP_RECOMMENDER_URL is set and none
-	// otherwise; infrastructure recommendation is not done in this service.
-	Recommender BackendConfig
-	// Provisioner selects who reviews, creates and updates Infras.
-	Provisioner BackendConfig
 	// Semaphore runs the playbooks that install onto a node.
 	Semaphore SemaphoreConfig
 	// Stage is the shared folder deployment files are placed in for Semaphore.
 	Stage StageConfig
 	// NodeDeploy holds where node deployment records are kept.
 	NodeDeploy NodeDeployConfig
-}
-
-// BackendConfig selects the local or a remote implementation of one AI-App
-// placement step.
-type BackendConfig struct {
-	// Kind is BackendLocal, BackendRemote or, for the recommender, BackendNone.
-	Kind string
-	// URL is the base URL of the remote service. Unused when Kind is local.
-	URL string
-	// Token is sent as a bearer token when set.
-	Token string
-	// Timeout bounds one remote call. The provisioner shares the CB-Tumblebug
-	// timeout because a remote create blocks for as long as a local one does.
-	Timeout time.Duration
 }
 
 // ServerConfig holds the HTTP settings of the AI-App service.
@@ -90,9 +54,9 @@ type ServerConfig struct {
 
 // TumblebugConfig holds CB-Tumblebug connection settings.
 //
-// Creating an Infra blocks until provisioning finishes, so Timeout must stay
-// generous: cancelling mid-flight aborts provisioning and can leave billable
-// orphan resources behind.
+// ImageNamespace and DefaultOSType are read only by the partner recommender
+// mock, which searches the image catalog; the AI-App service deploys onto nodes
+// that already run and picks no image.
 type TumblebugConfig struct {
 	BaseURL          string
 	Username         string
@@ -157,8 +121,8 @@ type AuthConfig struct {
 	Token string
 }
 
-// HealthConfig holds how long a deployment told to wait for its application
-// keeps asking whether it answers, and how often.
+// HealthConfig holds how long an automation engine workflow waiting for a
+// deployment to end keeps asking, and how often.
 type HealthConfig struct {
 	Timeout  time.Duration
 	Interval time.Duration
@@ -254,7 +218,6 @@ func Load() (*Config, error) {
 	v.SetDefault("app.upload_max_bytes", 256<<20)
 	v.SetDefault("health.timeout", 15*time.Minute)
 	v.SetDefault("health.interval", 20*time.Second)
-	v.SetDefault("placement.provisioner", BackendLocal)
 	v.SetDefault("semaphore.project", "aiapp")
 	v.SetDefault("semaphore.playbook_dir", "/ansible")
 	v.SetDefault("semaphore.poll_interval", 5*time.Second)
@@ -300,21 +263,6 @@ func Load() (*Config, error) {
 		"deployment.store_file",
 	} {
 		if err := v.BindEnv(key); err != nil {
-			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
-		}
-	}
-	// The backend variables are bound by name. Nesting them under a
-	// "provisioner" key would not work: a set AIAPP_PROVISIONER shadows every
-	// key below "provisioner" and they all read empty. AIAPP_RECOMMENDER is no
-	// longer read: the recommender is remote exactly when its URL is set.
-	for key, env := range map[string]string{
-		"placement.recommender_url":   envPrefix + "_RECOMMENDER_URL",
-		"placement.recommender_token": envPrefix + "_RECOMMENDER_TOKEN",
-		"placement.provisioner":       envPrefix + "_PROVISIONER",
-		"placement.provisioner_url":   envPrefix + "_PROVISIONER_URL",
-		"placement.provisioner_token": envPrefix + "_PROVISIONER_TOKEN",
-	} {
-		if err := v.BindEnv(key, env); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
 		}
 	}
@@ -368,17 +316,6 @@ func Load() (*Config, error) {
 			Timeout:  v.GetDuration("health.timeout"),
 			Interval: v.GetDuration("health.interval"),
 		},
-		Recommender: BackendConfig{
-			URL:     strings.TrimRight(strings.TrimSpace(v.GetString("placement.recommender_url")), "/"),
-			Token:   v.GetString("placement.recommender_token"),
-			Timeout: recommenderTimeout,
-		},
-		Provisioner: BackendConfig{
-			Kind:    strings.ToLower(strings.TrimSpace(v.GetString("placement.provisioner"))),
-			URL:     strings.TrimRight(v.GetString("placement.provisioner_url"), "/"),
-			Token:   v.GetString("placement.provisioner_token"),
-			Timeout: v.GetDuration("tumblebug.timeout"),
-		},
 		Semaphore: SemaphoreConfig{
 			URL:          strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.url")), "/"),
 			Token:        v.GetString("semaphore.token"),
@@ -395,11 +332,6 @@ func Load() (*Config, error) {
 		NodeDeploy: NodeDeployConfig{
 			StoreFile: strings.TrimSpace(v.GetString("deployment.store_file")),
 		},
-	}
-
-	cfg.Recommender.Kind = BackendNone
-	if cfg.Recommender.URL != "" {
-		cfg.Recommender.Kind = BackendRemote
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -457,9 +389,6 @@ func (c *Config) validate() error {
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("invalid health interval: %s", c.Health.Interval)
 	}
-	if err := c.Provisioner.validate(envPrefix + "_PROVISIONER"); err != nil {
-		return err
-	}
 	if err := c.Semaphore.validate(); err != nil {
 		return err
 	}
@@ -483,18 +412,4 @@ func (s SemaphoreConfig) validate() error {
 		return fmt.Errorf("invalid semaphore timeout: %s", s.Timeout)
 	}
 	return nil
-}
-
-func (b BackendConfig) validate(env string) error {
-	switch b.Kind {
-	case BackendLocal:
-		return nil
-	case BackendRemote:
-		if b.URL == "" {
-			return fmt.Errorf("%s_URL is required when %s=%s", env, env, BackendRemote)
-		}
-		return nil
-	default:
-		return fmt.Errorf("%s must be %s or %s, got %q", env, BackendLocal, BackendRemote, b.Kind)
-	}
 }

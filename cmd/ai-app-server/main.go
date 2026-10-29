@@ -1,6 +1,7 @@
-// Command ai-app-server serves the AI-App service: the AI application catalog,
-// deployment and lifecycle through CB-Tumblebug, the tools as an MCP server, the
-// operator console and the deploy and control archive.
+// Command ai-app-server serves the AI-App service: the AI model catalog, the
+// registered AI applications, deployment of both onto nodes CB-Tumblebug already
+// runs, the tools as an MCP server, the operator console and the deploy and
+// control archive.
 //
 // The automation engine runs as cmd/ai-automation-engine and reaches the tools
 // over MCP. Natural language instructions are the partner institution's area;
@@ -20,9 +21,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
@@ -40,7 +39,7 @@ const nodeDeployShutdownTimeout = 70 * time.Second
 
 // @title AI-MCMP AI-App Service (Prototype)
 // @version 0.1.0
-// @description Registers AI application metadata, deploys the application onto AI semiconductor nodes through CB-Tumblebug, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
+// @description Keeps an AI model catalog (models, the artifacts each is published as, and the inference engine profiles they run on), registers AI applications as a name, files and a script with versions, deploys a model service or an application onto nodes CB-Tumblebug already runs through Semaphore, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /aiapp
@@ -70,12 +69,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	appCatalog := catalog.NewStore()
-	if err := catalog.Seed(ctx, appCatalog); err != nil {
-		log.Error().Err(err).Msg("Failed to seed AI application catalog")
-		os.Exit(1)
-	}
-
 	modelCatalog, loaded, err := modelcat.Open(cfg.Model.StoreFile)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to open AI model catalog")
@@ -98,9 +91,6 @@ func main() {
 	}
 
 	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
-	deployOptions := append(deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner),
-		deploy.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
-	deployService := deploy.NewService(tumblebugClient, appCatalog, cfg.Tumblebug, deployOptions...)
 
 	deploymentStore, err := nodedeploy.OpenStore(cfg.NodeDeploy.StoreFile)
 	if err != nil {
@@ -121,7 +111,6 @@ func main() {
 	}
 
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
-	tools.Register(registry, appCatalog, deployService)
 	tools.RegisterModels(registry, modelCatalog)
 	tools.RegisterApps(registry, appStore)
 	tools.RegisterNodeDeploy(registry, nodeDeployService)
@@ -136,26 +125,14 @@ func main() {
 		log.Info().Str("url", cfg.Tumblebug.BaseURL).Str("source", "environment").
 			Msg("Using CB-Tumblebug")
 	}
-	recommender := cfg.Recommender.URL
-	if recommender == "" {
-		recommender = config.BackendNone
-	}
-	log.Info().Str("recommender", recommender).
-		Str("provisioner", cfg.Provisioner.Kind).Str("provisionerUrl", cfg.Provisioner.URL).
-		Msg("Placement backends")
-	if cfg.Recommender.URL == "" {
-		log.Warn().Msg("AIAPP_RECOMMENDER_URL is not set: no partner recommender API, so every plan must pin specId and imageId")
-	}
 	if cfg.Tumblebug.DryRun {
-		log.Warn().Msg("Dry run is on: deploy, control, update and delete calls are planned but never sent to the cloud; direct API calls are archived here, MCP calls by the calling agent")
+		log.Warn().Msg("Dry run is on: node deployments place their files and stop before Semaphore, and node control calls are blocked")
 	}
 	if cfg.Auth.Token == "" {
 		log.Warn().Msg("AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open")
 	}
 
 	server := rest.NewAppServer(cfg, rest.AppDependencies{
-		Catalog: appCatalog,
-		Deploy:  deployService,
 		Archive: archiveStore,
 		Tools:   registry,
 		Models:  modelCatalog,

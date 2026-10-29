@@ -25,7 +25,8 @@ run-engine:
 	go run ./cmd/$(ENGINE)
 
 # Partner institution recommender (mock implementation), not part of this
-# prototype. Point AIAPP_RECOMMENDER_URL of run-app at http://127.0.0.1:8092.
+# prototype. The AI-App service no longer calls it; it is kept as an example of
+# the recommendation contract. :8092.
 run-mock-recommender:
 	go run ./mock/partner/recommender/cmd/recommender
 

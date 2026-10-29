@@ -10,11 +10,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
-	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
-	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // headerTransport adds fixed headers to every request, the way the agent sends
@@ -52,10 +50,19 @@ func connect(t *testing.T, registry *tools.Registry, header http.Header) *mcp.Cl
 }
 
 func TestListRegisteredTools(t *testing.T) {
-	cfg := config.TumblebugConfig{DryRun: true}
-	apps := catalog.NewStore()
-	registry := tools.NewRegistry(cfg.DryRun)
-	tools.Register(registry, apps, deploy.NewService(tumblebug.NewClient(cfg), apps, cfg))
+	models, _, err := modelcat.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := nodedeploy.OpenStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := nodedeploy.NewService(nil, nil, models, nil, store, nil, nodedeploy.Options{StageRoot: t.TempDir(), DryRun: true})
+	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
+	registry := tools.NewRegistry(true)
+	tools.RegisterModels(registry, models)
+	tools.RegisterNodeDeploy(registry, svc)
 
 	session := connect(t, registry, nil)
 	if got := session.InitializeResult().Meta[MetaDryRun]; got != true {
@@ -66,15 +73,15 @@ func TestListRegisteredTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(res.Tools) != 15 {
-		t.Fatalf("tools/list returned %d tools, want 15", len(res.Tools))
+	if len(res.Tools) != 8 {
+		t.Fatalf("tools/list returned %d tools, want 8", len(res.Tools))
 	}
-	health := false
+	found := false
 	for _, tool := range res.Tools {
-		if tool.Name == "check_serving_health" {
-			health = true
+		if tool.Name == "get_deployment" {
+			found = true
 			if got := tool.Meta[MetaGrade]; got != string(tools.GradeRead) {
-				t.Errorf("check_serving_health: _meta grade = %v, want read", got)
+				t.Errorf("get_deployment: _meta grade = %v, want read", got)
 			}
 		}
 		grade := registry.Grade(tool.Name)
@@ -93,8 +100,8 @@ func TestListRegisteredTools(t *testing.T) {
 			t.Errorf("%s: destructiveHint wrong for grade %s", tool.Name, grade)
 		}
 	}
-	if !health {
-		t.Error("tools/list does not carry check_serving_health")
+	if !found {
+		t.Error("tools/list does not carry get_deployment")
 	}
 }
 

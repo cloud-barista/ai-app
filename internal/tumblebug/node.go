@@ -147,7 +147,7 @@ const (
 // ControlNode applies a lifecycle action to one node of an Infra and returns
 // the CB-Tumblebug message.
 //
-// CB-Tumblebug exposes this as GET, like ControlInfra.
+// CB-Tumblebug exposes this as GET, like its Infra control.
 func (c *Client) ControlNode(ctx context.Context, nsID, infraID, nodeID, action string) (string, error) {
 	query := url.Values{"action": []string{action}}
 	path := fmt.Sprintf("/ns/%s/control/infra/%s/node/%s",

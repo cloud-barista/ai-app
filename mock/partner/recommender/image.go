@@ -7,7 +7,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
@@ -66,7 +65,7 @@ type ImageChoice struct {
 // actually carries; a mismatch is worse than a plain image, since the node comes
 // up looking ready while the driver never binds. Falling back is not silent:
 // the reason says which case applied.
-func (r *Recommender) ResolveImage(ctx context.Context, app *model.AppSpec, specID string) (*ImageChoice, error) {
+func (r *Recommender) ResolveImage(ctx context.Context, app *App, specID string) (*ImageChoice, error) {
 	osType := app.Install.OSType
 	if osType == "" {
 		osType = r.defaultOSType
@@ -129,7 +128,7 @@ func (r *Recommender) ResolveImage(ctx context.Context, app *model.AppSpec, spec
 // The application requirement is the first source because it is what the author
 // asked for; the spec is consulted when the requirement names no model, which is
 // the common case for a requirement written as "any GPU".
-func (r *Recommender) acceleratorVendor(ctx context.Context, app *model.AppSpec, specID string) acceleratorVendor {
+func (r *Recommender) acceleratorVendor(ctx context.Context, app *App, specID string) acceleratorVendor {
 	if vendor := vendorOf(app.Accelerator.Model); vendor != vendorUnknown {
 		return vendor
 	}
@@ -146,7 +145,7 @@ func (r *Recommender) acceleratorVendor(ctx context.Context, app *model.AppSpec,
 }
 
 // chose builds an ImageChoice and logs the pick.
-func (r *Recommender) chose(app *model.AppSpec, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
+func (r *Recommender) chose(app *App, specID string, image tumblebug.ImageInfo, reason string) *ImageChoice {
 	log.Info().Str("appId", app.ID).Str("specId", specID).Str("imageId", image.ID).
 		Bool("gpuImage", image.IsGPUImage).Msg("Resolved node image")
 

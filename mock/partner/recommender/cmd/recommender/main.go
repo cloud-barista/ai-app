@@ -2,9 +2,9 @@
 // infrastructure recommendation API.
 //
 // Requirement analysis and infrastructure recommendation are the partner
-// institution's area. This mock is not part of the Innogrid prototype; it
-// exists so that the AI-App service has a recommendation API to call through
-// AIAPP_RECOMMENDER_URL until the partner API is available.
+// institution's area. This mock is not part of the Innogrid prototype. The
+// AI-App service no longer calls it; it is kept as an example of the
+// recommendation contract.
 package main
 
 import (

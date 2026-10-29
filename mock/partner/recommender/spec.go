@@ -1,11 +1,11 @@
 // Package recommender is a mock of the infrastructure recommendation API.
 //
 // Requirement analysis and infrastructure recommendation are the partner
-// institution's area. This code is a mock kept only to exercise the integration
-// point the AI-App service calls; it is not part of the Innogrid prototype. It
-// carries the first-year recommendation logic (accelerator requirement to a
-// CB-Tumblebug spec filter, cheapest first, vendor matched images) so that the
-// AI-App service has something real to call until the partner API exists.
+// institution's area. This code is a mock and not part of the Innogrid
+// prototype. The AI-App service no longer calls it; it is kept as an example of
+// the recommendation contract. It carries the first-year recommendation logic
+// (accelerator requirement to a CB-Tumblebug spec filter, cheapest first,
+// vendor matched images).
 package recommender
 
 import (
@@ -16,7 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
@@ -61,7 +60,7 @@ func New(client *tumblebug.Client, cfg config.TumblebugConfig) *Recommender {
 //
 // The accelerator requirement maps field for field onto the spec filter, so a
 // new accelerator vendor needs a catalog entry rather than code here.
-func (r *Recommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, limit int) ([]model.SpecCandidate, error) {
+func (r *Recommender) RecommendSpecs(ctx context.Context, app *App, limit int) ([]SpecCandidate, error) {
 	if limit <= 0 {
 		limit = defaultSpecCandidates
 	}
@@ -76,9 +75,9 @@ func (r *Recommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, li
 		Int("minCount", app.Accelerator.MinCount).Int("candidates", len(specs)).
 		Msg("Recommended accelerator specs")
 
-	candidates := make([]model.SpecCandidate, 0, len(specs))
+	candidates := make([]SpecCandidate, 0, len(specs))
 	for _, spec := range specs {
-		candidates = append(candidates, model.SpecCandidate{
+		candidates = append(candidates, SpecCandidate{
 			ID:                  spec.ID,
 			ProviderName:        spec.ProviderName,
 			RegionName:          spec.RegionName,
@@ -95,7 +94,7 @@ func (r *Recommender) RecommendSpecs(ctx context.Context, app *model.AppSpec, li
 }
 
 // buildSpecRequest converts an application requirement into a spec filter.
-func buildSpecRequest(app *model.AppSpec, limit int) *tumblebug.RecommendSpecReq {
+func buildSpecRequest(app *App, limit int) *tumblebug.RecommendSpecReq {
 	policy := make([]tumblebug.FilterCondition, 0, 6)
 	// An application with no accelerator type runs on a CPU node, so only the
 	// vCPU and memory floor narrow the search.

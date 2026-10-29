@@ -14,9 +14,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
@@ -35,8 +33,6 @@ type Server struct {
 
 // AppDependencies are the service layer objects the AI-App routes are built on.
 type AppDependencies struct {
-	Catalog *catalog.Store
-	Deploy  *deploy.Service
 	Archive *archive.Store
 	Tools   *tools.Registry
 	// Models is the AI model catalog.
@@ -52,8 +48,6 @@ type AppDependencies struct {
 // natural language agent.
 func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	handler := &Handler{
-		catalog: deps.Catalog,
-		deploy:  deps.Deploy,
 		archive: deps.Archive,
 		tools:   deps.Tools,
 		models:  deps.Models,
@@ -100,17 +94,6 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/deployments/:id", handler.RestGetNodeDeployment)
 	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
 	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
-
-	// Deployment and lifecycle, callable without going through the agent.
-	g.POST("/ns/:nsId/deployments/plan", handler.RestPostDeploymentPlan)
-	g.POST("/ns/:nsId/deployments", handler.RestPostDeployment)
-	g.GET("/ns/:nsId/deployments", handler.RestGetAllDeployments)
-	g.GET("/ns/:nsId/deployments/:infraId/status", handler.RestGetDeploymentStatus)
-	g.GET("/ns/:nsId/deployments/:infraId/accelerator", handler.RestGetDeploymentAccelerator)
-	g.GET("/ns/:nsId/deployments/:infraId/health", handler.RestGetDeploymentHealth)
-	g.POST("/ns/:nsId/deployments/:infraId/update", handler.RestPostDeploymentUpdate)
-	g.POST("/ns/:nsId/deployments/:infraId/control", handler.RestPostDeploymentControl)
-	g.DELETE("/ns/:nsId/deployments/:infraId", handler.RestDeleteDeployment)
 
 	// The tool surface the agent works through.
 	g.GET("/tools", handler.RestGetTools)

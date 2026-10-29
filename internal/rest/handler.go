@@ -6,9 +6,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/compose"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
@@ -18,11 +16,12 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
+// malformedBody is the caller-facing text for an unreadable request body.
+const malformedBody = "Malformed request body: check JSON syntax"
+
 // Handler serves the endpoints of both services. Each server fills only the
 // fields its routes use.
 type Handler struct {
-	catalog *catalog.Store
-	deploy  *deploy.Service
 	archive *archive.Store
 	tools   *tools.Registry
 	models  *modelcat.Store
@@ -42,8 +41,6 @@ func statusCodeFor(err error) int {
 	switch {
 	case errors.Is(err, model.ErrValidation):
 		return http.StatusBadRequest
-	case errors.Is(err, catalog.ErrNotFound):
-		return http.StatusNotFound
 	case errors.Is(err, modelcat.ErrNotFound), errors.Is(err, modelcat.ErrArtifactNotFound),
 		errors.Is(err, modelcat.ErrEngineNotFound):
 		return http.StatusNotFound
@@ -57,27 +54,8 @@ func statusCodeFor(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, compose.ErrInvalidOption):
 		return http.StatusBadRequest
-	case errors.Is(err, deploy.ErrAlreadyExists):
-		return http.StatusConflict
-	case errors.Is(err, deploy.ErrNotViable):
-		return http.StatusBadRequest
-	case errors.Is(err, deploy.ErrAppMismatch):
-		return http.StatusConflict
-	case errors.Is(err, deploy.ErrNoAppLabel):
-		return http.StatusBadRequest
-	case errors.Is(err, deploy.ErrRequirementNotDeployed):
-		return http.StatusConflict
-	case errors.Is(err, deploy.ErrNoRecommender):
-		return http.StatusUnprocessableEntity
 	case errors.Is(err, mcpclient.ErrUnavailable):
 		return http.StatusServiceUnavailable
-	}
-
-	// A remote placement service failing, whether it rejected the call or broke,
-	// is an upstream failure from the caller's point of view.
-	var remoteErr *deploy.RemoteError
-	if errors.As(err, &remoteErr) {
-		return http.StatusBadGateway
 	}
 
 	switch tumblebug.StatusCode(err) {
@@ -100,13 +78,6 @@ func statusCodeFor(err error) int {
 func messageFor(err error, fallback string) string {
 	if message := model.ValidationMessage(err); message != "" {
 		return message
-	}
-	var requirementErr *deploy.RequirementError
-	if errors.As(err, &requirementErr) {
-		return requirementErr.Error()
-	}
-	if errors.Is(err, deploy.ErrNoRecommender) {
-		return deploy.ErrNoRecommender.Error()
 	}
 	// The model catalog, compose and application store errors name only
 	// identifiers the caller sent, the reason a pairing does not fit and the

@@ -33,7 +33,7 @@
   (`POST /aiapp/engine/workflows/{workflow}`)을 보내면 배포부터 확인까지 전 과정이 돕니다.
 - 콘솔과 운영자는 AI-App 주소(`8090`) 하나만 알면 됩니다. AI-App 이 `/aiapp/engine/*` 을 엔진(`AIAPP_ENGINE_URL`)으로,
   `/aiapp/partner/nl/*` 을 모의 자연어 에이전트(`AIAPP_MOCK_NL_URL`)로 경로 그대로 넘깁니다.
-  모의 추천 API 는 넘기지 않고 AI-App 이 `AIAPP_RECOMMENDER_URL` 로 직접 부릅니다.
+  모의 추천 API 는 넘기지 않고 AI-App 도 더 부르지 않습니다. 협력 기관 계약 예시로 남겨 두었습니다.
 - **dry-run 게이트는 AI-App 쪽에 있으므로** 엔진이든 모의 에이전트든 어떻게 부르든 게이트를 건너뛸 수 없습니다.
 - 모의 구현은 같은 Go 모듈에 있지만 이노그리드 패키지(`cmd/`, `internal/`)는 `mock/` 를 import 하지 않습니다.
   `internal/boundary/boundary_test.go` 가 이것을 검사합니다.
@@ -47,10 +47,10 @@
 
 | 연동 지점 | 지금 이 저장소에 있는 것 | 협력 기관이 실제로 할 것 |
 |---|---|---|
-| 인프라 추천 API | 제안 계약 `POST /recommendations/specs`, `POST /recommendations/image` (요청에 이노그리드 `AppSpec`). 모의 구현 `mock/partner/recommender` | 요구 분석, 추천 알고리즘, 추천 근거 |
+| 인프라 추천 API | 제안 계약 `POST /recommendations/specs`, `POST /recommendations/image` (요청의 `app` 은 `mock/partner/recommender/app.go`). 모의 구현 `mock/partner/recommender`. AI-App 은 부르지 않음 | 요구 분석, 추천 알고리즘, 추천 근거 |
 | 자연어 지원 에이전트 | 엔진 MCP 도구(`/aiapp/engine/mcp`)를 부르는 MCP 클라이언트 + Anthropic Messages 형식 LLM. 모의 구현 `mock/partner/nlagent` | LLM 선정·실행(OpsLLM), 자연어 해석 |
 | 에이전트 등록 | 엔진이 `GET /aiapp/engine/card` 로 기술서를 내고, `AIAPP_ENGINE_REGISTRY_URL` 을 주면 기동할 때 `POST {registry}/agents` 로 등록 | 에이전트 등록 관리 체계 |
-| 배포 자동화·업데이트 | Provisioner 계약(`POST /provisions/review`, `POST /provisions`, `POST /provisions/{id}/update`). `AIAPP_PROVISIONER=remote` 로 켬. 기본은 AI-App 이 CB-Tumblebug 을 직접 부름(`local`) | 실행 주체가 정해진 뒤 구현 |
+| 배포 자동화·업데이트 | Provisioner 계약과 `AIAPP_PROVISIONER` 는 VM 생성 경로와 함께 지웠습니다. AI-App 은 CB-Tumblebug 이 이미 띄운 노드에 Semaphore 로 배포합니다 | 실행 주체가 정해진 뒤 구현 |
 | 배포/운영 정보 기반 추론 최적화 | 입력 데이터인 엔진 실행 기록(JSON Lines, `GET /aiapp/engine/runs`) | 추론 최적화 |
 
 ## 개편 이력과 지워진 것
@@ -67,11 +67,14 @@
 | `POST /aiapp/ns/{nsId}/intents` | `POST /aiapp/partner/nl/ns/{nsId}/intents` (모의) |
 | `/aiapp/agent/readyz`, `/aiapp/agent/card`, `/aiapp/agent/archive` | 엔진 `/aiapp/engine/readyz`·`card`·`runs`, 모의 에이전트 `/aiapp/partner/nl/readyz`·`card`·`runs` |
 | `AIAPP_AGENT_PORT`, `AIAPP_AGENT_URL`, `AIAPP_AGENT_MAX_STEPS`, `AIAPP_AGENT_REGISTRY_URL`/`_TOKEN`, `AIAPP_AGENT_ARCHIVE_DIR` | `AIAPP_ENGINE_*` (엔진), `AIAPP_MOCK_NL_*` (모의 에이전트) |
-| `AIAPP_RECOMMENDER=local\|remote` | 읽지 않습니다. `AIAPP_RECOMMENDER_URL` 이 있으면 추천 API 를 부르고, 없으면 추천 없이 `specId`·`imageId` 를 직접 지정해야 합니다 |
-| 콘솔 "자연어 매칭" 화면 | 없습니다. 규칙 매처는 응용 카탈로그 화면의 "카탈로그 검색" 과 `GET /aiapp/apps/search` 에 있습니다 |
+| `AIAPP_RECOMMENDER=local\|remote`, `AIAPP_RECOMMENDER_URL`/`_TOKEN`, `AIAPP_PROVISIONER`/`_URL`/`_TOKEN` | 읽지 않습니다. AI-App 은 노드를 고르지도 만들지도 않습니다 |
+| 콘솔 "자연어 매칭" 화면, 규칙 매처, `GET /aiapp/apps/search` | 없습니다. 옛 응용 카탈로그와 함께 지웠습니다 |
+| 옛 응용 카탈로그(`AppSpec`, `internal/catalog`)와 도구 `list_ai_apps`·`find_ai_apps`·`get_ai_app` | 모델 카탈로그 `/aiapp/models`·`/aiapp/engines` (도구 `list_models`·`get_model`·`list_engines`), 응용 `/aiapp/apps` (도구 `list_apps`·`get_app`) |
+| VM 생성 경로(`internal/deploy`): `/aiapp/ns/{nsId}/deployments...` 와 도구 `plan_deployment`·`review_deployment`·`deploy_ai_app`·`update_deployment`·`control_deployment`·`delete_deployment`·`list_deployments`·`get_deployment_status`·`recommend_accelerator_spec`·`resolve_node_image` | 이미 있는 노드에 배포: `/aiapp/deployments...` (도구 `create_deployment`·`get_deployment`·`list_node_deployments`·`get_deployment_logs`·`control_node`) |
+| 가속기 실측·서빙 응답 확인: `GET .../{infraId}/accelerator`·`.../health`, 도구 `probe_accelerator`·`check_serving_health` | 없습니다. 노드 기준으로 다시 만들려면 노드 원격 명령 경로부터 정해야 합니다 |
 
 아래 10절·12절의 실측 기록은 한 프로세스 시절에 잰 것이라 그대로 두었습니다.
-AI-App 의 REST 경로(`/aiapp/apps...`, `/aiapp/ns/...`)는 그 뒤에도 같습니다.
+그때의 배포 경로 `/aiapp/ns/{nsId}/deployments...` 는 지금 없습니다 (위 표).
 
 ## 1. 이게 뭘 하는 건가 - 한 문장
 
@@ -125,7 +128,7 @@ POST /aiapp/partner/nl/ns/{ns}/intents  [ mock/partner/nlagent ]          :8093
 POST /aiapp/engine/workflows/{workflow} ─▶  deploy · heal · control · status
                                           단계마다 도구·입력·결과·게이트 차단 여부를 기록
                                                │  [ internal/mcpclient ]
-  - - - - - - - - - - - - - - - - - - - - - - -│- MCP  /aiapp/mcp  (AI-App 도구 25개) - - - -
+  - - - - - - - - - - - - - - - - - - - - - - -│- MCP  /aiapp/mcp  (AI-App 도구 10개) - - - -
                                                v
                                          [ internal/mcpserver ]            cmd/ai-app-server :8090
                                                │
@@ -184,10 +187,8 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 
 ### 3-3. 인프라 추천의 위치
 
-- AI-App 은 추천을 **직접 하지 않습니다.** `AIAPP_RECOMMENDER_URL` 의 추천 API(제안 계약)를 부릅니다.
-- 추천 API 가 설정되지 않았으면 요청에 `specId`·`imageId` 를 직접 지정해야 하고, 아니면 계획이 실패합니다
-  (`422 no recommender configured: pin specId and imageId`).
-- 1차년도에 쓰던 추천 로직(5절)은 `mock/partner/recommender` 로 옮겨 모의 추천 API 가 되었습니다.
+- AI-App 은 추천을 **하지 않고 추천 API 도 부르지 않습니다.** 배포 요청에 CB-Tumblebug 이 이미 띄운 노드를 지정합니다.
+- 1차년도에 쓰던 추천 로직(5절)은 `mock/partner/recommender` 로 옮겨 모의 추천 API 가 되었고, 협력 기관 계약 예시로 남아 있습니다.
 
 ## 4. AI 응용 메타데이터 규격 (1차년도 ④ 산출물)
 
@@ -294,20 +295,17 @@ AppSpec.resources
 
 ### 6-1. 도구 등급
 
-AI-App 도구 25개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대로 확인할 수 있습니다.
+AI-App 도구 10개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대로 확인할 수 있습니다.
 
 | 등급 | AI-App 도구 | dry-run 게이트 |
 |---|---|---|
-| `read` | `list_ai_apps`, `find_ai_apps`, `get_ai_app`, `recommend_accelerator_spec`, `resolve_node_image`, `plan_deployment`, `list_deployments`, `get_deployment_status`, `probe_accelerator`, `check_serving_health`, `list_models`, `get_model`, `list_engines`, `list_apps`, `get_app`, `get_deployment`, `list_node_deployments`, `get_deployment_logs` | 해당 없음. 항상 실행 |
-| `review` | `review_deployment` | 해당 없음. 아무것도 안 만듦 |
-| `write` | `deploy_ai_app`, `update_deployment`, `control_deployment`, `create_deployment`, `control_node` | **걸림**. `create_deployment` 는 dry-run 이면 공유 저장소에 파일만 두고 Semaphore 에 아무것도 안 올린 기록(`dry-run`)을 돌려주고, `control_node` 는 노드마다 `blocked` 를 돌려줌 |
-| `destructive` | `delete_deployment` | **걸림** |
+| `read` | `list_models`, `get_model`, `list_engines`, `list_apps`, `get_app`, `get_deployment`, `list_node_deployments`, `get_deployment_logs` | 해당 없음. 항상 실행 |
+| `write` | `create_deployment`, `control_node` | **걸림**. `create_deployment` 는 dry-run 이면 공유 저장소에 파일만 두고 Semaphore 에 아무것도 안 올린 기록(`dry-run`)을 돌려주고, `control_node` 는 노드마다 `blocked` 를 돌려줌 |
 
-`recommend_accelerator_spec`·`resolve_node_image`, 그리고 `specId`·`imageId` 를 비운 `plan_deployment` 는
-추천 API 를 거칩니다. 추천 API 가 설정되지 않았으면 실패합니다.
+`review`·`destructive` 등급은 도구 계층에 남아 있지만 지금 그 등급의 AI-App 도구는 없습니다.
 
-엔진 도구 5개는 엔진의 MCP 서버 `/aiapp/engine/mcp` 로 나갑니다. 이 중 12개 AI-App 도구를 불러 씁니다
-(`delete_deployment`, `recommend_accelerator_spec`, `resolve_node_image` 는 부르지 않습니다).
+엔진 도구 5개는 엔진의 MCP 서버 `/aiapp/engine/mcp` 로 나갑니다. 이 중 8개 AI-App 도구를 불러 씁니다
+(`list_engines`, `list_node_deployments` 는 부르지 않습니다).
 
 | 등급 | 엔진 도구 | 하는 일 |
 |---|---|---|
@@ -320,7 +318,7 @@ AI-App 도구 25개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대
 ### 6-2. 실행 여부를 호출자가 정하지 않는다
 
 `AIAPP_TUMBLEBUG_DRY_RUN` 은 AI-App 의 **서비스 설정**이지 요청 파라미터가 아닙니다.
-엔진이 `deploy` 를 돌려도, 모의 에이전트의 LLM 이 "확실하니 실행하자"고 해도 `deploy_ai_app` 은 계획과 review 까지만
+엔진이 `deploy` 를 돌려도, 모의 에이전트의 LLM 이 "확실하니 실행하자"고 해도 `create_deployment` 는 파일 배치까지만
 하고 멈추고, 엔진은 그 단계를 `blocked` 로 남깁니다.
 모의 에이전트의 시스템 프롬프트에는 게이트가 켜져 있다고 알려 주는데, 이것은 **지키라고 부탁하는 게 아니라**
 운영자에게 "다 했습니다"라고 잘못 보고하지 않게 하려는 것입니다. 강제는 AI-App 의 도구 계층에서 합니다.
@@ -541,21 +539,12 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | GET | `/aiapp/apps/{name}` | AI 응용 조회 (모든 버전) |
 | GET | `/aiapp/apps/{name}/versions/{version}` | AI 응용 한 버전 조회 |
 | DELETE | `/aiapp/apps/{name}` | AI 응용 삭제 (모든 버전과 저장된 파일) |
-| POST | `/aiapp/ns/{nsId}/deployments/plan` | 배포 계획만 만듦 (클라우드 미접촉). `specId`·`imageId` 를 비우면 추천 API 에 물음 |
-| POST | `/aiapp/ns/{nsId}/deployments` | 배포 (review 후, 게이트 통과 시 생성). `sgTemplateId` 로 보안그룹 템플릿 지정 가능. 생성 뒤 서빙 포트 응답을 한 번 확인해 `health` 에 담음. `?waitHealthy=true` 면 모든 노드가 응답하거나 `AIAPP_HEALTH_TIMEOUT` 이 지날 때까지 다시 확인 (응답이 없어도 배포는 실패로 안 바뀜) |
-| GET | `/aiapp/ns/{nsId}/deployments` | 배포 목록 |
-| GET | `/aiapp/ns/{nsId}/deployments/{infraId}/status` | 배포 상태 |
-| GET | `/aiapp/ns/{nsId}/deployments/{infraId}/accelerator` | **노드의 실제 가속기 조회 + 카탈로그 약속과 대조** |
-| GET | `/aiapp/ns/{nsId}/deployments/{infraId}/health` | 노드 안에서 `curl 127.0.0.1:{port}{healthPath}` 로 서빙 응답 확인. 배포 라벨에 응용이 없으면 `?appId=` 필요. 읽기 전용이라 dry-run 과 무관 |
-| POST | `/aiapp/ns/{nsId}/deployments/{infraId}/update` | 등록된 응용의 현재 버전을 노드를 그대로 둔 채 다시 설치 (설치 명령 재실행). 게이트에 걸림 |
-| POST | `/aiapp/ns/{nsId}/deployments/{infraId}/control` | suspend / resume / reboot / terminate |
-| DELETE | `/aiapp/ns/{nsId}/deployments/{infraId}` | 배포 삭제 |
 | POST | `/aiapp/deployments` | **이미 있는 CB-Tumblebug 노드에 배포** (`type`: `model-service` 또는 `app`, `targets[]`: `{kind: node, nsId, infraId, nodeId}`). 받으면 `202` 와 기록(`pending`)을 돌려주고 뒤에서 진행. 노드마다 Semaphore 로 `install-docker` 다음 `compose-up`(모델 서비스) 또는 `copy-and-run`(응용). dry-run 이면 파일 배치까지만 하고 `200` 과 `dry-run` 기록. `kind: k8s` 는 `422` |
 | GET | `/aiapp/deployments` | 노드 배포 기록 목록 (최신순, 태스크 출력 제외) |
 | GET | `/aiapp/deployments/{id}` | 노드 배포 기록. 상태 `pending`/`running`/`succeeded`/`failed`/`partial`/`dry-run`/`interrupted`, 노드별 접속 정보(키 제외)·GPU 판단·렌더한 compose·단계별 Semaphore 태스크 |
 | GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력 |
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`/`resume`/`reboot`/`terminate`). dry-run 이면 `blocked` |
-| GET | `/aiapp/tools` | AI-App 도구 25개와 등급, dry-run 상태 |
+| GET | `/aiapp/tools` | AI-App 도구 10개와 등급, dry-run 상태 |
 | (any) | `/aiapp/mcp` | **같은 도구의 MCP 서버** (Streamable HTTP). 엔진이 여기로 도구를 부름 |
 | GET | `/aiapp/archive` | 배포·제어 아카이브 목록 (최신순) |
 | GET | `/aiapp/archive/{runId}` | 배포·제어 아카이브 단건 |
@@ -585,13 +574,13 @@ run-dl3xxm60p7x7  intent   Llama 3.1 8B 추론 서버를 GPU 한 장짜리 노�
 | GET | `/aiapp/partner/nl/runs/{runId}` | 지시 실행 기록 단건 |
 | GET | `/aiapp/partner/nl/card` | 모의 에이전트 카드 |
 
-모의 추천 API (`mock/partner/recommender`, `8092`). AI-App 이 `AIAPP_RECOMMENDER_URL` 로 직접 부르고, 넘겨 주지 않습니다.
+모의 추천 API (`mock/partner/recommender`, `8092`). AI-App 은 부르지도 넘겨 주지도 않습니다. 협력 기관 계약 예시입니다.
 `AIAPP_MOCK_RECOMMENDER_TOKEN` 을 주면 모든 경로가 bearer 토큰을 요구합니다.
 
 | 메서드 | 경로 | 하는 일 |
 |---|---|---|
-| POST | `/recommendations/specs` | 요청 `{app: AppSpec, limit}` -> `{candidates, reason}` |
-| POST | `/recommendations/image` | 요청 `{app: AppSpec, specId}` -> `{imageId, source, reason}` |
+| POST | `/recommendations/specs` | 요청 `{app, limit}` -> `{candidates, reason}`. `app` 의 모양은 `mock/partner/recommender/app.go` |
+| POST | `/recommendations/image` | 요청 `{app, specId}` -> `{imageId, source, reason}` |
 
 ## 9. 실행 방법
 
@@ -608,30 +597,25 @@ make run-mock-nl            # 협력 기관 자연어 에이전트 모의, :8093
 open http://localhost:8090/aiapp/ui
 ```
 
-모의 추천 API 를 쓰려면 `run-app` 에 `AIAPP_RECOMMENDER_URL=http://127.0.0.1:8092` 를 줍니다
-(`conf/setup.env` 나 환경변수). 안 주면 추천 없이 돌고, 배포 계획에 `specId`·`imageId` 를 직접 넣어야 합니다.
-
 바이너리가 필요하면 `make build` 가 `bin/` 아래에 넷을 만듭니다:
 `ai-app-server`, `ai-automation-engine`, `mock-partner-recommender`, `mock-partner-nl-agent`.
 
 **끝입니다.** env 파일을 만들 필요가 없습니다. 모든 설정에 기본값이 있습니다.
-아래는 설정 없이 위 순서로 띄웠을 때의 기동 로그입니다 (2026-10-13, JSON 로그를 줄여 옮김).
+아래는 설정 없이 위 순서로 띄웠을 때의 기동 로그입니다 (2026-10-13, JSON 로그를 줄여 옮김. 도구 수와 dry-run 줄은 2026-10-29 에 다시 받음).
 
 ```
 # ai-app-server
 WRN CB-Tumblebug base URL was not configured, so deployment calls will not reach a real
     platform  url=http://localhost:1323/tumblebug source=default
-INF Placement backends  recommender=none provisioner=local
-WRN AIAPP_RECOMMENDER_URL is not set: no partner recommender API, so every plan must pin specId and imageId
-WRN Dry run is on: deploy, control, update and delete calls are planned but never sent to the cloud;
-    direct API calls are archived here, MCP calls by the calling agent
+WRN Dry run is on: node deployments place their files and stop before Semaphore, and node
+    control calls are blocked
 WRN AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open
-INF Starting server port=8090 basePath=/aiapp tools=15 engineUrl=http://127.0.0.1:8091
+INF Starting server port=8090 basePath=/aiapp tools=10 engineUrl=http://127.0.0.1:8091
     partnerNlUrl=http://127.0.0.1:8093
 
 # ai-automation-engine
 WRN AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open
-INF Connected to the MCP server  endpoint=http://127.0.0.1:8090/aiapp/mcp tools=15 dryRun=true
+INF Connected to the MCP server  endpoint=http://127.0.0.1:8090/aiapp/mcp tools=10 dryRun=true
 INF AIAPP_ENGINE_REGISTRY_URL is not set: the engine card is not registered anywhere
 INF Starting automation engine; it uses no LLM  port=8091 workflows=[deploy,heal,control,status] tools=5
 
@@ -703,9 +687,9 @@ make docker-down
 
 | 서비스 | 포트 | 비고 |
 |---|---|---|
-| `ai-app-server` | `8090` | 아카이브는 named volume `archive`. `AIAPP_RECOMMENDER_URL` 기본값이 `http://mock-partner-recommender:8092` |
+| `ai-app-server` | `8090` | 아카이브는 named volume `archive` |
 | `ai-automation-engine` | `8091` | `ai-app-server` 가 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-app-server:8090/aiapp/mcp`, 실행 기록은 named volume `engine-archive` |
-| `mock-partner-recommender` | `8092` | 협력 기관 · 모의. AI-App 과 같은 CB-Tumblebug 설정을 읽음 |
+| `mock-partner-recommender` | `8092` | 협력 기관 · 모의. AI-App 은 부르지 않음(계약 예시). CB-Tumblebug 설정을 읽음 |
 | `mock-partner-nl-agent` | `8093` | 협력 기관 · 모의. `ai-automation-engine` 이 healthy 가 된 뒤 뜸. MCP 주소는 `http://ai-automation-engine:8091/aiapp/engine/mcp`, 기록은 named volume `partner-nl-archive` |
 | `semaphore` | `127.0.0.1:3001` | `deploy` 프로필이라 `docker compose --profile deploy up -d` 일 때만 뜸. `deploy/ansible` 을 `/ansible` 로, named volume `stage` 를 `ai-app-server` 와 같은 `/var/lib/aiapp/stage` 로 마운트. `AIAPP_SEMAPHORE_PASSWORD` 가 없으면 기동을 거부함(Semaphore 는 빈 비밀번호로도 로그인시킴) |
 
@@ -738,7 +722,7 @@ docker compose up -d
 만들 수 없습니다. 아카이브는 named volume(`archive`, `engine-archive`, `partner-nl-archive`)에 있어 컨테이너보다 오래 삽니다.
 compose 는 `AIAPP_AUTH_TOKEN` 하나를 AI-App·엔진·모의 자연어 에이전트의 `AIAPP_AUTH_TOKEN` 과, 엔진의 `AIAPP_APP_TOKEN`,
 모의 에이전트의 `AIAPP_MOCK_NL_ENGINE_TOKEN` 에 같이 넣습니다. AI-App 이 넘기는 요청은 호출자의 `Authorization` 헤더를
-그대로 달고 가기 때문입니다. 모의 추천 API 의 `AIAPP_MOCK_RECOMMENDER_TOKEN` 에는 `AIAPP_RECOMMENDER_TOKEN` 을 넣습니다.
+그대로 달고 가기 때문입니다.
 
 ### 9-4. 검증 명령
 
@@ -789,7 +773,7 @@ http://localhost:8090/aiapp/ui
 
 ### 설정
 
-**필수 변수는 없습니다.** 전부 기본값이 있고, `AIAPP_PROVISIONER=remote` 일 때만 `AIAPP_PROVISIONER_URL` 이 필수가 됩니다.
+**필수 변수는 없습니다.** 전부 기본값이 있습니다.
 AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를 쓰므로 그 값이 잘못되면 셋 다 기동을 거부합니다.
 모의 자연어 에이전트는 자기 설정을 따로 읽습니다(`mock/partner/nlagent/cmd/nl-agent/main.go`).
 "읽는 프로세스" 는 그 값을 실제로 쓰는 프로세스입니다
@@ -807,17 +791,13 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_TUMBLEBUG_BASE_URL` | `http://localhost:1323/tumblebug` | App, Rec | 예 `http://<host>:1323/tumblebug`. **없어도 기동합니다.** 기동 로그가 출처를 찍습니다 |
 | `AIAPP_TUMBLEBUG_USERNAME` / `_PASSWORD` | | App, Rec | basic auth |
 | `AIAPP_TUMBLEBUG_CREDENTIAL_HOLDER` | | App, Rec | `x-credential-holder` 헤더 값. 비우면 CB-Tumblebug 기본 holder |
-| `AIAPP_TUMBLEBUG_TIMEOUT` | `20m` | App, Rec | Infra 생성이 동기라 넉넉해야 함. `AIAPP_PROVISIONER=remote` 호출에도 같은 값을 씀 |
-| `AIAPP_TUMBLEBUG_IMAGE_NAMESPACE` | `system` | App, Rec | 이미지 카탈로그가 있는 네임스페이스 |
-| `AIAPP_TUMBLEBUG_SPEC_NAMESPACE` | `system` | App, Rec | 스펙 카탈로그가 있는 네임스페이스 |
-| `AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE` | `ubuntu 22.04` | App, Rec | 응용이 OS 를 안 정했을 때 |
-| **`AIAPP_TUMBLEBUG_DRY_RUN`** | **`true`** | App | **쓰기 게이트. 생성·업데이트·제어·삭제를 막음. `false` 로 바꾸면 실제로 과금됨.** `probe_accelerator`·`check_serving_health` 의 읽기 전용 원격 명령은 막지 않음 |
-| `AIAPP_HEALTH_TIMEOUT` | `15m` | App, Engine | `waitHealthy=true` 배포와 엔진의 배포·복구 단계가 서빙 응답을 기다리는 상한 |
-| `AIAPP_HEALTH_INTERVAL` | `20s` | App, Engine | 그 사이 다시 확인하는 간격 |
-| `AIAPP_RECOMMENDER_URL` | | App | 추천 API(협력 기관 담당) 주소. 모의를 쓰려면 `http://127.0.0.1:8092`. 비우면 추천 없음: 계획에 `specId`·`imageId` 를 직접 넣어야 하고, 추천 경로는 `422` |
-| `AIAPP_RECOMMENDER_TOKEN` | | App | 추천 API 에 보내는 bearer 토큰 |
-| `AIAPP_PROVISIONER` | `local` | App | Infra 검토·생성·업데이트를 누가 하나. `local` = CB-Tumblebug 직접, `remote` = 외부 배포 서비스(Provisioner 계약) |
-| `AIAPP_PROVISIONER_URL` / `_TOKEN` | | App | `remote` 일 때 주소(필수)와 bearer 토큰 |
+| `AIAPP_TUMBLEBUG_TIMEOUT` | `20m` | App, Rec | CB-Tumblebug 호출 하나의 상한 |
+| `AIAPP_TUMBLEBUG_IMAGE_NAMESPACE` | `system` | Rec | 이미지 카탈로그가 있는 네임스페이스 |
+| `AIAPP_TUMBLEBUG_SPEC_NAMESPACE` | `system` | App, Rec | 스펙 카탈로그가 있는 네임스페이스. 노드 배포는 노드의 스펙을 여기서 읽어 GPU 여부를 판단 |
+| `AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE` | `ubuntu 22.04` | Rec | 요청이 OS 를 안 정했을 때 |
+| **`AIAPP_TUMBLEBUG_DRY_RUN`** | **`true`** | App | **쓰기 게이트.** 노드 배포는 파일 배치까지만 하고 Semaphore 에 안 올림, 노드 제어는 `blocked`. `false` 로 바꾸면 실제 노드가 바뀜 |
+| `AIAPP_HEALTH_TIMEOUT` | `15m` | Engine | 엔진 워크플로 단계가 배포가 끝나기를 기다리는 상한 |
+| `AIAPP_HEALTH_INTERVAL` | `20s` | Engine | 그 사이 다시 확인하는 간격 |
 | `AIAPP_ARCHIVE_DIR` | `./data/archive` | App | 배포·제어 아카이브 위치 |
 | `AIAPP_APP_STORE_DIR` | `./data/apps` | App | 업로드한 응용 저장 위치. `<name>/<version>/` 아래 `files/`, `script.sh`, `meta.json`. 기동 때 다시 읽음 |
 | `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` (256 MiB) | App | 업로드 한 번의 script 와 파일 합계 상한 (바이트) |
@@ -832,7 +812,7 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_ENGINE_ARCHIVE_DIR` | `./data/engine-archive` | Engine | 엔진 실행 기록 위치 |
 | `AIAPP_ENGINE_REGISTRY_URL` / `_TOKEN` | | Engine | 기동할 때 엔진 카드를 등록할 레지스트리(`POST <url>/agents`)와 그 bearer 토큰. 비우면 등록 안 함 |
 | `AIAPP_MOCK_RECOMMENDER_PORT` | `8092` | Rec | 모의 추천 API 리스닝 포트 |
-| `AIAPP_MOCK_RECOMMENDER_TOKEN` | | Rec | 설정하면 모의 추천 API 의 모든 경로가 이 bearer 토큰을 요구. AI-App 의 `AIAPP_RECOMMENDER_TOKEN` 과 같은 값 |
+| `AIAPP_MOCK_RECOMMENDER_TOKEN` | | Rec | 설정하면 모의 추천 API 의 모든 경로가 이 bearer 토큰을 요구 |
 | `AIAPP_MOCK_NL_PORT` | `8093` | NL | 모의 자연어 에이전트 리스닝 포트 |
 | `AIAPP_MOCK_NL_ENGINE_MCP_URL` | `http://127.0.0.1:8091/aiapp/engine/mcp` | NL | 도구를 받아 올 엔진 MCP 서버 |
 | `AIAPP_MOCK_NL_ENGINE_TOKEN` | | NL | 엔진 MCP 서버에 보내는 bearer 토큰. 비우면 `AIAPP_APP_TOKEN` |

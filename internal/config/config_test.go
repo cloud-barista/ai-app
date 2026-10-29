@@ -6,83 +6,7 @@ import (
 	"time"
 )
 
-// clearBackendEnv makes the test independent of the shell it runs in.
-func clearBackendEnv(t *testing.T) {
-	t.Helper()
-	for _, name := range []string{
-		"AIAPP_RECOMMENDER", "AIAPP_RECOMMENDER_URL", "AIAPP_RECOMMENDER_TOKEN",
-		"AIAPP_PROVISIONER", "AIAPP_PROVISIONER_URL", "AIAPP_PROVISIONER_TOKEN",
-	} {
-		t.Setenv(name, "")
-	}
-}
-
-func TestBackendsDefault(t *testing.T) {
-	clearBackendEnv(t)
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Recommender.Kind != BackendNone || cfg.Provisioner.Kind != BackendLocal {
-		t.Errorf("kinds = %q, %q, want none and local", cfg.Recommender.Kind, cfg.Provisioner.Kind)
-	}
-}
-
-func TestRecommenderKindIgnoresTheOldSetting(t *testing.T) {
-	for _, kind := range []string{"local", "remote"} {
-		t.Run(kind, func(t *testing.T) {
-			clearBackendEnv(t)
-			t.Setenv("AIAPP_RECOMMENDER", kind)
-			cfg, err := Load()
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-			if cfg.Recommender.Kind != BackendNone {
-				t.Errorf("kind = %q without a URL, want none", cfg.Recommender.Kind)
-			}
-		})
-	}
-}
-
-func TestRemoteBackendReadsURLAndToken(t *testing.T) {
-	clearBackendEnv(t)
-	t.Setenv("AIAPP_RECOMMENDER_URL", "http://placement.example/api/")
-	t.Setenv("AIAPP_RECOMMENDER_TOKEN", "secret")
-	t.Setenv("AIAPP_PROVISIONER", "Remote")
-	t.Setenv("AIAPP_PROVISIONER_URL", "http://provision.example")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Recommender.Kind != BackendRemote || cfg.Recommender.URL != "http://placement.example/api" ||
-		cfg.Recommender.Token != "secret" || cfg.Recommender.Timeout <= 0 {
-		t.Errorf("recommender = %+v", cfg.Recommender)
-	}
-	if cfg.Provisioner.Kind != BackendRemote || cfg.Provisioner.Timeout != cfg.Tumblebug.Timeout {
-		t.Errorf("provisioner = %+v", cfg.Provisioner)
-	}
-}
-
-func TestRemoteProvisionerWithoutURLFails(t *testing.T) {
-	clearBackendEnv(t)
-	t.Setenv("AIAPP_PROVISIONER", "remote")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "AIAPP_PROVISIONER_URL") {
-		t.Errorf("Load error = %v, want one naming AIAPP_PROVISIONER_URL", err)
-	}
-}
-
-func TestUnknownBackendFails(t *testing.T) {
-	clearBackendEnv(t)
-	t.Setenv("AIAPP_PROVISIONER", "partner")
-	if _, err := Load(); err == nil {
-		t.Error("Load accepted an unknown provisioner kind")
-	}
-}
-
 func TestAuthTokensReadFromEnv(t *testing.T) {
-	clearBackendEnv(t)
 	t.Setenv("AIAPP_AUTH_TOKEN", "")
 	t.Setenv("AIAPP_APP_TOKEN", "")
 	cfg, err := Load()
@@ -105,7 +29,6 @@ func TestAuthTokensReadFromEnv(t *testing.T) {
 }
 
 func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
-	clearBackendEnv(t)
 	t.Setenv("AIAPP_HEALTH_TIMEOUT", "")
 	t.Setenv("AIAPP_HEALTH_INTERVAL", "")
 	cfg, err := Load()
@@ -133,7 +56,6 @@ func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
 }
 
 func TestModelStoreFile(t *testing.T) {
-	clearBackendEnv(t)
 	t.Setenv("AIAPP_MODEL_STORE_FILE", "")
 	cfg, err := Load()
 	if err != nil {
@@ -154,7 +76,6 @@ func TestModelStoreFile(t *testing.T) {
 }
 
 func TestDeploymentStoreFile(t *testing.T) {
-	clearBackendEnv(t)
 	t.Setenv("AIAPP_DEPLOYMENT_STORE_FILE", "")
 	cfg, err := Load()
 	if err != nil {
@@ -175,7 +96,6 @@ func TestDeploymentStoreFile(t *testing.T) {
 }
 
 func TestAppStoreDefaultsAndOverrides(t *testing.T) {
-	clearBackendEnv(t)
 	t.Setenv("AIAPP_APP_STORE_DIR", "")
 	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "")
 	cfg, err := Load()
@@ -252,7 +172,6 @@ func clearSemaphoreEnv(t *testing.T) {
 }
 
 func TestSemaphoreAndStageDefaults(t *testing.T) {
-	clearBackendEnv(t)
 	clearSemaphoreEnv(t)
 	cfg, err := Load()
 	if err != nil {
@@ -268,7 +187,6 @@ func TestSemaphoreAndStageDefaults(t *testing.T) {
 }
 
 func TestSemaphoreAndStageOverrides(t *testing.T) {
-	clearBackendEnv(t)
 	clearSemaphoreEnv(t)
 	t.Setenv("AIAPP_SEMAPHORE_URL", "http://semaphore:3000/")
 	t.Setenv("AIAPP_SEMAPHORE_USERNAME", "admin")
@@ -316,7 +234,6 @@ func TestSemaphoreAndStageInvalid(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			clearBackendEnv(t)
 			clearSemaphoreEnv(t)
 			for k, v := range tc.env {
 				t.Setenv(k, v)

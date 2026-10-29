@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-
-	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 // ReasonPrefix marks every reason this mock returns, so a plan built on it never
@@ -22,20 +20,20 @@ const maxRequestBody = 1 << 20
 
 // specsReq is the body of POST /recommendations/specs.
 type specsReq struct {
-	App   *model.AppSpec `json:"app"`
-	Limit int            `json:"limit"`
+	App   *App `json:"app"`
+	Limit int  `json:"limit"`
 }
 
 // specsResp is the answer of POST /recommendations/specs.
 type specsResp struct {
-	Candidates []model.SpecCandidate `json:"candidates"`
-	Reason     string                `json:"reason"`
+	Candidates []SpecCandidate `json:"candidates"`
+	Reason     string          `json:"reason"`
 }
 
 // imageReq is the body of POST /recommendations/image.
 type imageReq struct {
-	App    *model.AppSpec `json:"app"`
-	SpecID string         `json:"specId"`
+	App    *App   `json:"app"`
+	SpecID string `json:"specId"`
 }
 
 // imageResp is the answer of POST /recommendations/image.
@@ -119,7 +117,7 @@ func (r *Recommender) serveImage(w http.ResponseWriter, req *http.Request) {
 }
 
 // describeFilter renders the spec filter an application turns into.
-func describeFilter(app *model.AppSpec, limit int) string {
+func describeFilter(app *App, limit int) string {
 	policy := buildSpecRequest(app, limit).Filter.Policy
 	if len(policy) == 0 {
 		return "no filter"
@@ -133,7 +131,7 @@ func describeFilter(app *model.AppSpec, limit int) string {
 	return strings.Join(parts, ", ")
 }
 
-func checkApp(app *model.AppSpec) error {
+func checkApp(app *App) error {
 	if app == nil || app.ID == "" {
 		return errors.New("app with an id is required")
 	}

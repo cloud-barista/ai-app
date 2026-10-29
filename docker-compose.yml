@@ -47,29 +47,12 @@ services:
       AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
       AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
       AIAPP_TUMBLEBUG_TIMEOUT: "${AIAPP_TUMBLEBUG_TIMEOUT:-20m}"
-      AIAPP_TUMBLEBUG_IMAGE_NAMESPACE: "${AIAPP_TUMBLEBUG_IMAGE_NAMESPACE:-system}"
       AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
-      AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE: "${AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE:-ubuntu 22.04}"
 
       # The write gate. It stays on unless someone turns it off on purpose, so a
-      # container started by accident cannot provision anything billable.
+      # container started by accident never runs a playbook on a node or
+      # controls one.
       AIAPP_TUMBLEBUG_DRY_RUN: "${AIAPP_TUMBLEBUG_DRY_RUN:-true}"
-
-      # How long a deployment asked with waitHealthy=true waits for the
-      # application to answer on its serving port, and how often it asks.
-      AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
-      AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
-
-      # Spec and image recommendation come from the partner recommender API,
-      # here its mock. Set AIAPP_RECOMMENDER_URL empty in .env to run without a
-      # recommender; every plan then has to pin specId and imageId.
-      AIAPP_RECOMMENDER_URL: "${AIAPP_RECOMMENDER_URL-http://mock-partner-recommender:8092}"
-      AIAPP_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
-
-      # Provisioning stays on CB-Tumblebug unless pointed at an external service.
-      AIAPP_PROVISIONER: "${AIAPP_PROVISIONER:-local}"
-      AIAPP_PROVISIONER_URL: "${AIAPP_PROVISIONER_URL:-}"
-      AIAPP_PROVISIONER_TOKEN: "${AIAPP_PROVISIONER_TOKEN:-}"
 
       # Where engine routes (/aiapp/engine/*) are forwarded, path unchanged.
       AIAPP_ENGINE_URL: "http://ai-automation-engine:8091"
@@ -147,8 +130,8 @@ services:
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
       AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
 
-      # How long a deploy or heal step waits for the application to answer
-      # after it was deployed or updated, and how often it asks.
+      # How long a workflow step waiting for a deployment to end keeps asking,
+      # and how often.
       AIAPP_HEALTH_TIMEOUT: "${AIAPP_HEALTH_TIMEOUT:-15m}"
       AIAPP_HEALTH_INTERVAL: "${AIAPP_HEALTH_INTERVAL:-20s}"
 
@@ -217,7 +200,8 @@ services:
 
   # Partner institution recommender (mock implementation). It answers the
   # proposed recommendation contract from the CB-Tumblebug spec and image
-  # catalogs, so it reads the same CB-Tumblebug settings as the AI-App service.
+  # catalogs. The AI-App service no longer calls it; it is kept as an example of
+  # that contract.
   mock-partner-recommender:
     build:
       context: .
@@ -230,8 +214,8 @@ services:
       - "${AIAPP_MOCK_RECOMMENDER_PORT:-8092}:8092"
     environment:
       AIAPP_MOCK_RECOMMENDER_PORT: "8092"
-      # The same token the AI-App service sends.
-      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_RECOMMENDER_TOKEN:-}"
+      # Required of callers when set.
+      AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_MOCK_RECOMMENDER_TOKEN:-}"
 
       AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
       AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"

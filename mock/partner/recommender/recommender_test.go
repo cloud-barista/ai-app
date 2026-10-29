@@ -10,27 +10,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
-func seededCatalog(t *testing.T) *catalog.Store {
-	t.Helper()
-	store := catalog.NewStore()
-	if err := catalog.Seed(context.Background(), store); err != nil {
-		t.Fatalf("seed catalog: %v", err)
+// gpuApp is a model service that needs one GPU with at least 22 GiB.
+func gpuApp() *App {
+	return &App{
+		ID:          "vllm-llama31-8b",
+		Accelerator: AcceleratorRequirement{Type: "gpu", MinCount: 1, MinMemoryGiB: 22},
+		Resources:   ResourceRequirement{MinVCPU: 8, MinMemoryGiB: 32},
 	}
-	return store
+}
+
+// cpuApp is an application that needs no accelerator.
+func cpuApp() *App {
+	return &App{
+		ID:        "open-webui-llama31",
+		Resources: ResourceRequirement{MinVCPU: 2, MinMemoryGiB: 4},
+	}
 }
 
 func TestSpecRequestWithoutAcceleratorFiltersOnlyCPUAndMemory(t *testing.T) {
-	app, err := seededCatalog(t).Get(context.Background(), "open-webui-llama31")
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := buildSpecRequest(app, 5)
+	req := buildSpecRequest(cpuApp(), 5)
 	metrics := map[string]string{}
 	for _, cond := range req.Filter.Policy {
 		metrics[cond.Metric] = cond.Condition[0].Operand
@@ -44,8 +46,7 @@ func TestSpecRequestWithoutAcceleratorFiltersOnlyCPUAndMemory(t *testing.T) {
 		t.Errorf("filter = %v, want vCPU>=2 and memoryGiB>=4 only", metrics)
 	}
 
-	gpu, _ := seededCatalog(t).Get(context.Background(), "vllm-llama31-8b")
-	if buildSpecRequest(gpu, 5).Filter.Policy[0].Metric != metricAcceleratorType {
+	if buildSpecRequest(gpuApp(), 5).Filter.Policy[0].Metric != metricAcceleratorType {
 		t.Error("a model service lost its accelerator type filter")
 	}
 }
@@ -105,18 +106,9 @@ func post(t *testing.T, handler http.Handler, path, token string, body any) *htt
 	return rec
 }
 
-func vllmApp(t *testing.T) *model.AppSpec {
-	t.Helper()
-	app, err := seededCatalog(t).Get(context.Background(), "vllm-llama31-8b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return app
-}
-
 func TestSpecsContract(t *testing.T) {
 	handler := NewHandler(testRecommender(t, nil), "")
-	rec := post(t, handler, "/recommendations/specs", "", map[string]any{"app": vllmApp(t), "limit": 2})
+	rec := post(t, handler, "/recommendations/specs", "", map[string]any{"app": gpuApp(), "limit": 2})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
 	}
@@ -148,7 +140,7 @@ func TestImageContractMatchesVendor(t *testing.T) {
 		{"aws+us-east-1+g6.2xlarge", "nvidia-dlami"},
 		{"aws+us-east-1+g4ad.xlarge", "amd-rocm"},
 	} {
-		rec := post(t, handler, "/recommendations/image", "", map[string]any{"app": vllmApp(t), "specId": tc.specID})
+		rec := post(t, handler, "/recommendations/image", "", map[string]any{"app": gpuApp(), "specId": tc.specID})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d, body %s", tc.specID, rec.Code, rec.Body)
 		}
@@ -170,7 +162,7 @@ func TestImageFallsBackToPlainImageOnVendorMismatch(t *testing.T) {
 		{ID: "plain-ubuntu", OSType: "ubuntu 22.04"},
 		{ID: "amd-rocm", OSType: "ubuntu 22.04", IsGPUImage: true, OSDistribution: "AMD ROCm GPU image"},
 	}
-	choice, err := testRecommender(t, images).ResolveImage(context.Background(), vllmApp(t), "aws+us-east-1+g6.2xlarge")
+	choice, err := testRecommender(t, images).ResolveImage(context.Background(), gpuApp(), "aws+us-east-1+g6.2xlarge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,19 +174,19 @@ func TestImageFallsBackToPlainImageOnVendorMismatch(t *testing.T) {
 func TestBadRequestsAndToken(t *testing.T) {
 	handler := NewHandler(testRecommender(t, nil), "s3cret")
 
-	if rec := post(t, handler, "/recommendations/specs", "", map[string]any{"app": vllmApp(t)}); rec.Code != http.StatusUnauthorized {
+	if rec := post(t, handler, "/recommendations/specs", "", map[string]any{"app": gpuApp()}); rec.Code != http.StatusUnauthorized {
 		t.Errorf("no token: status = %d, want 401", rec.Code)
 	}
-	if rec := post(t, handler, "/recommendations/specs", "wrong", map[string]any{"app": vllmApp(t)}); rec.Code != http.StatusUnauthorized {
+	if rec := post(t, handler, "/recommendations/specs", "wrong", map[string]any{"app": gpuApp()}); rec.Code != http.StatusUnauthorized {
 		t.Errorf("wrong token: status = %d, want 401", rec.Code)
 	}
 	if rec := post(t, handler, "/recommendations/specs", "s3cret", map[string]any{"limit": 1}); rec.Code != http.StatusBadRequest {
 		t.Errorf("no app: status = %d, want 400", rec.Code)
 	}
-	if rec := post(t, handler, "/recommendations/image", "s3cret", map[string]any{"app": vllmApp(t)}); rec.Code != http.StatusBadRequest {
+	if rec := post(t, handler, "/recommendations/image", "s3cret", map[string]any{"app": gpuApp()}); rec.Code != http.StatusBadRequest {
 		t.Errorf("no specId: status = %d, want 400", rec.Code)
 	}
-	if rec := post(t, handler, "/recommendations/specs", "s3cret", map[string]any{"app": vllmApp(t)}); rec.Code != http.StatusOK {
+	if rec := post(t, handler, "/recommendations/specs", "s3cret", map[string]any{"app": gpuApp()}); rec.Code != http.StatusOK {
 		t.Errorf("right token: status = %d, body %s", rec.Code, rec.Body)
 	}
 }

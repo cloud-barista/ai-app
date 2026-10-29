@@ -181,3 +181,17 @@ func integerProp(description string) map[string]any {
 func enumProp(description string, values ...string) map[string]any {
 	return map[string]any{"type": "string", "description": description, "enum": values}
 }
+
+// decode reads tool arguments.
+//
+// Tool inputs are model generated JSON and must always be parsed, never matched
+// as strings: escaping of the serialized form is not stable.
+func decode(input json.RawMessage, out any) error {
+	if len(input) == 0 {
+		return fmt.Errorf("tool arguments required")
+	}
+	if err := json.Unmarshal(input, out); err != nil {
+		return fmt.Errorf("failed to decode tool arguments: %w", err)
+	}
+	return nil
+}

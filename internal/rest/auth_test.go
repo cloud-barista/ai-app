@@ -11,12 +11,9 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
-	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 const testToken = "s3cret"
@@ -44,19 +41,13 @@ func newTestServers(t *testing.T, token string) *Server {
 	if err != nil {
 		t.Fatalf("app store: %v", err)
 	}
-	tbCfg := config.TumblebugConfig{DryRun: true}
-	apps := catalog.NewStore()
-	registry := tools.NewRegistry(tbCfg.DryRun)
-	deployService := deploy.NewService(tumblebug.NewClient(tbCfg), apps, tbCfg)
-	tools.Register(registry, apps, deployService)
+	registry := tools.NewRegistry(true)
 
 	appCfg := &config.Config{
 		PartnerNL: config.PartnerNLConfig{URL: agentSrv.URL},
 		Auth:      config.AuthConfig{Token: token},
 	}
 	return NewAppServer(appCfg, AppDependencies{
-		Catalog: apps,
-		Deploy:  deployService,
 		Archive: appArchive,
 		Tools:   registry,
 		Apps:    appStore,
@@ -75,6 +66,14 @@ func do(s *Server, method, path, auth string) *httptest.ResponseRecorder {
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	return rec
+}
+
+func postJSON(s *Server, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.echo.ServeHTTP(rec, req)
 	return rec

@@ -9,12 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
-	"github.com/ish-hcc/ai-agent-proto/internal/config"
-	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
-	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // serve publishes the registry over Streamable HTTP and returns a client for it.
@@ -29,10 +27,19 @@ func serve(t *testing.T, registry *tools.Registry) *Client {
 }
 
 func TestDefinitionsGradesAndDryRun(t *testing.T) {
-	cfg := config.TumblebugConfig{DryRun: true}
-	apps := catalog.NewStore()
-	registry := tools.NewRegistry(cfg.DryRun)
-	tools.Register(registry, apps, deploy.NewService(tumblebug.NewClient(cfg), apps, cfg))
+	models, _, err := modelcat.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := nodedeploy.OpenStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := nodedeploy.NewService(nil, nil, models, nil, store, nil, nodedeploy.Options{StageRoot: t.TempDir(), DryRun: true})
+	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
+	registry := tools.NewRegistry(true)
+	tools.RegisterModels(registry, models)
+	tools.RegisterNodeDeploy(registry, svc)
 
 	client := serve(t, registry)
 	if err := client.Prepare(context.Background()); err != nil {
@@ -40,8 +47,8 @@ func TestDefinitionsGradesAndDryRun(t *testing.T) {
 	}
 
 	defs := client.Definitions()
-	if len(defs) != 15 {
-		t.Fatalf("Definitions returned %d tools, want 15", len(defs))
+	if len(defs) != 8 {
+		t.Fatalf("Definitions returned %d tools, want 8", len(defs))
 	}
 	want := map[string]bool{}
 	for _, def := range registry.Definitions() {
@@ -58,8 +65,11 @@ func TestDefinitionsGradesAndDryRun(t *testing.T) {
 			t.Errorf("%s: grade = %q, want %q", def.Name, got, wantGrade)
 		}
 	}
-	if got := client.Grade("check_serving_health"); got != tools.GradeRead {
-		t.Errorf("check_serving_health grade = %q, want read", got)
+	if got := client.Grade("get_deployment"); got != tools.GradeRead {
+		t.Errorf("get_deployment grade = %q, want read", got)
+	}
+	if got := client.Grade("create_deployment"); got != tools.GradeWrite {
+		t.Errorf("create_deployment grade = %q, want write", got)
 	}
 	if !client.DryRun() {
 		t.Error("DryRun = false, want true")
