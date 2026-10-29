@@ -37,7 +37,7 @@ RUN apk add --no-cache ca-certificates tzdata
 # in the image.
 RUN adduser -D -u 10001 aiapp
 WORKDIR /app
-RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/partner-nl-archive /var/lib/aiapp/stage && \
+RUN mkdir -p /app/data/archive /app/data/engine-archive /app/data/partner-nl-archive /app/data/catalog/apps /var/lib/aiapp/stage && \
     chown -R aiapp:aiapp /app /var/lib/aiapp
 
 COPY --from=build /out/ai-app-server /usr/local/bin/ai-app-server
@@ -49,7 +49,7 @@ USER aiapp
 EXPOSE 8090 8091 8092 8093
 
 # No settings file is baked in. Every setting has a default, so the container
-# starts and serves the catalog, the matcher, the tools and the archive with
+# starts and serves the model catalog, the applications, the tools and the archive with
 # nothing supplied; the deployment path needs AIAPP_TUMBLEBUG_BASE_URL and says
 # so at startup when it is missing. The default command is the AI-App service;
 # run /usr/local/bin/ai-automation-engine for the automation engine. The

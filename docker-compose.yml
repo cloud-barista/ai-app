@@ -89,11 +89,16 @@ services:
       AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
       # Records of deployments onto nodes, kept on the archive volume.
       AIAPP_DEPLOYMENT_STORE_FILE: "/app/data/archive/node-deployments.json"
+      # Registered models and uploaded applications, kept on the catalog volume
+      # so that recreating the container does not lose them.
+      AIAPP_MODEL_STORE_FILE: "/app/data/catalog/models.json"
+      AIAPP_APP_STORE_DIR: "/app/data/catalog/apps"
 
     # The archive is the first-year deliverable and the second-year input, so it
     # outlives the container it was written by.
     volumes:
       - archive:/app/data/archive
+      - catalog:/app/data/catalog
       - stage:/var/lib/aiapp/stage
 
     # host.docker.internal is native on Docker Desktop and has to be added on
@@ -234,8 +239,8 @@ services:
       - "host.docker.internal:host-gateway"
 
   # Semaphore UI runs the playbooks of deploy/ansible against a node over SSH.
-  # The AI-App service registers a key, an inventory and a template for each
-  # deployment, runs it, and deletes them afterwards.
+  # The AI-App service keeps one template per playbook, registers a key and an
+  # inventory for each run, and deletes the key and the inventory afterwards.
   #
   # It is in the deploy profile because it needs an admin password set, and Semaphore
   # accepts an empty one and then logs anyone in with it, so the command below
@@ -273,6 +278,7 @@ services:
 
 volumes:
   archive:
+  catalog:
   engine-archive:
   partner-nl-archive:
   # Deployment files shared by the AI-App service and Semaphore.
