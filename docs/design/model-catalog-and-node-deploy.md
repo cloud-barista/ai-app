@@ -208,12 +208,26 @@ MCP 도구도 같은 리소스 단위로 다시 묶는다. 등급(read·review·
 
 워크플로 4개(`deploy`, `heal`, `control`, `status`)와 엔진 MCP 도구 구조는 유지하고, 입력과 단계만 새 도구에 맞춘다.
 
-| 워크플로 | 바뀐 뒤 |
-|----------|---------|
-| `deploy` | 입력이 4.2 의 배포 요청. 대상 확인 → 계획(compose·파일 배치) → 실행 → 완료 대기 → 헬스 |
-| `heal` | 헬스 확인 → 실패면 같은 배포 요청을 한 번 다시 실행 → 다시 확인 |
-| `control` | 배포의 노드에 Tumblebug 노드 제어 |
-| `status` | 노드 상태 + 배포 기록 + 헬스 |
+| 워크플로 | 입력 | 단계 (구현, `internal/engine`) |
+|----------|------|-------------------------------|
+| `deploy` | 4.2 의 배포 요청 그대로 | 모델(`get_model`) 또는 응용(`get_app`) 조회 → `create_deployment` → `get_deployment` 로 끝날 때까지 대기 |
+| `heal` | `deploymentId` | 배포 기록 조회 → `succeeded` 면 끝, `pending`·`running` 이면 실패로 끝냄, 그 밖(`failed`·`partial`·`interrupted`·`dry-run`)이면 기록된 요청을 새 배포로 한 번 다시 실행하고 대기 |
+| `control` | `deploymentId`, `action` | `control_node`. 노드마다 `done`·`blocked`·`failed` |
+| `status` | `deploymentId` | 배포 기록(`get_deployment`) + 노드마다 마지막 태스크 출력 5줄(`get_deployment_logs`) |
+
+설계 때와 달라진 것.
+
+- **헬스는 엔진 단계가 아니다.** 처음 설계는 `deploy` 끝에 "헬스", `heal` 앞에 "헬스 확인" 을 두었지만, 헬스는 노드 안에서만
+  확인할 수 있고(서빙 포트를 열지 않으므로 밖에서는 닿는다는 보장이 없다) 그 일은 `compose-up` 이 한다. `compose-up` 이
+  `health_url`(`http://127.0.0.1:<port><healthPath>`)을 기다려 응답해야 노드가 `succeeded` 가 되므로, 엔진의 대기 단계가
+  읽는 노드 상태가 곧 헬스 결과다. Ollama 는 `model-pull` 이 끝나기를 먼저 기다린다. 응용은 script 종료 코드만 본다.
+- **`status` 는 기록과 로그만 본다.** 처음 설계의 "노드 상태 + 헬스" 에서 CB-Tumblebug 노드 상태 조회와 헬스는 빠졌다.
+  배포 뒤에 노드가 멈췄는지는 `status` 로 알 수 없다.
+- **`partial` 은 실행 실패다.** 일부 노드만 성공한 배포는 `deploy` 실행을 `failed` 로 끝내고, `heal` 의 대상이 된다.
+- dry-run 이면 `create_deployment` 단계가 `blocked`, 대기 단계가 `waiting` 이다.
+- 대기 단계는 `AIAPP_HEALTH_INTERVAL`(20초) 간격으로 `AIAPP_HEALTH_TIMEOUT`(15분)까지 묻는다. 넘으면 단계가 실패하고 배포는
+  AI-App 에서 계속 돈다(8절).
+- `list_applications` 는 모델(아티팩트·엔진 포함)과 업로드한 응용의 요약을 돌려준다. 옛 규칙 매처의 `query` 는 없어졌다.
 
 ## 7. ETRI 시나리오 (시드)
 
@@ -245,6 +259,13 @@ Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8
 | vm1 에 글을 생성하는 LLM 이 없다 | 임베딩 모델은 검색용 벡터만 만든다. "관광지·맛집 정보 추출" 은 생성 LLM 이 필요하다. vm1 에 생성 모델을 더 두거나 vm2 를 불러야 한다 |
 | vm2 의 이미지 생성 | Qwen3-VL 은 이미지를 읽고 글을 쓰는 모델이라 이미지를 만들지 못한다. 이미지 생성 모델(예: Stable Diffusion·FLUX + ComfyUI)이 따로 필요하다 |
 | vm3 모델의 입력 | ETRI 는 "LLM" 으로 소개했지만 HF 아키텍처가 `Mistral3ForConditionalGeneration` 이라 이미지 입력도 받는 것으로 보인다. 시드에는 `text`, `image` 로 넣고 확인이 필요하다고 남긴다 |
+| 서빙 포트를 열지 않는다. 누가 여나 | VM 생성 경로와 함께 보안 그룹 규칙 추가도 지웠다. 노드 배포는 포트를 건드리지 않고, 헬스는 노드 안에서 확인하므로 제한적인 보안 그룹 템플릿으로 만든 Infra 면 배포가 `succeeded` 인데 밖에서 닿지 않는다. Infra 를 만든 쪽(인프라 추천 또는 운영자)이 여는 것으로 README 에 적었지만 합의된 것은 아니다 |
+| Semaphore 는 깨진 키에 panic 한다 | Semaphore v2.12.17 은 형식이 깨진 SSH 키를 등록할 때 거절하지 않고, 그 키를 쓰는 태스크에서 프로세스 전체가 panic("close of nil channel", `pkg/ssh/agent.go`)으로 죽는다. 우리는 PEM 개인키 블록인지 먼저 검사해 막는다(`internal/semaphore/run.go` `CheckPrivateKey`). PEM 블록 안의 키 내용까지는 검사하지 않는다 |
+| 큰 모델은 시간 상한에 걸릴 수 있다 | 태스크 하나의 상한이 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분이고, Ollama 모델 pull 대기 `wait_timeout` 기본 1800초도 30분이다. vLLM 은 `/health` 가 가중치를 다 받은 뒤 응답하는데 `compose-up` 의 헬스 대기는 10초 간격 60번(약 10분)이다. 큰 모델을 처음 받는 노드는 이 상한들에 걸릴 수 있다 |
+| compose env 가 평문으로 남는다 | 배포 요청의 `env`(예 `HF_TOKEN`)가 배포 기록(`AIAPP_DEPLOYMENT_STORE_FILE`), 배포·제어 아카이브, 공유 저장소의 `.env`, 노드의 `.env` 에 평문으로 남는다. 비밀값을 가리거나 따로 넘기는 경로가 없다 |
+| 실측하지 못한 경로 | `install-docker` 의 실제 설치 분기(docker 가 없는 Ubuntu 노드), GPU 분기(NVIDIA Container Toolkit 설치, compose GPU 예약), vLLM 기동은 로컬 검증에서 돌지 않았다(11절) |
+| 엔진 대기 상한이 AI-App 쪽 상한보다 짧다 | 엔진의 대기 단계는 `AIAPP_HEALTH_TIMEOUT` 기본 15분에서 멈추는데, AI-App 은 노드마다 `install-docker` 와 `compose-up` 을 각각 최대 30분(`AIAPP_SEMAPHORE_TIMEOUT`)까지 돌린다. 엔진 실행은 실패로 끝났는데 배포는 나중에 성공하는 일이 생긴다 |
+| 응용 저장소에 이름 규칙 위반 디렉터리가 있으면 기동 실패 | AI-App 은 기동 때 `AIAPP_APP_STORE_DIR` 을 다시 읽고, 응용 이름 규칙(`[a-z0-9][a-z0-9_-]*`)에 안 맞는 디렉터리나 깨진 버전이 있으면 기동을 거부한다(`internal/appstore/appstore.go`). 손으로 넣은 디렉터리나, `.` 을 이름에 허용하던 때 올린 응용이 남아 있으면 서비스가 뜨지 않는다 |
 
 ## 9. 지금 코드와의 관계
 
@@ -263,3 +284,51 @@ Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8
 - 모델 추천과 인프라 추천 로직(경희대·협력 기관 몫), 모델 파일 저장(노드에서 엔진이 출처에서 직접 받는다).
 - k8s 대상 배포(자리만 정함), Windows 노드, 포털 배포.
 - 실제 클라우드 노드에 배포(이번 작업의 검증은 로컬 컨테이너를 노드 대신 써서 한다).
+
+## 11. 구현 결과 (2026-10-29)
+
+작업별 검증 근거는 계획 진행 기록(`.claude/plan-progress.md`, 저장소에 커밋하지 않는 작업 문서)에서 옮겼다. "구현자" 는 그 작업을
+구현한 쪽이 돌려서 보고한 것이고, 팀장이 다시 돌린 것은 따로 적었다.
+
+### 11.1 작업과 커밋
+
+| 커밋 | 작업 | 확인한 것 |
+|------|------|-----------|
+| `6e6546b` | 이 설계 | |
+| `b8d7152` | 모델 카탈로그, 엔진 프로필, compose 생성, REST `/models`·`/engines`, MCP 도구 | build·vet·test 통과. 서버를 띄워 시드 3건, `?modality=image` 필터, 등록 영속, 삭제, 엔진 2건, 못 읽는 조합의 compose `422` |
+| `c8d81d9` | 응용 등록(name·files·script, 버전, 디스크 저장), 옛 `/apps` REST 제거 | 서버를 띄워 업로드 v1 → 재업로드 v2, 디스크 저장, 재기동 뒤 다시 읽기, 삭제, 경로 이탈 파일 이름 `400`, 상한 초과 `413` |
+| `18280a0` | Tumblebug 노드·SSH 키 조회, Semaphore 클라이언트, playbook 3종 | 실 Semaphore v2.12.17 + sshd 컨테이너로 `copy-and-run` 끝까지 성공, 실행 뒤 남은 key·inventory 0 (구현자) |
+| `07eaeb8` | 4.4 갱신: template 은 playbook 마다 고정, key·inventory 는 배포마다 | 같은 실측에서 template 삭제가 그 태스크 이력·로그를 같이 지우는 것, 태스크 요청의 `inventory_id` 가 template 의 inventory 를 덮어쓰는 것 확인 |
+| `ec4c302` | 노드 배포 서비스, REST `/deployments`, MCP 도구, dry-run, 공유 저장소 배치, 로그, 노드 제어 | 실 Semaphore + docker-in-docker 노드 컨테이너 + 가짜 CB-Tumblebug 으로 app 배포 `succeeded`, Ollama model-service 배포 `succeeded`(모델 pull 이 끝난 뒤 헬스 통과), dry-run 때 Semaphore 변화 0, 실행 뒤 남은 key·inventory 0 (구현자). 검토 지적(csp 경로 이탈, 종료 순서)과 PEM 검사·Ollama 대기를 고친 뒤 팀장이 build·test·race 재확인 |
+| `0027b9b` | 엔진 워크플로를 새 도구로 전환, 모의 자연어 에이전트 입력 맞춤 | 엔진 테스트 22개 race 통과. 로컬 dry-run 으로 `deploy`·`heal`·`status`·`control` 단계 기록 확인, 엔진 카드가 부르는 AI-App 도구 8개 |
+| `2ecec08` | 옛 경로 삭제(`AppSpec`·`internal/catalog`·VM 생성·추천 호출·`postCommands`·서빙 포트 개방·가속기 실측·Infra 기준 헬스) | 진행 기록에는 검증 칸이 비어 있다. 2026-10-29 문서 작업 때 `go build ./...`·`go vet ./...`·`go test ./...` 통과와, 테스트를 뺀 Go 코드에서 옛 이름(`AppSpec`, `infraDynamic`, `postCommands`, `internal/catalog`, `probe_accelerator`, `check_serving_health`, `AIAPP_RECOMMENDER_URL`, `AIAPP_PROVISIONER`) grep 0건을 다시 확인했다 |
+| `9fc85a0` | 같은 노드 재배포 교체(작업 키로 폴더·compose 프로젝트 고정, 4.5), 응용 이름에서 `.` 거절 | docker-in-docker e2e 로 같은 응용 v1 → v2 재배포 시 v2 응답·컨테이너 1벌, Ollama 재배포 시 컨테이너 1벌 (구현자). 커밋 기준 검토 통과(place-files 경로 이탈 실측 포함) |
+| `d5738f1` | 콘솔 화면(모델·엔진·응용·배포), `/aiapp/partner/rec/*` 프록시 | headless Chrome 스크린샷 14장, JS 예외 0, 콘솔이 부르는 경로와 라우트 전수 대조 불일치 0. 진행 기록상 검토는 진행 중이었다 |
+
+### 11.2 확인한 것
+
+로컬의 실 Semaphore v2.12.17 + docker-in-docker 컨테이너(노드 대신) + 가짜 CB-Tumblebug 으로 아래를 확인했다(구현자 실행).
+
+- app 배포: 업로드한 파일 복사, script 실행, `succeeded`
+- Ollama model-service 배포: compose 생성 → `up` → `model-pull` 종료 대기 → 헬스 통과 → `succeeded`
+- 같은 노드 재배포: 앞 배포를 바꾸고 컨테이너는 1벌
+- dry-run: 노드 조회와 파일 배치만 하고 Semaphore 에 등록된 것이 늘지 않음
+- 실행 뒤 Semaphore 에 남은 key·inventory 0, 태스크 이력과 로그는 남음
+
+### 11.3 확인하지 못한 것
+
+| 항목 | 왜 |
+|------|----|
+| 실제 클라우드 노드(CB-Tumblebug 이 만든 aws·azure·gcp VM)에 배포 | 사용자 지시로 이번 작업에서 하지 않았다. 노드 정보·SSH 키 조회는 가짜 CB-Tumblebug 으로만 확인했다 |
+| vLLM 기동과 GPU 분기 | 로컬에 GPU 가 없다. `install-docker` 의 NVIDIA Container Toolkit 설치, compose GPU 예약, vLLM 모델 로드와 `/health` 는 돌지 않았다 |
+| `install-docker` 의 실제 설치 분기 | 검증 노드가 docker 를 가진 docker-in-docker 컨테이너였고, 진행 기록에 docker 가 없는 Ubuntu 노드에서 설치 분기를 돌린 근거가 없다 |
+| MCP 를 거친 `create_deployment` 끝까지의 배포 | 진행 기록에 MCP(엔진 워크플로 포함)로 실제 배포를 끝까지 돌린 근거가 없다. 엔진 워크플로는 dry-run 단계 기록까지만 확인했다 |
+| 콘솔 인프라 추천 화면의 정상 추천 후보 | 후보는 모의 추천 API 가 CB-Tumblebug 스펙·이미지 카탈로그를 읽어야 나오는데, 진행 기록에 후보가 나온 화면의 근거가 없다 |
+
+### 11.4 설계와 달라진 것
+
+- 6절: 헬스를 엔진 단계에서 빼고 `compose-up` 의 `health_url` 대기로 판정, `status` 에서 노드 상태·헬스를 뺐다.
+- 7절의 Ollama 아티팩트는 시드에서 ID 가 `ollama-gguf` 이고 `precision`·`sizeGiB` 를 비웠다. 태그 페이지에 양자화가 안 적혀 있고,
+  6.2GB 는 반올림한 10진 값이라 GiB 로 바꾸면 없는 정밀도가 생기기 때문이다(`internal/modelcat/seed.go`).
+- 9절에서 "노드 기준으로 옮길 수 있으면 옮긴다" 고 한 서빙 포트 개방과 가속기 실측은 옮기지 않고 지웠다. 서빙 포트는 8절의 열린 문제로 남겼다.
+- docker compose 는 등록한 모델과 업로드한 응용을 named volume `catalog`(`/app/data/catalog`)에 둔다. 컨테이너를 다시 만든 뒤에도 남는 것을 이미지를 빌드해 확인했다.
