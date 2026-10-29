@@ -6,10 +6,12 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
+	"github.com/ish-hcc/ai-agent-proto/internal/compose"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
@@ -21,6 +23,7 @@ type Handler struct {
 	deploy  *deploy.Service
 	archive *archive.Store
 	tools   *tools.Registry
+	models  *modelcat.Store
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
@@ -36,6 +39,13 @@ func statusCodeFor(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, catalog.ErrNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, modelcat.ErrNotFound), errors.Is(err, modelcat.ErrArtifactNotFound),
+		errors.Is(err, modelcat.ErrEngineNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, compose.ErrIncompatible):
+		return http.StatusUnprocessableEntity
+	case errors.Is(err, compose.ErrInvalidOption):
+		return http.StatusBadRequest
 	case errors.Is(err, deploy.ErrAlreadyExists):
 		return http.StatusConflict
 	case errors.Is(err, deploy.ErrNotViable):
@@ -86,6 +96,14 @@ func messageFor(err error, fallback string) string {
 	}
 	if errors.Is(err, deploy.ErrNoRecommender) {
 		return deploy.ErrNoRecommender.Error()
+	}
+	// The model catalog and compose errors name only identifiers the caller
+	// sent and the reason a pairing does not fit.
+	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrEngineNotFound,
+		compose.ErrIncompatible, compose.ErrInvalidOption} {
+		if errors.Is(err, own) {
+			return err.Error()
+		}
 	}
 	return fallback
 }

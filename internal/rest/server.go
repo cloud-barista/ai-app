@@ -18,6 +18,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -36,6 +37,8 @@ type AppDependencies struct {
 	Deploy  *deploy.Service
 	Archive *archive.Store
 	Tools   *tools.Registry
+	// Models is the AI model catalog.
+	Models *modelcat.Store
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -47,6 +50,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		deploy:  deps.Deploy,
 		archive: deps.Archive,
 		tools:   deps.Tools,
+		models:  deps.Models,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -69,6 +73,16 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/apps/:appId", handler.RestGetApp)
 	g.DELETE("/apps/:appId", handler.RestDeleteApp)
 	g.GET("/apps/:appId/specs", handler.RestGetAppSpecs)
+
+	// AI model catalog: models, the artifacts each is published as, and the
+	// inference engine profiles those artifacts run on.
+	g.GET("/models", handler.RestGetAllModels)
+	g.POST("/models", handler.RestPostModel)
+	g.GET("/models/:modelId", handler.RestGetModel)
+	g.DELETE("/models/:modelId", handler.RestDeleteModel)
+	g.GET("/models/:modelId/artifacts/:artifactId/compose", handler.RestGetModelCompose)
+	g.GET("/engines", handler.RestGetAllEngineProfiles)
+	g.GET("/engines/:engineId", handler.RestGetEngineProfile)
 
 	// Deployment and lifecycle, callable without going through the agent.
 	g.POST("/ns/:nsId/deployments/plan", handler.RestPostDeploymentPlan)

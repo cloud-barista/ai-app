@@ -50,6 +50,7 @@ type Config struct {
 	PartnerNL PartnerNLConfig
 	App       AppConfig
 	Archive   ArchiveConfig
+	Model     ModelConfig
 	Auth      AuthConfig
 	Health    HealthConfig
 	// Recommender is the partner recommender API that picks the spec and image
@@ -160,6 +161,15 @@ type ArchiveConfig struct {
 	Dir string
 }
 
+// ModelConfig holds where the AI model catalog is kept.
+type ModelConfig struct {
+	// StoreFile is the JSON file the model catalog is written to after every
+	// change and read from at startup. The built-in models are seeded only
+	// when the file does not exist yet. Empty keeps the catalog in memory, so
+	// it starts from the built-in models on every start.
+	StoreFile string
+}
+
 // Load reads configuration from environment variables and validates it.
 func Load() (*Config, error) {
 	v := viper.New()
@@ -206,6 +216,7 @@ func Load() (*Config, error) {
 		"app.mcp_url",
 		"app.token",
 		"archive.dir",
+		"model.store_file",
 		"auth.token",
 		"health.timeout",
 		"health.interval",
@@ -264,6 +275,9 @@ func Load() (*Config, error) {
 		},
 		Archive: ArchiveConfig{
 			Dir: v.GetString("archive.dir"),
+		},
+		Model: ModelConfig{
+			StoreFile: strings.TrimSpace(v.GetString("model.store_file")),
 		},
 		Auth: AuthConfig{
 			Token: v.GetString("auth.token"),

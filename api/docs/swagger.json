@@ -588,6 +588,345 @@
                 }
             }
         },
+        "/engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List the built-in inference engine profiles a model service can run with: the pinned container image, the artifact formats each loads, and the port, health path and OpenAI compatible API path it serves. Profiles are read only. An artifact runs on an engine when the artifact lists the engine id and the engine lists the artifact format",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] Inference Engine Profiles"
+                ],
+                "summary": "List inference engine profiles",
+                "operationId": "GetAllEngineProfiles",
+                "responses": {
+                    "200": {
+                        "description": "Engine profile list, ordered by id",
+                        "schema": {
+                            "$ref": "#/definitions/model.EngineProfileListResp"
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engineId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one built-in inference engine profile",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] Inference Engine Profiles"
+                ],
+                "summary": "Get an inference engine profile",
+                "operationId": "GetEngineProfile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "vllm",
+                        "description": "Engine profile ID",
+                        "name": "engineId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Engine profile",
+                        "schema": {
+                            "$ref": "#/definitions/model.EngineProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "Engine profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task and modality match the model. format, engine and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "List AI models",
+                "operationId": "GetAllModels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Model task, such as chat, vision-chat or embedding",
+                        "name": "task",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Input modality the model accepts, such as text or image",
+                        "name": "modality",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Artifact file format: hf (Hugging Face safetensors) or gguf",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Engine profile ID an artifact runs on, as listed by GET /engines",
+                        "name": "engine",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Artifact source, such as huggingface or ollama",
+                        "name": "source",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI model list, ordered by id",
+                        "schema": {
+                            "$ref": "#/definitions/model.ModelListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Register an AI model, or replace the model of the same id with this record. A model needs an id, a name and at least one artifact; each artifact needs an id unique within the model, a source, a ref, a format and at least one compatible engine. Engines are not checked against the engine profiles here; a pairing that does not fit is refused when a compose file is rendered for it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Register an AI model",
+                "operationId": "PostModel",
+                "parameters": [
+                    {
+                        "description": "AI model metadata",
+                        "name": "model",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Model"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI model registered",
+                        "schema": {
+                            "$ref": "#/definitions/model.Model"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or incomplete metadata",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The catalog file could not be written",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/models/{modelId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read one AI model with every artifact it is published as",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Get an AI model",
+                "operationId": "GetModel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "qwen3-vl-8b",
+                        "description": "AI model ID",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI model metadata",
+                        "schema": {
+                            "$ref": "#/definitions/model.Model"
+                        }
+                    },
+                    "404": {
+                        "description": "AI model not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Remove an AI model from the catalog. Model services already running are untouched",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Delete an AI model",
+                "operationId": "DeleteModel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "AI model ID",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI model deleted",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "AI model not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The catalog file could not be written",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/models/{modelId}/artifacts/{artifactId}/compose": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Render the docker-compose.yml that runs one artifact of a model with one engine profile, without deploying anything. The pairing is refused with 422 unless the artifact lists the engine and the engine loads the artifact format. The file starts with one `docker compose up -d`: for vllm it runs the OpenAI compatible server with --model set to the artifact ref (and --runner pooling for an embedding model); for ollama it runs the server and a one-shot container that pulls the model once the server is healthy. HF_TOKEN is left to the environment or a .env file beside the compose file.",
+                "produces": [
+                    "text/yaml",
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Preview the compose file of a model service",
+                "operationId": "GetModelCompose",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "qwen3-vl-8b",
+                        "description": "AI model ID",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "hf-bf16",
+                        "description": "Artifact ID within the model",
+                        "name": "artifactId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Engine profile ID. Defaults to the first engine the artifact lists",
+                        "name": "engine",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Reserve every NVIDIA GPU of the node for the engine",
+                        "name": "gpu",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "docker-compose.yml, as text/yaml",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "gpu is not a boolean",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "404": {
+                        "description": "AI model, artifact or engine profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "422": {
+                        "description": "The artifact cannot be run with the engine",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
         "/ns/{nsId}/deployments": {
             "get": {
                 "security": [
@@ -1948,6 +2287,55 @@
                 }
             }
         },
+        "model.Artifact": {
+            "type": "object",
+            "required": [
+                "engines",
+                "format",
+                "id",
+                "ref",
+                "source"
+            ],
+            "properties": {
+                "engines": {
+                    "description": "Engines are the inference engines known to load this artifact. Each\nengine must be listed explicitly: the same file format may load in one\nengine version and not in another. Filter with ?engine=.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EngineCompat"
+                    }
+                },
+                "format": {
+                    "description": "Format is the file format the engine loads: hf for Hugging Face\nsafetensors, gguf for GGUF. Filter with ?format=.",
+                    "type": "string",
+                    "example": "hf"
+                },
+                "id": {
+                    "description": "ID identifies the artifact within its model, with the same character\nrules as a model ID.",
+                    "type": "string",
+                    "example": "hf-bf16"
+                },
+                "precision": {
+                    "description": "Precision is the precision or quantization exactly as the source states\nit, such as BF16, FP8 or Q4_K_M. It is not normalized. Empty means\nunknown.",
+                    "type": "string",
+                    "example": "BF16"
+                },
+                "ref": {
+                    "description": "Ref is the name of the artifact at its source: a Hugging Face repository\nid, an Ollama model tag, or an image reference.",
+                    "type": "string",
+                    "example": "Qwen/Qwen3-VL-8B-Instruct"
+                },
+                "sizeGiB": {
+                    "description": "SizeGiB is the download size in GiB (2^30 bytes). Zero or absent means\nunknown.",
+                    "type": "number",
+                    "example": 16.3
+                },
+                "source": {
+                    "description": "Source is where the artifact is downloaded from, such as huggingface,\nkaggle, ollama or docker-model-runner. Filter with ?source=.",
+                    "type": "string",
+                    "example": "huggingface"
+                }
+            }
+        },
         "model.ControlAppReq": {
             "type": "object",
             "required": [
@@ -2150,6 +2538,81 @@
                 }
             }
         },
+        "model.EngineCompat": {
+            "type": "object",
+            "required": [
+                "engine"
+            ],
+            "properties": {
+                "engine": {
+                    "description": "Engine is the engine profile ID, as listed by GET /engines.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "minVersion": {
+                    "description": "MinVersion is the oldest engine version known to load the artifact.\nEmpty means not recorded.",
+                    "type": "string",
+                    "example": "0.11.0"
+                }
+            }
+        },
+        "model.EngineProfile": {
+            "type": "object",
+            "required": [
+                "formats",
+                "id",
+                "image",
+                "port"
+            ],
+            "properties": {
+                "apiBasePath": {
+                    "description": "APIBasePath is the path of the OpenAI compatible API, appended to\nhttp://\u003cnode\u003e:\u003cport\u003e by whoever calls the model service.",
+                    "type": "string",
+                    "example": "/v1"
+                },
+                "formats": {
+                    "description": "Formats are the artifact formats this engine loads.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "hf"
+                    ]
+                },
+                "healthPath": {
+                    "description": "HealthPath answers 200 once the engine is up.",
+                    "type": "string",
+                    "example": "/health"
+                },
+                "id": {
+                    "description": "ID is the engine identifier artifacts refer to in engines[].engine.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "image": {
+                    "description": "Image is the container image, pinned to a release tag.",
+                    "type": "string",
+                    "example": "vllm/vllm-openai:v0.32.0"
+                },
+                "port": {
+                    "description": "Port is the TCP port the engine serves its API on, inside the container\nand on the node.",
+                    "type": "integer",
+                    "example": 8000
+                }
+            }
+        },
+        "model.EngineProfileListResp": {
+            "type": "object",
+            "properties": {
+                "engines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EngineProfile"
+                    }
+                }
+            }
+        },
         "model.InstallSpec": {
             "type": "object",
             "required": [
@@ -2174,6 +2637,90 @@
                 "userName": {
                     "type": "string",
                     "example": "cb-user"
+                }
+            }
+        },
+        "model.Model": {
+            "type": "object",
+            "required": [
+                "artifacts",
+                "id",
+                "name"
+            ],
+            "properties": {
+                "artifacts": {
+                    "description": "Artifacts are the published forms of the model that an engine can load.\nAt least one is required.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Artifact"
+                    }
+                },
+                "contextLength": {
+                    "description": "ContextLength is the context window in tokens. Zero or absent means\nunknown, not unlimited.",
+                    "type": "integer",
+                    "example": 262144
+                },
+                "family": {
+                    "description": "Family is the model family the model belongs to.",
+                    "type": "string",
+                    "example": "qwen3-vl"
+                },
+                "id": {
+                    "description": "ID is the catalog identifier: lower case letters, digits, \".\", \"_\" and\n\"-\", at most 63 characters.",
+                    "type": "string",
+                    "example": "qwen3-vl-8b"
+                },
+                "inputModalities": {
+                    "description": "InputModalities are the kinds of input the model accepts, such as text or\nimage. Filter with ?modality=.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "text",
+                        "image"
+                    ]
+                },
+                "license": {
+                    "description": "License is the license identifier of the weights. Empty means unknown.",
+                    "type": "string",
+                    "example": "apache-2.0"
+                },
+                "name": {
+                    "description": "Name is the display name, usually the name the publisher uses.",
+                    "type": "string",
+                    "example": "Qwen3-VL-8B-Instruct"
+                },
+                "parameters": {
+                    "description": "Parameters is the parameter count as the publisher writes it.",
+                    "type": "string",
+                    "example": "8B"
+                },
+                "publisher": {
+                    "description": "Publisher is who released the model.",
+                    "type": "string",
+                    "example": "Qwen"
+                },
+                "tasks": {
+                    "description": "Tasks are what the model is used for, such as chat, vision-chat or\nembedding. Filter with ?task=.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "vision-chat"
+                    ]
+                }
+            }
+        },
+        "model.ModelListResp": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Model"
+                    }
                 }
             }
         },

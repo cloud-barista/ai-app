@@ -505,6 +505,60 @@ definitions:
       usage:
         $ref: '#/definitions/model.TokenUsage'
     type: object
+  model.Artifact:
+    properties:
+      engines:
+        description: |-
+          Engines are the inference engines known to load this artifact. Each
+          engine must be listed explicitly: the same file format may load in one
+          engine version and not in another. Filter with ?engine=.
+        items:
+          $ref: '#/definitions/model.EngineCompat'
+        type: array
+      format:
+        description: |-
+          Format is the file format the engine loads: hf for Hugging Face
+          safetensors, gguf for GGUF. Filter with ?format=.
+        example: hf
+        type: string
+      id:
+        description: |-
+          ID identifies the artifact within its model, with the same character
+          rules as a model ID.
+        example: hf-bf16
+        type: string
+      precision:
+        description: |-
+          Precision is the precision or quantization exactly as the source states
+          it, such as BF16, FP8 or Q4_K_M. It is not normalized. Empty means
+          unknown.
+        example: BF16
+        type: string
+      ref:
+        description: |-
+          Ref is the name of the artifact at its source: a Hugging Face repository
+          id, an Ollama model tag, or an image reference.
+        example: Qwen/Qwen3-VL-8B-Instruct
+        type: string
+      sizeGiB:
+        description: |-
+          SizeGiB is the download size in GiB (2^30 bytes). Zero or absent means
+          unknown.
+        example: 16.3
+        type: number
+      source:
+        description: |-
+          Source is where the artifact is downloaded from, such as huggingface,
+          kaggle, ollama or docker-model-runner. Filter with ?source=.
+        example: huggingface
+        type: string
+    required:
+    - engines
+    - format
+    - id
+    - ref
+    - source
+    type: object
   model.ControlAppReq:
     properties:
       action:
@@ -657,6 +711,67 @@ definitions:
         description: Serving reports whether the application's port was opened, on
           a real run.
     type: object
+  model.EngineCompat:
+    properties:
+      engine:
+        description: Engine is the engine profile ID, as listed by GET /engines.
+        example: vllm
+        type: string
+      minVersion:
+        description: |-
+          MinVersion is the oldest engine version known to load the artifact.
+          Empty means not recorded.
+        example: 0.11.0
+        type: string
+    required:
+    - engine
+    type: object
+  model.EngineProfile:
+    properties:
+      apiBasePath:
+        description: |-
+          APIBasePath is the path of the OpenAI compatible API, appended to
+          http://<node>:<port> by whoever calls the model service.
+        example: /v1
+        type: string
+      formats:
+        description: Formats are the artifact formats this engine loads.
+        example:
+        - hf
+        items:
+          type: string
+        type: array
+      healthPath:
+        description: HealthPath answers 200 once the engine is up.
+        example: /health
+        type: string
+      id:
+        description: ID is the engine identifier artifacts refer to in engines[].engine.
+        example: vllm
+        type: string
+      image:
+        description: Image is the container image, pinned to a release tag.
+        example: vllm/vllm-openai:v0.32.0
+        type: string
+      port:
+        description: |-
+          Port is the TCP port the engine serves its API on, inside the container
+          and on the node.
+        example: 8000
+        type: integer
+    required:
+    - formats
+    - id
+    - image
+    - port
+    type: object
+  model.EngineProfileListResp:
+    properties:
+      engines:
+        items:
+          $ref: '#/definitions/model.EngineProfile'
+        type: array
+    type: object
   model.InstallSpec:
     properties:
       commands:
@@ -676,6 +791,79 @@ definitions:
         type: string
     required:
     - commands
+    type: object
+  model.Model:
+    properties:
+      artifacts:
+        description: |-
+          Artifacts are the published forms of the model that an engine can load.
+          At least one is required.
+        items:
+          $ref: '#/definitions/model.Artifact'
+        type: array
+      contextLength:
+        description: |-
+          ContextLength is the context window in tokens. Zero or absent means
+          unknown, not unlimited.
+        example: 262144
+        type: integer
+      family:
+        description: Family is the model family the model belongs to.
+        example: qwen3-vl
+        type: string
+      id:
+        description: |-
+          ID is the catalog identifier: lower case letters, digits, ".", "_" and
+          "-", at most 63 characters.
+        example: qwen3-vl-8b
+        type: string
+      inputModalities:
+        description: |-
+          InputModalities are the kinds of input the model accepts, such as text or
+          image. Filter with ?modality=.
+        example:
+        - text
+        - image
+        items:
+          type: string
+        type: array
+      license:
+        description: License is the license identifier of the weights. Empty means
+          unknown.
+        example: apache-2.0
+        type: string
+      name:
+        description: Name is the display name, usually the name the publisher uses.
+        example: Qwen3-VL-8B-Instruct
+        type: string
+      parameters:
+        description: Parameters is the parameter count as the publisher writes it.
+        example: 8B
+        type: string
+      publisher:
+        description: Publisher is who released the model.
+        example: Qwen
+        type: string
+      tasks:
+        description: |-
+          Tasks are what the model is used for, such as chat, vision-chat or
+          embedding. Filter with ?task=.
+        example:
+        - vision-chat
+        items:
+          type: string
+        type: array
+    required:
+    - artifacts
+    - id
+    - name
+    type: object
+  model.ModelListResp:
+    properties:
+      models:
+        items:
+          $ref: '#/definitions/model.Model'
+        type: array
     type: object
   model.ModelRef:
     properties:
@@ -1461,6 +1649,249 @@ paths:
       summary: Run an automation engine workflow
       tags:
       - '[Engine] AI Application Automation Engine'
+  /engines:
+    get:
+      description: 'List the built-in inference engine profiles a model service can
+        run with: the pinned container image, the artifact formats each loads, and
+        the port, health path and OpenAI compatible API path it serves. Profiles are
+        read only. An artifact runs on an engine when the artifact lists the engine
+        id and the engine lists the artifact format'
+      operationId: GetAllEngineProfiles
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Engine profile list, ordered by id
+          schema:
+            $ref: '#/definitions/model.EngineProfileListResp'
+      security:
+      - BearerAuth: []
+      summary: List inference engine profiles
+      tags:
+      - '[Model] Inference Engine Profiles'
+  /engines/{engineId}:
+    get:
+      description: Read one built-in inference engine profile
+      operationId: GetEngineProfile
+      parameters:
+      - default: vllm
+        description: Engine profile ID
+        in: path
+        name: engineId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Engine profile
+          schema:
+            $ref: '#/definitions/model.EngineProfile'
+        "404":
+          description: Engine profile not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get an inference engine profile
+      tags:
+      - '[Model] Inference Engine Profiles'
+  /models:
+    get:
+      description: 'List the AI models in the model catalog with every artifact each
+        is published as. Each filter is optional and compared without regard to case;
+        all given filters must match. task and modality match the model. format, engine
+        and source match an artifact, and a model is listed only when one of its artifacts
+        matches all three of them at once. Values are returned as the source states
+        them: an absent contextLength, sizeGiB or precision means unknown, not zero.
+        Sizing nodes from these values is left to the caller.'
+      operationId: GetAllModels
+      parameters:
+      - description: Model task, such as chat, vision-chat or embedding
+        in: query
+        name: task
+        type: string
+      - description: Input modality the model accepts, such as text or image
+        in: query
+        name: modality
+        type: string
+      - description: 'Artifact file format: hf (Hugging Face safetensors) or gguf'
+        in: query
+        name: format
+        type: string
+      - description: Engine profile ID an artifact runs on, as listed by GET /engines
+        in: query
+        name: engine
+        type: string
+      - description: Artifact source, such as huggingface or ollama
+        in: query
+        name: source
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI model list, ordered by id
+          schema:
+            $ref: '#/definitions/model.ModelListResp'
+      security:
+      - BearerAuth: []
+      summary: List AI models
+      tags:
+      - '[Model] AI Model Catalog'
+    post:
+      consumes:
+      - application/json
+      description: Register an AI model, or replace the model of the same id with
+        this record. A model needs an id, a name and at least one artifact; each artifact
+        needs an id unique within the model, a source, a ref, a format and at least
+        one compatible engine. Engines are not checked against the engine profiles
+        here; a pairing that does not fit is refused when a compose file is rendered
+        for it.
+      operationId: PostModel
+      parameters:
+      - description: AI model metadata
+        in: body
+        name: model
+        required: true
+        schema:
+          $ref: '#/definitions/model.Model'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI model registered
+          schema:
+            $ref: '#/definitions/model.Model'
+        "400":
+          description: Malformed or incomplete metadata
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: The catalog file could not be written
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Register an AI model
+      tags:
+      - '[Model] AI Model Catalog'
+  /models/{modelId}:
+    delete:
+      description: Remove an AI model from the catalog. Model services already running
+        are untouched
+      operationId: DeleteModel
+      parameters:
+      - description: AI model ID
+        in: path
+        name: modelId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI model deleted
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: AI model not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: The catalog file could not be written
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Delete an AI model
+      tags:
+      - '[Model] AI Model Catalog'
+    get:
+      description: Read one AI model with every artifact it is published as
+      operationId: GetModel
+      parameters:
+      - default: qwen3-vl-8b
+        description: AI model ID
+        in: path
+        name: modelId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: AI model metadata
+          schema:
+            $ref: '#/definitions/model.Model'
+        "404":
+          description: AI model not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get an AI model
+      tags:
+      - '[Model] AI Model Catalog'
+  /models/{modelId}/artifacts/{artifactId}/compose:
+    get:
+      description: 'Render the docker-compose.yml that runs one artifact of a model
+        with one engine profile, without deploying anything. The pairing is refused
+        with 422 unless the artifact lists the engine and the engine loads the artifact
+        format. The file starts with one `docker compose up -d`: for vllm it runs
+        the OpenAI compatible server with --model set to the artifact ref (and --runner
+        pooling for an embedding model); for ollama it runs the server and a one-shot
+        container that pulls the model once the server is healthy. HF_TOKEN is left
+        to the environment or a .env file beside the compose file.'
+      operationId: GetModelCompose
+      parameters:
+      - default: qwen3-vl-8b
+        description: AI model ID
+        in: path
+        name: modelId
+        required: true
+        type: string
+      - default: hf-bf16
+        description: Artifact ID within the model
+        in: path
+        name: artifactId
+        required: true
+        type: string
+      - description: Engine profile ID. Defaults to the first engine the artifact
+          lists
+        in: query
+        name: engine
+        type: string
+      - default: false
+        description: Reserve every NVIDIA GPU of the node for the engine
+        in: query
+        name: gpu
+        type: boolean
+      produces:
+      - text/yaml
+      - application/json
+      responses:
+        "200":
+          description: docker-compose.yml, as text/yaml
+          schema:
+            type: string
+        "400":
+          description: gpu is not a boolean
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "404":
+          description: AI model, artifact or engine profile not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "422":
+          description: The artifact cannot be run with the engine
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Preview the compose file of a model service
+      tags:
+      - '[Model] AI Model Catalog'
   /ns/{nsId}/deployments:
     get:
       description: List every deployment of the namespace with its node status

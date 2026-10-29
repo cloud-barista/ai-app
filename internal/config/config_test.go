@@ -132,6 +132,27 @@ func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestModelStoreFile(t *testing.T) {
+	clearBackendEnv(t)
+	t.Setenv("AIAPP_MODEL_STORE_FILE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Model.StoreFile != "" {
+		t.Errorf("model store file = %q, want empty (memory only) by default", cfg.Model.StoreFile)
+	}
+
+	t.Setenv("AIAPP_MODEL_STORE_FILE", " ./data/models.json ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Model.StoreFile != "./data/models.json" {
+		t.Errorf("model store file = %q, want ./data/models.json", cfg.Model.StoreFile)
+	}
+}
+
 func TestEngineAndPartnerNLDefaults(t *testing.T) {
 	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL"} {
 		t.Setenv(env, "")

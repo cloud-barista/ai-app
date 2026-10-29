@@ -22,6 +22,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/catalog"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/deploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
@@ -67,6 +68,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	modelCatalog, loaded, err := modelcat.Open(cfg.Model.StoreFile)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open AI model catalog")
+		os.Exit(1)
+	}
+	if !loaded {
+		if err := modelcat.Seed(ctx, modelCatalog); err != nil {
+			log.Error().Err(err).Msg("Failed to seed AI model catalog")
+			os.Exit(1)
+		}
+	}
+	if cfg.Model.StoreFile == "" {
+		log.Warn().Msg("AIAPP_MODEL_STORE_FILE is not set: the AI model catalog is kept in memory and registered models are lost on restart")
+	}
+
 	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
 	deployOptions := append(deploy.OptionsFromConfig(cfg.Recommender, cfg.Provisioner),
 		deploy.WithHealthWait(cfg.Health.Timeout, cfg.Health.Interval))
@@ -74,6 +90,7 @@ func main() {
 
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.Register(registry, appCatalog, deployService)
+	tools.RegisterModels(registry, modelCatalog)
 
 	// Which CB-Tumblebug this talks to is worth one line at startup whatever the
 	// answer, because a service pointed at the wrong platform behaves normally
@@ -107,6 +124,7 @@ func main() {
 		Deploy:  deployService,
 		Archive: archiveStore,
 		Tools:   registry,
+		Models:  modelCatalog,
 	})
 	rest.MarkReady()
 
