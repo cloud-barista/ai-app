@@ -14,22 +14,43 @@
 
 ## 2. 전체 흐름
 
-```
-외부 요청 ─▶ [경희대 Agent] ── GET /aiapp/models ──▶ [AI-App: 모델 카탈로그]        (모델 추천, 경희대 몫)
-                   │ 고른 모델·아티팩트
-                   ▼
-            [인프라 추천 Agent, cm-beetle 형태] ─▶ Tumblebug Infra 요청 후보       (인프라 추천, 협력 기관 몫)
-                   │
-                   ▼
-            [CB-Tumblebug] Infra 생성 (aws / azure / gcp 노드)
-                   │ nsId / infraId / nodeId
-                   ▼
-[AI-App] ── 노드 정보·SSH 키 조회 ─▶ CB-Tumblebug
-   │ 공유 저장소에 파일 배치, Semaphore 에 키·inventory·template 등록
-   ▼
-[Semaphore] ── SSH ─▶ 노드
-   ├ 모델 서비스 배포: docker 설치 → 엔진+모델 compose → up → 헬스 확인
-   └ 응용 배포: 업로드한 파일 복사 → script 실행
+```mermaid
+flowchart LR
+    subgraph partner["협력 기관 (이 repo 밖)"]
+        khu["경희대 Agent<br/>모델 추천"]
+        rec["인프라 추천 Agent<br/>(cm-beetle 형태)"]
+    end
+
+    tb["CB-Tumblebug<br/>VM 생성 · 노드 제어"]
+
+    subgraph aiapp["AI-App (이 repo)"]
+        direction TB
+        cat["모델 카탈로그<br/>/aiapp/models · /aiapp/engines"]
+        apps["응용 저장소<br/>/aiapp/apps (name · files · script)"]
+        dep["노드 배포<br/>/aiapp/deployments"]
+        stage[("공유 저장소<br/>&lt;uuid&gt;/&lt;csp&gt;-&lt;nodeId&gt;/")]
+        cat --> dep
+        apps --> dep
+        dep -- "파일 배치" --> stage
+    end
+
+    sem["Semaphore<br/>(ansible)"]
+
+    subgraph infra["Tumblebug Infra (노드)"]
+        direction TB
+        n1["aws vm1<br/>vLLM + Dify"]
+        n2["azure vm2<br/>Ollama + Open WebUI"]
+        n3["gcp vm3<br/>vLLM + Langflow"]
+    end
+
+    khu -- "① 모델 조회" --> cat
+    khu -- "② 고른 모델" --> rec
+    rec -- "③ Infra 생성 요청" --> tb
+    tb -. "VM 생성" .-> infra
+    dep -- "④ 노드 정보 · SSH 키 조회" --> tb
+    dep -- "⑤ key · inventory 등록, 태스크 실행" --> sem
+    stage -. "같은 볼륨" .- sem
+    sem -- "⑥ SSH: docker 설치 → compose up / 파일 복사 → script" --> infra
 ```
 
 - **AI-App 은 VM 을 만들지 않는다.** CB-Tumblebug 이 만든 노드를 받아 그 위에 배포한다.
@@ -39,6 +60,57 @@
   메타데이터를 **원래 값 그대로** 내준다.
 
 ## 3. 데이터 모델
+
+```mermaid
+classDiagram
+    direction LR
+    class Model {
+        id
+        name
+        family / publisher
+        parameters
+        tasks[] : chat, vision-chat, embedding
+        inputModalities[] : text, image
+        contextLength
+        license
+    }
+    class Artifact {
+        id
+        source : huggingface, kaggle, ollama, docker-model-runner
+        ref
+        format : hf, gguf
+        precision : 원래 값: BF16, FP8, Q4_K_M
+        sizeGiB
+    }
+    class EngineCompat {
+        engine
+        minVersion
+    }
+    class EngineProfile {
+        id : vllm, ollama
+        image
+        formats[]
+        port / healthPath / apiBasePath
+    }
+    class App {
+        name
+    }
+    class AppVersion {
+        version
+        script
+        createdAt
+    }
+    class AppFile {
+        name
+        sizeBytes
+        sha256
+    }
+    Model "1" *-- "1..*" Artifact : artifacts
+    Artifact "1" *-- "1..*" EngineCompat : engines
+    EngineCompat ..> EngineProfile : engine = id
+    App "1" *-- "1..*" AppVersion : versions
+    AppVersion "1" *-- "*" AppFile : files
+```
 
 ### 3.1 Model 과 Artifact
 
@@ -136,6 +208,39 @@ CB-Tumblebug 구조 그대로 받는다.
 AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로로 마운트한다. playbook 은 이 폴더를 노드로 복사한다.
 
 ### 4.4 Semaphore 실행 (노드 하나 기준)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as 호출자<br/>(엔진 · 콘솔 · 외부 모듈)
+    participant A as AI-App<br/>노드 배포
+    participant T as CB-Tumblebug
+    participant S as 공유 저장소
+    participant M as Semaphore
+    participant N as 노드
+
+    C->>A: POST /aiapp/deployments<br/>(type, 모델·응용, targets: nsId/infraId/nodeId)
+    A-->>C: 202 배포 ID (이후는 비동기)
+    Note over A: 노드마다 아래를 따로 진행
+    A->>T: GET 노드 정보 (CSP, IP, 포트, 사용자, sshKeyId)
+    A->>T: GET SSH 키 (privateKey)
+    A->>S: 파일 배치 <uuid>/<csp>-<nodeId>/<br/>(모델 서비스: compose 생성 / 응용: 파일 + script)
+    alt dry-run
+        Note over A: 여기서 멈춤. Semaphore 에 아무것도 등록하지 않음
+    else 실제 배포
+        loop playbook 마다 (install-docker → compose-up 또는 copy-and-run)
+            A->>M: SSH 키 등록
+            A->>M: inventory 등록 (노드 주소)
+            A->>M: 태스크 실행 (고정 template + 이번 inventory)
+            M->>S: 배치된 파일 읽기
+            M->>N: SSH 로 playbook 실행
+            A->>M: 끝날 때까지 상태 확인
+            A->>M: 태스크 로그 가져와 배포 기록에 저장
+            A->>M: inventory · SSH 키 삭제 (성공 · 실패 무관)
+        end
+    end
+    C->>A: GET /aiapp/deployments/{id}, /logs
+```
 
 | # | 단계 | 비고 |
 |---|------|------|
@@ -243,6 +348,38 @@ ETRI 가 제시한 여행 계획 통합 포털 시나리오. 포털은 별도 �
 HF 값은 2026-10-29 에 `https://huggingface.co/api/models/<id>` 로 확인했다(Qwen3-Embedding-0.6B `feature-extraction` BF16,
 Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8 가중치 + BF16 일부, 아키텍처
 `Mistral3ForConditionalGeneration`). Ollama `qwen3-vl:8b` 크기 6.2GB 는 ollama.com 태그 페이지 값이다.
+
+```mermaid
+flowchart TB
+    portal["여행 계획 통합 포털<br/>(별도 노드, ETRI 환경에만 있음)"]
+
+    subgraph vm1["aws vm1"]
+        direction TB
+        r1["관광 문서 분석 (RAG)"]:::role
+        dify["Dify"] --> e1["vLLM :8000"]
+        e1 --- m1[/"Qwen3-Embedding-0.6B<br/>HF, BF16"/]
+    end
+    subgraph vm2["azure vm2"]
+        direction TB
+        r2["이미지 분석 · 여행 계획 생성"]:::role
+        owui["Open WebUI"] --> e2["Ollama :11434"]
+        e2 --- m2[/"Qwen3-VL-8B<br/>Ollama qwen3-vl:8b, GGUF"/]
+    end
+    subgraph vm3["gcp vm3"]
+        direction TB
+        r3["일정 검증 · 외부 API · 알림"]:::role
+        lf["Langflow"] --> e3["vLLM :8000"]
+        e3 --- m3[/"Ministral 3 8B<br/>HF, FP8"/]
+    end
+
+    portal --> vm1
+    portal --> vm2
+    portal --> vm3
+    r1 ~~~ dify
+    r2 ~~~ owui
+    r3 ~~~ lf
+    classDef role fill:none,stroke:none,font-style:italic
+```
 
 ### 응용 계층 설명
 
