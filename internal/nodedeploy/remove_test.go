@@ -56,7 +56,7 @@ func downRuns(f *fixture, from int) []semaphore.RunSpec {
 func TestRemoveTakesEveryNodeDown(t *testing.T) {
 	f := newFixture(t, false)
 	d := deployed(t, f, appReq("vm1", "vm2"))
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("deploy = %q", d.Status)
 	}
 	before := f.runner.count()
@@ -116,6 +116,40 @@ func TestRemoveTakesEveryNodeDown(t *testing.T) {
 	}
 	if r, ok := reopened.Get(d.ID); !ok || r.Status != model.NodeDeployRemoved {
 		t.Errorf("reopened = %+v", r)
+	}
+}
+
+func TestRemoveRunsAsTheUserTheNodeWasDeployedAs(t *testing.T) {
+	f := newFixture(t, false)
+	req := appReq("vm1", "vm2")
+	req.Targets[0].SSHUser = "ec2-user"
+	d := deployed(t, f, req)
+	before := f.runner.count()
+
+	if _, err := f.svc.Remove(context.Background(), d.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := waitRemoved(t, f.svc, d.ID)
+	if done.Status != model.NodeDeployRemoved {
+		t.Fatalf("status = %q, want removed", done.Status)
+	}
+	runs := downRuns(f, before)
+	if len(runs) != 2 {
+		t.Fatalf("compose-down runs = %d, want 2", len(runs))
+	}
+	for _, run := range runs {
+		want := "cb-user"
+		if strings.Contains(run.Name, "-vm1") {
+			want = "ec2-user"
+		}
+		if run.User != want {
+			t.Errorf("compose-down %s as %q, want %q", run.Name, run.User, want)
+		}
+	}
+	for _, n := range done.Nodes {
+		if last := n.Steps[len(n.Steps)-1]; last.SSHUser != n.SSHUser {
+			t.Errorf("%s: compose-down step as %q, node deployed as %q", n.Target.NodeID, last.SSHUser, n.SSHUser)
+		}
 	}
 }
 
@@ -278,13 +312,13 @@ func storeRecord(t *testing.T, f *fixture, d model.NodeDeployment) {
 	}
 }
 
-func succeededApp(id string, created time.Time, nodes ...string) model.NodeDeployment {
+func runningApp(id string, created time.Time, nodes ...string) model.NodeDeployment {
 	req := appReq(nodes...)
 	req.App.Version = 2
-	d := model.NodeDeployment{ID: id, Type: req.Type, Status: model.NodeDeploySucceeded, Request: req, CreatedAt: created}
+	d := model.NodeDeployment{ID: id, Type: req.Type, Status: model.NodeDeployRunning, Request: req, CreatedAt: created}
 	for _, n := range nodes {
 		d.Nodes = append(d.Nodes, model.NodeDeployResult{
-			Target: target(n), Status: model.NodeDeploySucceeded, WorkKey: "app-web", NodeDir: "/opt/aiapp/app-web",
+			Target: target(n), Status: model.NodeDeployRunning, WorkKey: "app-web", NodeDir: "/opt/aiapp/app-web",
 			Steps: []model.NodeDeployStep{
 				{Playbook: PlaybookInstallDocker, Status: semaphore.StatusSuccess},
 				{Playbook: PlaybookCopyAndRun, Status: semaphore.StatusSuccess},
@@ -296,13 +330,13 @@ func succeededApp(id string, created time.Time, nodes ...string) model.NodeDeplo
 
 func TestRemoveInADryRunServiceSendsNothingAndKeepsTheStatus(t *testing.T) {
 	f := newFixture(t, true)
-	storeRecord(t, f, succeededApp("real", time.Now().UTC(), "vm1"))
+	storeRecord(t, f, runningApp("real", time.Now().UTC(), "vm1"))
 
 	got, err := f.svc.Remove(context.Background(), "real")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != model.NodeDeploySucceeded || got.Nodes[0].Status != model.NodeDeploySucceeded ||
+	if got.Status != model.NodeDeployRunning || got.Nodes[0].Status != model.NodeDeployRunning ||
 		len(got.Nodes[0].Notes) != 1 || got.Nodes[0].Notes[0] != noteRemoveDryRunService || f.runner.count() != 0 {
 		t.Errorf("dry-run service removal = %q / %+v, runs %d", got.Status, got.Nodes[0], f.runner.count())
 	}
@@ -315,7 +349,7 @@ func TestRemoveInADryRunServiceSendsNothingAndKeepsTheStatus(t *testing.T) {
 
 func TestRemoveOfANodeCBTumblebugNoLongerHas(t *testing.T) {
 	f := newFixture(t, false)
-	storeRecord(t, f, succeededApp("old", time.Now().UTC(), "gone", "vm9", "down"))
+	storeRecord(t, f, runningApp("old", time.Now().UTC(), "gone", "vm9", "down"))
 
 	if _, err := f.svc.Remove(context.Background(), "old"); err != nil {
 		t.Fatal(err)

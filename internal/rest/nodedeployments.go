@@ -17,7 +17,7 @@ import (
 // @Description
 // @Description type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 // @Description
-// @Description Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
+// @Description Each target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds: CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user (ec2-user on aws, the admin user on azure) accepts the same key. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as. kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 // @Description
 // @Description For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 // @Description
@@ -64,7 +64,7 @@ func (h *Handler) RestPostNodeDeployment(c echo.Context) error {
 // @Produce json
 // @Param type query string false "Deployment type" Enums(inference, app)
 // @Param nsId query string false "CB-Tumblebug namespace of any target"
-// @Param status query string false "Deployment status" Enums(pending, running, succeeded, failed, partial, dry-run, interrupted, removing, removed, remove-failed)
+// @Param status query string false "Deployment status" Enums(pending, deploying, running, failed, partial, dry-run, interrupted, removing, removed, remove-failed)
 // @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first"
 // @Security BearerAuth
 // @Router /deployments [get]
@@ -81,7 +81,7 @@ func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
 // RestGetNodeDeployment godoc
 // @ID GetNodeDeployment
 // @Summary Get a deployment onto nodes
-// @Description Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
+// @Description Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"
@@ -155,7 +155,7 @@ func (h *Handler) RestPostNodeDeploymentControl(c echo.Context) error {
 // RestDeleteNodeDeployment godoc
 // @ID DeleteNodeDeployment
 // @Summary Take a deployment down from its nodes
-// @Description Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.
+// @Description Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans, as the SSH user the node was deployed as (nodes[].sshUser, which is targets[].sshUser when the request gave it). Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.
 // @Description
 // @Description Only the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.
 // @Description
@@ -166,7 +166,7 @@ func (h *Handler) RestPostNodeDeploymentControl(c echo.Context) error {
 // @Success 200 {object} model.NodeDeployment "Nothing to run on any node, already removed, or dry run"
 // @Success 202 {object} model.NodeDeployment "Accepted; the nodes are taken down in the background"
 // @Failure 404 {object} model.SimpleMsg "Deployment not found"
-// @Failure 409 {object} model.SimpleMsg "The deployment is still pending or running, or is being taken down"
+// @Failure 409 {object} model.SimpleMsg "The deployment is still pending or deploying, or is being taken down"
 // @Security BearerAuth
 // @Router /deployments/{id} [delete]
 func (h *Handler) RestDeleteNodeDeployment(c echo.Context) error {

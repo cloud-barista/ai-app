@@ -42,8 +42,8 @@ func postNodeDeployment(t *testing.T, s *Server, body string) model.NodeDeployme
 	if rec.Code != http.StatusAccepted || json.Unmarshal(rec.Body.Bytes(), &created) != nil {
 		t.Fatalf("POST /deployments = %d: %s", rec.Code, rec.Body.String())
 	}
-	got := waitNodeDeployment(t, s, created.ID, model.NodeDeployPending, model.NodeDeployRunning)
-	if got.Status != model.NodeDeploySucceeded {
+	got := waitNodeDeployment(t, s, created.ID, model.NodeDeployPending, model.NodeDeployDeploying)
+	if got.Status != model.NodeDeployRunning {
 		t.Fatalf("deployment %s = %q", created.ID, got.Status)
 	}
 	return got

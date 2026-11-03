@@ -56,7 +56,7 @@ const statusLogLines = 5
 
 // Heal reads a deployment and, when it did not succeed on every node, runs
 // the request it was made with once more as a new deployment and follows that
-// one until it ends. A deployment still running is not healed.
+// one until it ends. A deployment still pending or deploying is not healed.
 func (e *Engine) Heal(ctx context.Context, nsID string, in HealInput) (*Run, error) {
 	if in.DeploymentID == "" {
 		return nil, required("deploymentId")
@@ -75,10 +75,10 @@ func (e *Engine) Heal(ctx context.Context, nsID string, in HealInput) (*Run, err
 	}
 	step.Message = outcome(&d)
 	switch d.Status {
-	case model.NodeDeploySucceeded:
-		r.message = fmt.Sprintf("deployment %s succeeded on every node; nothing to heal", d.ID)
+	case model.NodeDeployRunning:
+		r.message = fmt.Sprintf("deployment %s is running on every node; nothing to heal", d.ID)
 		return r.finish(), nil
-	case model.NodeDeployPending, model.NodeDeployRunning:
+	case model.NodeDeployPending, model.NodeDeployDeploying:
 		r.fail(step, fmt.Sprintf("deployment %s is still %s; heal it after it ends", d.ID, d.Status))
 		r.add("run the deployment request again", toolCreateDeployment, d.Request, StepSkipped, r.skipMessage())
 		r.add(waitStepName, toolGetDeployment, nil, StepSkipped, r.skipMessage())
@@ -91,7 +91,7 @@ func (e *Engine) Heal(ctx context.Context, nsID string, in HealInput) (*Run, err
 	}
 
 	if again, ok := r.createAndWait(ctx, d.Request); ok {
-		r.message = fmt.Sprintf("deployment %s was %s and succeeded on every node when run again as %s",
+		r.message = fmt.Sprintf("deployment %s was %s and is running on every node when run again as %s",
 			d.ID, d.Status, again.ID)
 	} else {
 		r.note = fmt.Sprintf("deployment %s was %s before", d.ID, d.Status)

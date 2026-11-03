@@ -100,6 +100,7 @@
 |---|---|---|
 | 모델 카탈로그 파일 (`AIAPP_MODEL_STORE_FILE`, docker compose 는 named volume `catalog` 의 `/app/data/catalog/models.json`). 커밋 `2e79094` 전 코드가 쓴 것 | 아티팩트 필드가 `engines` 라 새 코드가 옛 형식으로 보고 **기동을 거부**합니다: `model catalog ".../models.json" is in the format before runtimes: model "qwen3-vl-8b" artifacts[0] lists engines; remove the file or convert engines[].engine to runtimes[].runtimeId` (2026-11-04, 옛 형식 파일로 띄워 확인) | 그 파일을 지웁니다. 다음 기동이 기본 모델 3개를 다시 넣습니다. 직접 등록한 모델은 새 형식(`runtimes[].runtimeId`)으로 다시 `POST /aiapp/models` 합니다. 업로드한 응용(`apps/`)은 형식이 안 바뀌어 그대로 읽힙니다 |
 | 배포 기록 파일 (`AIAPP_DEPLOYMENT_STORE_FILE`, compose 는 volume `archive` 의 `node-deployments.json`) 의 `type: model-service` 기록 | 기동은 됩니다. 기록은 `type: model-service` 로 목록에 남지만 `request.modelService` 가 읽히지 않아 비고, `?type=inference` 필터와 `GET /aiapp/endpoints` 에서 빠집니다 (목록·필터는 2026-11-03 에 확인, 주소 조회는 `internal/nodedeploy/placement.go` 의 `placementFor` 가 그 type 을 거절하는 것을 코드로 확인) | 그 노드에 같은 런타임으로 `type: inference` 배포를 새로 하면 작업 키(`ms-<runtimeId>`)가 같아 옛 컨테이너를 바꿉니다. 옛 기록으로 `heal` 이나 `DELETE` 를 하는 것은 확인하지 않았습니다 |
+| 배포 기록 파일에 `version` 이 없음 (진행 중을 `running`, 성공을 `succeeded` 로 적던 형식) | 기동은 됩니다. 읽을 때 `running` 을 `deploying` 으로, `succeeded` 를 `running` 으로 바꾸고 `version: 2` 로 다시 씁니다. `deploying` 이 된 기록은 다른 진행 중 기록처럼 `interrupted` 가 됩니다. 아카이브의 옛 줄은 `succeeded` 그대로 남습니다 | 없음. `?status=succeeded` 로 거르던 쪽은 `?status=running` 으로 바꿉니다 |
 
 ## 1. 이게 뭘 하는 건가 - 한 문장
 
@@ -210,13 +211,13 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 
 | 워크플로 | 입력 | 하는 일 |
 |---|---|---|
-| `deploy` | 노드 배포 요청 그대로 (`type`, `targets[]`, `inference` 또는 `app`, 5-1) | 모델(`get_model`) 또는 응용(`get_app`)을 읽음 → `create_deployment` → 배포가 끝날 때까지 `get_deployment` 로 대기. 모든 노드가 `succeeded` 여야 성공이고, `partial` 은 실행 실패 |
-| `heal` | `deploymentId` | 배포 기록을 읽어 `succeeded` 면 아무것도 안 함, `pending`·`running` 이면 실패로 끝냄. 그 밖(`failed`·`partial`·`interrupted`·`dry-run`)이면 기록된 요청을 **새 배포로 한 번 다시 실행**하고 끝날 때까지 대기 |
+| `deploy` | 노드 배포 요청 그대로 (`type`, `targets[]`, `inference` 또는 `app`, 5-1) | 모델(`get_model`) 또는 응용(`get_app`)을 읽음 → `create_deployment` → 배포가 끝날 때까지 `get_deployment` 로 대기. 모든 노드가 `running` 이어야 성공이고, `partial` 은 실행 실패 |
+| `heal` | `deploymentId` | 배포 기록을 읽어 `running` 이면 아무것도 안 함, `pending`·`deploying` 이면 실패로 끝냄. 그 밖(`failed`·`partial`·`interrupted`·`dry-run`)이면 기록된 요청을 **새 배포로 한 번 다시 실행**하고 끝날 때까지 대기 |
 | `control` | `deploymentId`, `action` | `suspend`·`resume`·`reboot`·`terminate` 를 배포의 노드 전부에 (`control_node`) |
 | `status` | `deploymentId` | 배포 기록(`get_deployment`)과 노드마다 마지막 태스크 출력 5줄(`get_deployment_logs`). CB-Tumblebug 노드 상태는 읽지 않음 |
 
 - **헬스는 엔진 단계가 아닙니다.** 추론 서비스는 `compose-up` playbook 이 노드 안에서 런타임의 헬스 경로를 기다려,
-  응답해야 그 노드가 `succeeded` 가 됩니다 (5-5). 엔진의 대기 단계는 그 결과를 읽습니다.
+  응답해야 그 노드가 `running` 이 됩니다 (5-5). 엔진의 대기 단계는 그 결과를 읽습니다.
 - 대기 단계는 `AIAPP_HEALTH_INTERVAL`(기본 `20s`) 간격으로 `AIAPP_HEALTH_TIMEOUT`(기본 `15m`)까지 묻습니다. 넘으면 그 단계가
   실패하고, 배포 자체는 AI-App 에서 계속 돕니다(`application_status` 로 이어서 봄).
 - 단계 상태는 `succeeded`·`failed`·`blocked`·`waiting`·`skipped`, 실행 전체 상태는 `succeeded`·`failed`·`blocked` 입니다.
@@ -349,6 +350,11 @@ curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
 ```
 
 - `targets` 는 CB-Tumblebug 구조 그대로이고 32개까지, 같은 노드는 한 번만. csp·region·zone 은 요청으로 받지 않고 노드 정보에서 읽습니다.
+- `targets[].sshUser`(생략 가능, 1~32자, `[a-z_][a-z0-9_-]*`)를 주면 그 노드의 Semaphore inventory 에 CB-Tumblebug 의 사용자(`nodeUserName`)
+  대신 그 사용자를 씁니다. 키는 CB-Tumblebug 이 가진 키 그대로입니다. CB-Tumblebug(cb-spider)은 `cb-user` 를 `useradd -G sudo` 로 만드는데
+  `sudo` 그룹이 없는 이미지(RHEL, Rocky, AlmaLinux, Amazon Linux 는 `wheel`)에서는 실패해 노드에 `cb-user` 가 없고, 이미지 기본 사용자
+  (aws `ec2-user`, azure 는 만들 때 정한 관리자)가 같은 키를 받기 때문입니다. 접속한 사용자는 `nodes[].sshUser` 와 `steps[].sshUser` 에
+  남고, 같은 배포를 내릴 때(5-9)도 그 사용자로 접속합니다.
 - `kind: k8s` 는 자리만 있고 `422` 로 거절합니다.
 - `inference.runtimeId` 를 빼면 아티팩트의 첫 런타임, `app.version` 을 빼거나 `0` 이면 최신 버전입니다. 기록에는 고른 값이 채워집니다.
 - `inference.gpu` 를 빼면 노드 스펙에서 정합니다 (5-4).
@@ -374,14 +380,14 @@ curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
 | 4 | Semaphore 에 노드의 key·inventory 등록, `install-docker.yml` 실행 | Ubuntu·Debian(apt), RHEL·Rocky·AlmaLinux·CentOS Stream·Oracle Linux·Fedora(Docker rpm 저장소), Amazon Linux 2023(배포판의 docker + 직접 받은 compose 플러그인). 그 밖의 배포판이면 실패. docker 와 compose 플러그인이 있으면 그대로 둠, docker 는 있는데 compose 플러그인이 없으면 노드 저장소의 `docker-compose-plugin`·`moby-compose` 를 깔고, 없으면 apt 노드는 실패, dnf 노드는 직접 받아 깖. GPU 면 NVIDIA Container Toolkit 도 설치 |
 | 5 | `compose-up.yml`(추론 서비스) 또는 `copy-and-run.yml`(응용) 실행 | 5-3, 5-5 |
 | 6 | 태스크 출력을 배포 기록에 남기고 key·inventory 삭제 | 성공·실패·취소와 무관하게. 태스크와 그 로그는 Semaphore 에 남음 |
-| 7 | playbook 이 다 성공하면 서빙 포트를 노드 보안 그룹에 엶 | 5-6. 못 열어도 노드는 `succeeded` |
+| 7 | playbook 이 다 성공하면 서빙 포트를 노드 보안 그룹에 엶 | 5-6. 못 열어도 노드는 `running` |
 
 - Semaphore 의 template 은 playbook 마다 하나(`aiapp-install-docker`, `aiapp-compose-up`, `aiapp-copy-and-run`, `aiapp-compose-down`)를 프로젝트(`AIAPP_SEMAPHORE_PROJECT`)에
   만들어 두고, 태스크 요청의 `inventory_id` 로 그 배포의 inventory 를 덮어써 실행합니다. template 을 지우면 Semaphore 가 그 태스크 이력과
   로그를 같이 지우기 때문입니다 (설계 4.4).
 - 태스크 하나의 상한은 `AIAPP_SEMAPHORE_TIMEOUT`(기본 `30m`)이고, 넘으면 태스크를 멈추고 등록한 것을 지웁니다.
-- 기록 상태: 배포는 `pending`·`running`·`succeeded`(전 노드)·`failed`(전 노드)·`partial`(일부)·`dry-run`·`interrupted`(서비스가 멈추거나 재기동),
-  내린 뒤에는 `removing`·`removed`·`remove-failed` 이고, 노드는 `partial` 을 뺀 같은 값입니다. 노드 결과에 접속 정보(키 제외),
+- 기록 상태: 배포는 `pending`·`deploying`(playbook 실행 중)·`running`(전 노드 배포 끝)·`failed`(전 노드)·`partial`(일부)·`dry-run`·`interrupted`(서비스가 멈추거나 재기동),
+  내린 뒤에는 `removing`·`removed`·`remove-failed` 이고, 노드는 `partial` 을 뺀 같은 값입니다. 노드 결과에 접속 정보(키 제외)와 접속한 SSH 사용자(`sshUser`),
   `gpu`·`gpuSource`, `stageDir`, `workKey`, `nodeDir`, 렌더한 compose, `serviceUrl`(추론 서비스: `http://<노드 IP>:<런타임 port><apiBasePath>`),
   `ports`·`openedPorts`·`portsError`(5-6), 단계별 태스크 ID·상태와 `taskUrl`(아래)이 남습니다.
 - 태스크 출력은 `GET /aiapp/deployments/{id}/logs` 로만 나오고 기록 조회에서는 빠집니다.
@@ -418,7 +424,7 @@ NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가�
 
 ### 5-5. 헬스
 
-- 추론 서비스: `compose-up` 이 노드 안에서 `curl http://127.0.0.1:<port><healthPath>` 를 10초 간격 60번까지 시도하고, 응답해야 노드가 `succeeded` 입니다.
+- 추론 서비스: `compose-up` 이 노드 안에서 `curl http://127.0.0.1:<port><healthPath>` 를 10초 간격 60번까지 시도하고, 응답해야 노드가 `running` 입니다.
   Ollama 는 서버가 모델을 받기 전에 응답하므로 `model-pull` 컨테이너가 0 으로 끝나기를 먼저 기다립니다(`wait_timeout` 기본 1800초).
 - 응용: script 가 0 으로 끝난 뒤 `copy-and-run` 이 응용 포트(`nodes[].ports`)마다 노드 안에서 `curl http://127.0.0.1:<port>/` 를 10초 간격 60번까지 보내고,
   HTTP 응답(상태 코드는 묻지 않음)이 와야 넘어갑니다. 이어 30초 뒤 compose 프로젝트의 컨테이너 중 재시작 중이거나 재시작했거나 0 이 아닌 코드로
@@ -434,7 +440,7 @@ NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가�
 - 대상: 노드 정보의 `securityGroupIds` 전부. 규칙은 **TCP 인바운드, `0.0.0.0/0`** (시험 환경 기준, 출처 제한은 열린 문제).
 - 보안 그룹을 먼저 읽어 그 포트를 `0.0.0.0/0` 에서 받는 인바운드 규칙이 이미 있으면 보내지 않습니다. CB-Tumblebug 은 같은 규칙이
   하나라도 섞인 추가 요청 전체를 거절하기 때문입니다. 결과는 `openedPorts[]` 에 `added`·`existing` 으로 남습니다.
-- 못 열면 `portsError` 와 `notes` 에 남기고 노드는 `succeeded` 입니다. 보안 그룹이 없는 노드도 `notes` 에 남깁니다.
+- 못 열면 `portsError` 와 `notes` 에 남기고 노드는 `running` 입니다. 보안 그룹이 없는 노드도 `notes` 에 남깁니다.
 - dry-run 과 실패한 노드는 열지 않습니다. `AIAPP_DEPLOYMENT_OPEN_PORTS=false`(기본 `true`)면 포트만 기록하고 열지 않습니다.
 - **내릴 때 닫지 않습니다.** 같은 보안 그룹을 다른 작업이 쓸 수 있기 때문입니다.
 - `serviceUrl` 과 `GET /aiapp/endpoints` 의 주소는 노드 IP 와 포트로 조립한 것입니다. 포트를 못 열었으면 `portsOpened: false` 이고 밖에서 안 닿을 수 있습니다.
@@ -460,7 +466,8 @@ Semaphore 에는 아무것도 등록하지 않습니다. 기록 상태는 `dry-r
 
 - named volume(받아 둔 모델 가중치 등)과 노드 폴더 `/opt/aiapp/<작업 키>` 는 남깁니다. 다음에 같은 작업 키로 배포하면 다시 씁니다.
 - 내릴 것이 있으면 `202`·`removing`, 끝나면 `removed`(전 노드) 또는 `remove-failed`(일부 실패, 다시 `DELETE` 하면 남은 노드만).
-  할 것이 없으면 바로 `200`·`removed` 입니다. `pending`·`running`·`removing` 인 배포는 `409` 입니다.
+  할 것이 없으면 바로 `200`·`removed` 입니다. `pending`·`deploying`·`removing` 인 배포는 `409` 입니다.
+- compose-down 은 배포 때 기록한 SSH 사용자(`nodes[].sshUser`)로 접속합니다.
 - 그 노드에서 같은 작업 키를 나중 배포가 바꿨으면 건드리지 않고 `removed` 로 표시하며 `notes` 에 그 배포를 적습니다. dry-run 배포,
   서비스를 시작하지 못한 노드(`compose-up`·`copy-and-run` 을 안 돌림), CB-Tumblebug 에 더는 없는 노드도 실행 없이 `removed` 와 note 입니다.
 - 연 포트는 닫지 않습니다(5-6). 아카이브에 `kind: node-removal` 로 남습니다.
@@ -470,7 +477,7 @@ Semaphore 에는 아무것도 등록하지 않습니다. 기록 상태는 `dry-r
 `internal/nodedeploy/endpoints.go`. 배포 기록에서 지금 노드에 떠 있는 것을 계산합니다. 노드에 따로 묻지 않습니다.
 
 - 노드 하나·작업 키 하나에 항목 하나. 그 자리의 가장 최근 배포(진행 중이거나, 서비스를 시작했거나, 시작한 뒤 내린 것)가
-  그 노드에서 `succeeded` 일 때만 주소가 있습니다. 다시 배포하면 새 배포 ID 로 바뀌고, 내리면 빠지고, dry-run 은 나오지 않습니다.
+  그 노드에서 `running` 일 때만 주소가 있습니다. 다시 배포하면 새 배포 ID 로 바뀌고, 내리면 빠지고, dry-run 은 나오지 않습니다.
 - 추론 서비스는 `runtimeId`·`modelId`·`artifactId`·`url`(`http://<host>:<port><apiBasePath>`)·`healthUrl`, 응용은 `name`·`version`·`urls[]`.
   `portsOpened` 가 `false` 면 포트를 못 열었거나 끈 것이고 `portsError`·`notes` 에 이유가 있습니다.
 - 필터 `nsId`, `infraId`, `nodeId`, `type`.

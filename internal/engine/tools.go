@@ -49,7 +49,7 @@ func NewRegistry(e *Engine) *tools.Registry {
 		Grade: tools.GradeWrite,
 		Description: "Read a deployment; when it did not succeed on every node (failed, partial, interrupted or dry " +
 			"run), run the request it was made with once more as a new deployment and follow it until it ends. " +
-			"Nothing is done to a deployment that succeeded or is still running." + gateNote,
+			"Nothing is done to a deployment that is running on every node or is still pending or deploying." + gateNote,
 		InputSchema: object(map[string]any{"deploymentId": deploymentID}, "deploymentId"),
 		Handle:      workflowHandler(e, WorkflowHeal),
 	})
@@ -106,6 +106,9 @@ func deployRequestSchema() map[string]any {
 		"nsId":    stringProp("CB-Tumblebug namespace of the Infra"),
 		"infraId": stringProp("CB-Tumblebug Infra the node belongs to"),
 		"nodeId":  stringProp("Node within the Infra"),
+		"sshUser": stringProp("SSH user to run the playbooks as instead of the one CB-Tumblebug reports, with the key " +
+			"CB-Tumblebug holds. For images where CB-Tumblebug could not create cb-user (no sudo group: RHEL, Rocky, " +
+			"AlmaLinux, Amazon Linux), such as ec2-user on aws. Omit to use the CB-Tumblebug user"),
 	}, "kind", "nsId", "infraId", "nodeId")
 	return object(map[string]any{
 		"type": enumProp("What to deploy; the field of the same name carries it",

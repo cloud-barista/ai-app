@@ -46,7 +46,7 @@ aiapp() {
 }
 
 # wait_deployment ID
-# Reads the deployment until its status is no longer pending, running or
+# Reads the deployment until its status is no longer pending, deploying or
 # removing, at most POLL_MAX times, and prints the last record.
 wait_deployment() {
 	local id=$1 i body status
@@ -54,7 +54,7 @@ wait_deployment() {
 		body=$(AIAPP_QUIET=1 aiapp GET "/deployments/${id}")
 		status=$(jq -r '.status' <<<"$body")
 		case "$status" in
-		pending | running | removing)
+		pending | deploying | removing)
 			echo "[$i/$POLL_MAX] $id $status" >&2
 			sleep "$POLL_INTERVAL"
 			;;
@@ -73,6 +73,7 @@ wait_deployment() {
 summarize_deployment() {
 	jq -r '"deployment \(.id) \(.type) status=\(.status) dryRun=\(.dryRun)",
 		(.nodes[] | "  \(.target.nsId)/\(.target.infraId)/\(.target.nodeId) \(.status)"
+			+ (if .sshUser then " sshUser=\(.sshUser)" else "" end)
 			+ (if .serviceUrl then " serviceUrl=\(.serviceUrl)" else "" end)
 			+ (if .ports then " ports=\(.ports | map(tostring) | join(","))" else "" end)
 			+ (if .error then " error=\(.error)" else "" end)),

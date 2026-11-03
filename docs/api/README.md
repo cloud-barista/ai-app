@@ -16,7 +16,7 @@
 | 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 모델 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다(`type: inference`). 응용은 응용 카탈로그(`GET /aiapp/apps`)에 먼저 올린 파일 묶음과 `deploy.sh` 이고(`type: app`, 10절), Dify, Open WebUI, Langflow 예시가 있습니다. 셋이 각각 모델에 어떻게 붙는지와 실제 화면은 12절입니다 |
 | 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
 | 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절). Semaphore 는 Ansible playbook 을 웹 화면·API 로 돌려 주는 서버이고, 노드에서 무슨 일이 있었는지 화면으로 볼 수 있습니다 (3-1절) |
-| 언제 `succeeded` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
+| 언제 `running` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
 | API 는 어디로 열려 있나 | 관리 API 는 AI-App(`:8090/aiapp`, Bearer 토큰), 모델 호출(vLLM `:8000/v1`, Ollama `:11434`)과 응용 화면은 노드가 직접 엽니다. AI-App 은 중계하지 않습니다 (1-1절) |
 | 주소는 어디서 얻나 | `GET /aiapp/endpoints` 입니다. 서빙 포트는 배포가 성공하면 노드 보안 그룹에 자동으로 열립니다 (8절) |
 | 내리기는 | `DELETE /aiapp/deployments/{id}` 입니다. 노드에서 `docker compose down` 을 하고 named volume 은 남깁니다 (7절) |
@@ -237,10 +237,10 @@ Swagger UI: `http://<AI-App 호스트>:8090/aiapp/api/index.html`. 모든 필드
 |---|---|
 | `200` | 조회 성공, dry-run 배포(파일 배치까지 끝난 기록), 할 일이 없는 내리기 |
 | `202` | 배포·내리기를 받았고 뒤에서 진행 중. 본문은 그 시점의 기록 (`pending` 또는 `removing`) |
-| `400` | 요청 형식이 틀림 (필드 누락, 이름 규칙 위반, env 이름·값 규칙 위반, 숫자가 아닌 포트) |
+| `400` | 요청 형식이 틀림 (필드 누락, 이름 규칙 위반, `targets[].sshUser` 규칙 위반, env 이름·값 규칙 위반, 숫자가 아닌 포트) |
 | `401` | 토큰 없음·틀림 |
 | `404` | 없는 모델·아티팩트·런타임·응용·배포, `POST /deployments` 의 대상 노드가 CB-Tumblebug 에 없음 (메시지에 `nsId/infraId/nodeId`) |
-| `409` | 아직 진행 중(`pending`·`running`)이거나 내리는 중(`removing`)인 배포를 `DELETE` |
+| `409` | 아직 진행 중(`pending`·`deploying`)이거나 내리는 중(`removing`)인 배포를 `DELETE` |
 | `413` | 응용 업로드가 상한(`AIAPP_APP_UPLOAD_MAX_BYTES`, 기본 256 MiB)을 넘음 |
 | `422` | `kind: k8s` 대상(자리만 있음), 그 런타임이 못 읽는 아티팩트 |
 | `500` | 기록·파일 저장 실패, 추천 구현이 카탈로그에 없는 후보를 돌려줌 |
@@ -254,7 +254,7 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 ## 7. 배포는 비동기다
 
 - `POST /aiapp/deployments` 는 요청을 카탈로그와 대조하고 대상 노드가 있는지 CB-Tumblebug 에서 확인한 뒤 바로 `202` 와 `pending` 기록을 돌려주고, 뒤에서 진행합니다.
-  `GET /aiapp/deployments/{id}` 를 `status` 가 `pending`·`running` 이 아닐 때까지 읽습니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수
+  `GET /aiapp/deployments/{id}` 를 `status` 가 `pending`·`deploying` 이 아닐 때까지 읽습니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수
   있습니다(Semaphore 태스크 하나의 상한 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분).
 - **dry-run** 은 노드 조회와 파일 배치만 하고 Semaphore 에 아무것도 올리지 않는 모드입니다. AI-App 설정
   `AIAPP_TUMBLEBUG_DRY_RUN`(기본 `true`)으로 정하며 요청으로 바꿀 수 없습니다. 이때 `POST` 는 끝난 기록(`dry-run`)을 `200` 으로
@@ -270,26 +270,32 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 | 상태 | 뜻 | 다음 |
 |---|---|---|
 | `pending` | 받았고 아직 시작 전 | 계속 읽음 |
-| `running` | 노드에서 진행 중 | 계속 읽음 |
-| `succeeded` | 모든 노드 성공 | `GET /aiapp/endpoints` |
+| `deploying` | 노드에서 배포 중 (playbook 실행 중) | 계속 읽음 |
+| `running` | 모든 노드에 배포가 끝나 서비스가 돌고 있음 | `GET /aiapp/endpoints` |
 | `failed` | 모든 노드 실패 | `nodes[].error`, `GET .../logs` |
-| `partial` | 일부 노드만 성공 | 실패한 노드만 다시 배포 |
+| `partial` | 일부 노드만 `running`, 나머지는 실패 | 실패한 노드만 다시 배포 |
 | `dry-run` | 파일 배치까지만 함 | 실제 배포는 AI-App 운영자가 dry-run 을 꺼야 함 |
 | `interrupted` | 진행 중에 AI-App 이 멈췄거나 재기동됨. 노드가 어떻게 됐는지 모름 | 다시 배포 |
 | `removing` | `DELETE` 를 받아 노드에서 내리는 중 | 계속 읽음 |
 | `removed` | 모든 노드에서 내림 | 끝 |
 | `remove-failed` | 일부 노드에서 내리기 실패 | `nodes[].error` 를 보고 `DELETE` 를 다시 부르면 남은 노드만 다시 시도 |
 
-노드 하나가 `succeeded` 가 되기까지 확인하는 것은 아래와 같습니다. 자세한 것은 그림 아래 두 문단입니다.
+`running` 은 배포가 끝났을 때의 결과입니다. 그 뒤에 노드나 컨테이너가 멈춰도 기록은 바뀌지 않습니다.
+배포 기록 파일(`AIAPP_DEPLOYMENT_STORE_FILE`)에는 형식 버전(`version`)이 있습니다. 버전이 없는 파일은 진행 중을 `running`, 성공을
+`succeeded` 로 적던 형식이라, AI-App 이 읽을 때 `running` 을 `deploying` 으로, `succeeded` 를 `running` 으로 바꾸고 새 형식으로 다시
+씁니다. 그때 `deploying` 이 된 기록은 다른 진행 중 기록처럼 `interrupted` 가 됩니다. 아카이브(`GET /aiapp/archive`)의 줄은 적힌
+그대로 둡니다.
 
-![노드가 succeeded 가 되기까지](../figures/11-success-checks.svg)
+노드 하나가 `running` 이 되기까지 확인하는 것은 아래와 같습니다. 자세한 것은 그림 아래 두 문단입니다.
+
+![노드가 running 이 되기까지](../figures/11-success-checks.svg)
 
 헬스: 추론 서비스는 `compose-up` 이 노드 안에서 런타임 헬스 경로(vLLM `/health`, Ollama `/`)가 응답할 때까지 기다려야 노드가
-`succeeded` 가 됩니다. GPU 를 쓰는 추론 서비스(`nodes[].gpu` 가 `true`)는 그다음 런타임이 GPU 위에 있는지 봅니다. vLLM 은
+`running` 이 됩니다. GPU 를 쓰는 추론 서비스(`nodes[].gpu` 가 `true`)는 그다음 런타임이 GPU 위에 있는지 봅니다. vLLM 은
 호스트 `nvidia-smi` 의 compute 프로세스 중 그 compose 프로젝트 컨테이너의 것이 있는지, Ollama 는 `engine` 로그의
 `msg="inference compute"` 줄이 `library=CUDA` 인지 봅니다. 아니면 노드는 `failed` 이고 `error` 에 근거 줄이 남습니다(드라이버가 오래돼
 CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습니다(예 `nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB`).
-응용은 `deploy.sh` 가 0 으로 끝난 뒤 `copy-and-run` 이 두 가지를 더 확인해야 `succeeded` 가 됩니다.
+응용은 `deploy.sh` 가 0 으로 끝난 뒤 `copy-and-run` 이 두 가지를 더 확인해야 `running` 이 됩니다.
 
 1. **포트 응답.** 응용 포트(8절의 포트, `nodes[].ports` 와 같은 목록) 하나하나에 노드 안에서 `curl http://127.0.0.1:<port>/` 를
    10초 간격으로 60번까지 보냅니다. HTTP 응답이 오면 상태 코드와 상관없이(`404`, `500` 도) 응답한 것으로 봅니다. 빈 응답이나 연결
@@ -315,7 +321,7 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 - **이미 있는 규칙은 다시 보내지 않습니다.** 보안 그룹을 먼저 읽어 같은 포트를 `0.0.0.0/0` 에서 이미 받는 규칙이 있으면 건너뜁니다.
   CB-Tumblebug 은 같은 규칙이 하나라도 섞이면 요청 전체를 거절하기 때문입니다. 결과는 `nodes[].openedPorts[]` 에
   `{securityGroupId, port, protocol, result}` 로 남고 `result` 는 `added`(이번에 추가) 또는 `existing`(이미 있었음)입니다.
-- **실패해도 배포는 성공입니다.** 포트를 못 열면 `nodes[].portsError` 와 `notes` 에 이유를 남기고 노드는 `succeeded` 입니다.
+- **실패해도 배포는 성공입니다.** 포트를 못 열면 `nodes[].portsError` 와 `notes` 에 이유를 남기고 노드는 `running` 입니다.
   `GET /aiapp/endpoints` 의 `portsOpened` 가 `false` 면 밖에서 안 닿을 수 있습니다.
 - **내릴 때 닫지 않습니다.** 같은 보안 그룹을 다른 작업이 쓸 수 있어서입니다. 필요하면 CB-Tumblebug 에서 닫습니다.
 - dry-run 이면 열지 않습니다. `AIAPP_DEPLOYMENT_OPEN_PORTS=false`(기본 `true`)면 열지 않고 포트만 기록하며 `notes` 에 그렇게 적습니다.
@@ -415,13 +421,20 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 
 | 필드 | 규칙 |
 |---|---|
-| `targets[]` | `kind: node` 와 `nsId`·`infraId`·`nodeId`. 32개까지, 같은 노드는 한 번만. 클라우드·리전·IP·SSH 키는 CB-Tumblebug 노드 정보에서 읽음 |
+| `targets[]` | `kind: node` 와 `nsId`·`infraId`·`nodeId`. 32개까지, 같은 노드는 한 번만. 클라우드·리전·IP·SSH 사용자·SSH 키는 CB-Tumblebug 노드 정보에서 읽음 |
+| `targets[].sshUser` | 생략 가능. 1~32자, `[a-z_][a-z0-9_-]*`, 어기면 `400`. 주면 그 노드의 Semaphore 인벤토리에 CB-Tumblebug 의 사용자(`nodeUserName`) 대신 이 사용자를 씀. SSH 키는 그대로 CB-Tumblebug 이 가진 키. 실제로 접속한 사용자는 `nodes[].sshUser` 와 `nodes[].steps[].sshUser`(`GET .../logs` 의 단계에도)에 남고, `nodes[].node.user` 는 CB-Tumblebug 이 알려 준 사용자 그대로. 같은 배포의 `DELETE`(compose-down)도 배포 때 남긴 사용자로 접속함 |
 | `inference.runtimeId` | 빼면 아티팩트의 첫 런타임 |
 | `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유. `true` 로 정해지면 런타임이 GPU 위에 있는지 확인하고, 아니면 노드가 `failed`(7절 헬스) |
 | `inference.args` | 런타임 명령 뒤에 붙는 인자. vLLM 이면 서비스가 넣는 `--model`·`--port` 와 카탈로그 아티팩트의 `runtimes[].args` 가 먼저 오고 그 뒤에 붙음. 같은 플래그가 되풀이되면 vLLM 은 마지막 값을 써서 요청이 카탈로그 인자를 덮어씀. 예 `["--max-model-len", "16384"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, `--model`·`--port`·`--host` 는 `400`. Ollama 는 받지 않아 `400` |
 | `app.version` | 빼거나 `0` 이면 최신 버전 |
 | `app.ports` | 이 배포에서만 업로드 때의 `ports` 를 바꿈 |
 | `inference.env`, `app.env` | 이름 `[A-Z_][A-Z0-9_]*`, 값에 줄바꿈·작은따옴표 불가. 배포 기록과 노드의 `.env` 에 **평문으로** 남으므로 비밀값은 조심 |
+
+`targets[].sshUser` 가 필요한 경우: CB-Tumblebug(cb-spider)은 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로
+만드는데, `sudo` 그룹이 없는 이미지(RHEL, Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해 노드에 `cb-user` 가
+없습니다. 이미지의 기본 사용자(aws 는 `ec2-user`, azure 는 VM 을 만들 때 정한 관리자 사용자)는 같은 키로 그대로 접속되므로, 그
+사용자를 `sshUser` 로 줍니다. `POST /aiapp/deployments/{id}/control` 은 SSH 가 아니라 CB-Tumblebug 노드 제어 API 로 보내므로
+사용자와 상관없습니다.
 
 ## 11. 알아 둘 것
 

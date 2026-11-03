@@ -15,7 +15,7 @@
 | 노드에는 어떻게 올리나 | AI-App 이 파일을 공유 저장소에 놓고, Semaphore 가 SSH 로 playbook 을 돌린다. template 은 고정, SSH 키와 inventory 는 실행마다 만들고 지운다 (4.3, 4.4) |
 | 노드 위에서 겹치면 | 작업 키(`ms-<runtimeId>`, `app-<name>`)가 같으면 앞의 배포를 바꾼다. 노드 하나에 추론 서비스는 런타임당 하나, 응용은 이름당 하나다 (4.5) |
 | 추천은 | 이 repo 의 담당이 아니다. AI-App 은 판단 재료(정밀도 · 크기 · 형식)를 원래 값 그대로 내주고, 경희대가 구현할 자리(`/aiapp/recommendations/*`)만 둔다 (2절, [khu.md](../api/khu.md)) |
-| 배포는 언제 끝나나 | 노드마다 `docker 준비 → 파일 놓기·기동 → 헬스(응용은 포트 응답) → GPU(응용은 컨테이너 안정)` 를 확인해야 `succeeded` 다. 그 뒤 AI-App 이 보안 그룹에 포트를 연다 (4.4) |
+| 배포는 언제 끝나나 | 노드마다 `docker 준비 → 파일 놓기·기동 → 헬스(응용은 포트 응답) → GPU(응용은 컨테이너 안정)` 를 확인해야 `running` 이다. 그 뒤 AI-App 이 보안 그룹에 포트를 연다 (4.4) |
 | 부르는 쪽은 어디로 가나 | 관리 요청은 AI-App(`:8090/aiapp`), 모델 호출과 응용 화면은 노드로 바로 간다. 주소는 `GET /aiapp/endpoints` 가 준다 (5절) |
 | 지금의 API 계약은 | 이 문서가 아니라 [docs/api/](../api/README.md) 에 있다. 이 문서는 왜 이렇게 나눴는지의 기록이다 |
 
@@ -109,6 +109,12 @@ CB-Tumblebug 구조 그대로 받는다.
 
 - csp·region·zone 은 요청으로 받지 않고 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{nodeId}` 의
   `connectionConfig.providerName`, `regionZoneInfo`)에서 읽는다.
+- SSH 사용자도 노드 정보(`nodeUserName`)에서 읽는다. 다만 대상에 `sshUser`(1~32자, `[a-z_][a-z0-9_-]*`)를 주면 그 노드의
+  Semaphore inventory 에 그 사용자를 쓴다. 키는 그대로 CB-Tumblebug 이 가진 키다. 이 자리가 있는 이유는 CB-Tumblebug(cb-spider)이
+  로그인 사용자 `cb-user` 를 `useradd -G sudo` 로 만들기 때문이다. `sudo` 그룹이 없는 이미지(RHEL, Rocky, AlmaLinux, Amazon Linux 는
+  `wheel`)에서는 이것이 실패해 노드에 `cb-user` 가 없고, 이미지의 기본 사용자(aws `ec2-user`, azure 는 만들 때 정한 관리자)가 같은
+  키를 받는다. 접속한 사용자는 `nodes[].sshUser` 와 각 단계(`steps[].sshUser`)에 남고, 같은 배포를 내리는 compose-down 도 그
+  사용자로 접속한다. 노드 제어(`control`)는 CB-Tumblebug API 로 보내므로 SSH 사용자와 상관없다.
 - k8s(`k8sClusterId`, 노드 그룹)를 받을 자리(`kind: k8s`)만 정해 두고, 이번에는 거절한다(`422`).
 
 ### 4.2 요청
@@ -122,13 +128,20 @@ CB-Tumblebug 구조 그대로 받는다.
 ```
 ```json
 {
+  "type": "inference",
+  "targets": [{ "kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm4", "sshUser": "ec2-user" }],
+  "inference": { "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16", "runtimeId": "vllm" }
+}
+```
+```json
+{
   "type": "app",
   "targets": [{ "kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1" }],
   "app": { "name": "dify", "version": 1, "env": { "VLLM_BASE_URL": "http://203.0.113.10:8000/v1" } }
 }
 ```
 
-응답은 배포 ID(uuid)와 노드별 상태다.
+응답은 배포 ID(uuid)와 노드별 상태다. 노드 결과에는 접속한 SSH 사용자(`nodes[].sshUser`)가 같이 남는다.
 
 ### 4.3 공유 저장소
 
@@ -153,11 +166,15 @@ AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로�
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
 | 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
-노드 하나가 `succeeded` 가 되기까지 4단계 태스크 안에서 확인하는 것은 아래와 같다.
+노드 하나가 `running` 이 되기까지 4단계 태스크 안에서 확인하는 것은 아래와 같다.
 
-![노드가 succeeded 가 되기까지](../figures/11-success-checks.svg)
+![노드가 running 이 되기까지](../figures/11-success-checks.svg)
 
-배포 기록은 아래 상태를 지난다. 노드마다 같은 값을 따로 갖고, 배포 기록은 그것을 모은 값이다.
+배포 기록은 아래 상태를 지난다. 노드마다 같은 값을 따로 갖고, 배포 기록은 그것을 모은 값이다. playbook 이 도는 동안은
+`deploying`, 모든 노드에서 확인이 끝나면 `running` 이다. `running` 은 배포가 끝난 시점의 결과이고, 그 뒤 노드를 다시 보지는 않는다.
+배포 기록 파일에는 형식 버전(`version`)을 적는다. 버전이 없는 파일(진행 중 `running`, 성공 `succeeded` 로 적던 형식)은 읽을 때
+`running` 을 `deploying` 으로, `succeeded` 를 `running` 으로 바꿔 다시 쓰고, `deploying` 이 된 기록은 다른 진행 중 기록처럼
+`interrupted` 로 둔다. 아카이브 줄은 적힌 그대로 둔다.
 
 ![배포 기록의 상태](../figures/09-deploy-states.svg)
 
@@ -238,14 +255,14 @@ MCP 도구도 같은 리소스 단위로 다시 묶는다. 등급(read·review·
 | 워크플로 | 입력 | 단계 (구현, `internal/engine`) |
 |----------|------|-------------------------------|
 | `deploy` | 4.2 의 배포 요청 그대로 | 모델(`get_model`) 또는 응용(`get_app`) 조회 → `create_deployment` → `get_deployment` 로 끝날 때까지 대기 |
-| `heal` | `deploymentId` | 배포 기록 조회 → `succeeded` 면 끝, `pending`·`running` 이면 실패로 끝냄, 그 밖(`failed`·`partial`·`interrupted`·`dry-run`)이면 기록된 요청을 새 배포로 한 번 다시 실행하고 대기 |
+| `heal` | `deploymentId` | 배포 기록 조회 → `running` 이면 끝, `pending`·`deploying` 이면 실패로 끝냄, 그 밖(`failed`·`partial`·`interrupted`·`dry-run`)이면 기록된 요청을 새 배포로 한 번 다시 실행하고 대기 |
 | `control` | `deploymentId`, `action` | `control_node`. 노드마다 `done`·`blocked`·`failed` |
 | `status` | `deploymentId` | 배포 기록(`get_deployment`) + 노드마다 마지막 태스크 출력 5줄(`get_deployment_logs`) |
 
 알아 둘 것.
 
 - **헬스는 엔진 단계가 아니다.** 헬스는 노드 안에서 확인하고, 그 일은 `compose-up` 이 한다. `compose-up` 이
-  `health_url`(`http://127.0.0.1:<port><healthPath>`)을 기다려 응답해야 노드가 `succeeded` 가 되므로, 엔진의 대기 단계가
+  `health_url`(`http://127.0.0.1:<port><healthPath>`)을 기다려 응답해야 노드가 `running` 이 되므로, 엔진의 대기 단계가
   읽는 노드 상태가 곧 헬스 결과다. Ollama 는 `model-pull` 이 끝나기를 먼저 기다린다. 응용은 `copy-and-run` 이 script 뒤에 응용 포트의 HTTP 응답을 기다리고,
   compose 프로젝트의 컨테이너가 재시작 중이거나 재시작했거나 0 이 아닌 코드로 끝났으면 실패한다.
 - **`status` 는 기록과 로그만 본다.** CB-Tumblebug 노드 상태와 헬스는 보지 않는다.

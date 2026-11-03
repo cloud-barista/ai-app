@@ -1,0 +1,142 @@
+{
+  "deployments": [
+    {
+      "id": "0b5d3c1e-1111-4a00-8000-000000000001",
+      "type": "inference",
+      "status": "succeeded",
+      "dryRun": false,
+      "request": {
+        "type": "inference",
+        "targets": [
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"}
+        ],
+        "inference": {"modelId": "tiny", "artifactId": "gguf", "runtimeId": "ollama"}
+      },
+      "nodes": [
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
+          "status": "succeeded",
+          "node": {"csp": "aws", "region": "ap-northeast-2", "host": "203.0.113.10", "port": 22, "user": "cb-user"},
+          "gpu": false,
+          "gpuSource": "spec",
+          "workKey": "ms-ollama",
+          "nodeDir": "/opt/aiapp/ms-ollama",
+          "serviceUrl": "http://203.0.113.10:11434/v1",
+          "ports": [11434],
+          "steps": [
+            {"playbook": "install-docker.yml", "taskId": 1, "status": "success", "startedAt": "2026-10-29T12:00:02Z"},
+            {"playbook": "compose-up.yml", "taskId": 2, "status": "success", "startedAt": "2026-10-29T12:01:00Z"}
+          ],
+          "startedAt": "2026-10-29T12:00:01Z",
+          "finishedAt": "2026-10-29T12:04:59Z"
+        }
+      ],
+      "createdAt": "2026-10-29T12:00:00Z",
+      "finishedAt": "2026-10-29T12:05:00Z"
+    },
+    {
+      "id": "0b5d3c1e-2222-4a00-8000-000000000002",
+      "type": "app",
+      "status": "partial",
+      "dryRun": false,
+      "request": {
+        "type": "app",
+        "targets": [
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm2"}
+        ],
+        "app": {"name": "web", "version": 2}
+      },
+      "nodes": [
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
+          "status": "succeeded",
+          "workKey": "app-web",
+          "nodeDir": "/opt/aiapp/app-web",
+          "steps": [
+            {"playbook": "install-docker.yml", "taskId": 3, "status": "success", "startedAt": "2026-10-30T09:00:02Z"},
+            {"playbook": "copy-and-run.yml", "taskId": 4, "status": "success", "startedAt": "2026-10-30T09:01:00Z"}
+          ]
+        },
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm2"},
+          "status": "failed",
+          "workKey": "app-web",
+          "nodeDir": "/opt/aiapp/app-web",
+          "error": "install-docker.yml ended with status \"error\"; see the logs",
+          "steps": [
+            {"playbook": "install-docker.yml", "taskId": 5, "status": "error", "startedAt": "2026-10-30T09:00:02Z"}
+          ]
+        }
+      ],
+      "createdAt": "2026-10-30T09:00:00Z",
+      "finishedAt": "2026-10-30T09:03:00Z"
+    },
+    {
+      "id": "0b5d3c1e-3333-4a00-8000-000000000003",
+      "type": "inference",
+      "status": "running",
+      "dryRun": false,
+      "request": {
+        "type": "inference",
+        "targets": [
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm2"},
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm3"}
+        ],
+        "inference": {"modelId": "tiny", "artifactId": "gguf", "runtimeId": "ollama"}
+      },
+      "nodes": [
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm2"},
+          "status": "succeeded",
+          "workKey": "ms-ollama",
+          "nodeDir": "/opt/aiapp/ms-ollama",
+          "steps": [
+            {"playbook": "install-docker.yml", "taskId": 6, "status": "success", "startedAt": "2026-10-31T10:00:02Z"},
+            {"playbook": "compose-up.yml", "taskId": 7, "status": "success", "startedAt": "2026-10-31T10:01:00Z"}
+          ],
+          "finishedAt": "2026-10-31T10:03:00Z"
+        },
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm3"},
+          "status": "running",
+          "workKey": "ms-ollama",
+          "nodeDir": "/opt/aiapp/ms-ollama",
+          "steps": [
+            {"playbook": "install-docker.yml", "taskId": 8, "startedAt": "2026-10-31T10:00:02Z"}
+          ]
+        }
+      ],
+      "createdAt": "2026-10-31T10:00:00Z"
+    },
+    {
+      "id": "0b5d3c1e-4444-4a00-8000-000000000004",
+      "type": "app",
+      "status": "removed",
+      "dryRun": false,
+      "request": {
+        "type": "app",
+        "targets": [
+          {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm4"}
+        ],
+        "app": {"name": "web", "version": 1}
+      },
+      "nodes": [
+        {
+          "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm4"},
+          "status": "removed",
+          "workKey": "app-web",
+          "nodeDir": "/opt/aiapp/app-web",
+          "steps": [
+            {"playbook": "copy-and-run.yml", "taskId": 9, "status": "success", "startedAt": "2026-10-28T08:01:00Z"},
+            {"playbook": "compose-down.yml", "taskId": 10, "status": "success", "startedAt": "2026-10-28T09:00:00Z"}
+          ],
+          "removedAt": "2026-10-28T09:00:30Z"
+        }
+      ],
+      "createdAt": "2026-10-28T08:00:00Z",
+      "finishedAt": "2026-10-28T08:05:00Z",
+      "removedAt": "2026-10-28T09:00:30Z"
+    }
+  ]
+}

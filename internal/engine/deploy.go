@@ -39,7 +39,7 @@ func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run,
 		return r.finish(), nil
 	}
 	if d, ok := r.createAndWait(ctx, in); ok {
-		r.message = fmt.Sprintf("deployment %s succeeded on every node", d.ID)
+		r.message = fmt.Sprintf("deployment %s is running on every node", d.ID)
 	}
 	return r.finish(), nil
 }
@@ -98,7 +98,7 @@ func (r *runner) readTarget(ctx context.Context, in DeployInput) bool {
 
 // createAndWait records the create_deployment step for req and the step that
 // follows the deployment until it ends. It returns the last record read and
-// whether the deployment succeeded on every node.
+// whether the deployment is running on every node.
 func (r *runner) createAndWait(ctx context.Context, req model.NodeDeploymentReq) (*model.NodeDeployment, bool) {
 	var created model.NodeDeployment
 	step, ok := r.call(ctx, "create the deployment", toolCreateDeployment, req, &created)
@@ -129,7 +129,7 @@ func (r *runner) createAndWait(ctx context.Context, req model.NodeDeploymentReq)
 // ended reports whether a deployment status is final.
 func ended(status string) bool {
 	switch status {
-	case model.NodeDeployPending, model.NodeDeployRunning:
+	case model.NodeDeployPending, model.NodeDeployDeploying:
 		return false
 	}
 	return true
@@ -138,7 +138,7 @@ func ended(status string) bool {
 // waitDeployment records one get_deployment step that asks until the
 // deployment ended, at most once per wait interval and at most as many times
 // as the wait timeout holds intervals. A failed read is asked again too. It
-// returns the last record read and whether every node succeeded.
+// returns the last record read and whether every node is running.
 func (r *runner) waitDeployment(ctx context.Context, id string) (*model.NodeDeployment, bool) {
 	input := map[string]string{"id": id}
 	step := r.add(waitStepName, toolGetDeployment, input, StepSucceeded, "")
@@ -182,7 +182,7 @@ poll:
 	took := endedAt.Sub(started).Round(time.Second)
 
 	switch {
-	case last != nil && last.Status == model.NodeDeploySucceeded:
+	case last != nil && last.Status == model.NodeDeployRunning:
 		step.Message = fmt.Sprintf("%s after %d reads over %s", outcome(last), polls, took)
 		return last, true
 	case last != nil && ended(last.Status):
@@ -197,16 +197,16 @@ poll:
 	return last, false
 }
 
-// outcome says how a deployment ended, naming every node that did not
-// succeed and the service URL of every node that did.
+// outcome says how a deployment ended, naming every node that is not
+// running and the service URL of every node that is.
 func outcome(d *model.NodeDeployment) string {
-	succeeded := 0
+	running := 0
 	var good, bad []string
 	for _, n := range d.Nodes {
 		key := n.Target.Key()
 		switch n.Status {
-		case model.NodeDeploySucceeded:
-			succeeded++
+		case model.NodeDeployRunning:
+			running++
 			if n.ServiceURL != "" {
 				good = append(good, key+" "+n.ServiceURL)
 			}
@@ -219,9 +219,9 @@ func outcome(d *model.NodeDeployment) string {
 			bad = append(bad, key+" "+reason)
 		}
 	}
-	message := fmt.Sprintf("deployment %s %s, %d of %d nodes succeeded", d.ID, d.Status, succeeded, len(d.Nodes))
+	message := fmt.Sprintf("deployment %s %s, %d of %d nodes running", d.ID, d.Status, running, len(d.Nodes))
 	if len(bad) > 0 {
-		message += "; not succeeded on " + strings.Join(bad, "; ")
+		message += "; not running on " + strings.Join(bad, "; ")
 	}
 	if len(good) > 0 {
 		message += "; serving at " + strings.Join(good, ", ")

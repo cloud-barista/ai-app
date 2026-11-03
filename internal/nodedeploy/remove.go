@@ -49,7 +49,8 @@ const (
 // service is still the one of its work key, compose-down stops and removes the
 // containers of the compose project. The node folder and the named volumes are
 // kept, so that model weights a runtime downloaded are there for the next
-// deployment.
+// deployment. compose-down runs as the SSH user the node was deployed as
+// (nodes[].sshUser), so that a target sshUser is used again.
 //
 // Only the latest deployment of a work key on a node is live there. A node
 // where a later deployment of the same work key replaced this one is marked
@@ -60,7 +61,7 @@ const (
 // was a dry run or never started its service there. When no node needs
 // compose-down, or the service runs with dry run on, Remove returns the
 // finished record. Otherwise the record is returned removing and the nodes are
-// taken down in the background. A deployment still pending, running or
+// taken down in the background. A deployment still pending, deploying or
 // removing is refused with ErrBusy; one already removed is returned as it is.
 //
 // The ports the deployment opened in the security groups of its nodes are
@@ -71,7 +72,7 @@ func (s *Service) Remove(ctx context.Context, id string) (*model.NodeDeployment,
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
 	switch d.Status {
-	case model.NodeDeployPending, model.NodeDeployRunning, model.NodeDeployRemoving:
+	case model.NodeDeployPending, model.NodeDeployDeploying, model.NodeDeployRemoving:
 		return nil, fmt.Errorf("%w: deployment %s is %s; take it down once it ended", ErrBusy, id, d.Status)
 	case model.NodeDeployRemoved:
 		return s.Get(ctx, id)
@@ -188,7 +189,7 @@ func startedService(n *model.NodeDeployResult) bool {
 
 // laterOn returns a deployment created after d that holds work key on target,
 // or "" when there is none. A later deployment holds the work key while it is
-// pending or running there, and once it started its service there, unless it
+// pending or deploying there, and once it started its service there, unless it
 // was a dry run or has been taken down since.
 func (s *Service) laterOn(d *model.NodeDeployment, target model.NodeDeployTarget, workKey string) string {
 	key := target.Key()
@@ -211,11 +212,11 @@ func (s *Service) laterOn(d *model.NodeDeployment, target model.NodeDeployTarget
 }
 
 // holdsWorkKey reports whether node result n of a deployment that is not a
-// dry run holds its work key on its node: it is pending or running there, or
+// dry run holds its work key on its node: it is pending or deploying there, or
 // it started its service there and has not been taken down since.
 func holdsWorkKey(n *model.NodeDeployResult) bool {
 	switch n.Status {
-	case model.NodeDeployPending, model.NodeDeployRunning:
+	case model.NodeDeployPending, model.NodeDeployDeploying:
 		return true
 	case model.NodeDeployRemoving, model.NodeDeployRemoved, model.NodeDeployDryRun:
 		return false
@@ -329,9 +330,10 @@ func (s *Service) removeNode(ctx context.Context, id string, idx int, place plac
 		return
 	}
 
+	sshUser := firstNonEmpty(d.Nodes[idx].SSHUser, target.SSHUser, access.User)
 	spec := withPlaybook(semaphore.RunSpec{
 		Name: shortID(id) + "-down-" + access.CSP + "-" + target.NodeID,
-		Host: access.Host, Port: access.Port, User: access.User, PrivateKey: access.PrivateKey,
+		Host: access.Host, Port: access.Port, User: sshUser, PrivateKey: access.PrivateKey,
 	}, PlaybookComposeDown, map[string]any{
 		"deployment_id": id, "work_key": place.WorkKey, "node_dir": place.NodeDir, "compose_project": place.Project,
 	})

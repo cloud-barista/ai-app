@@ -24,9 +24,9 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 | OS | 아래 "지원하는 배포판" 표의 배포판. `install-docker` 가 `/etc/os-release` 의 `ID` 와 `ID_LIKE` 를 보고 설치 방법을 고름 | 그 밖의 배포판(Amazon Linux 2 포함)이면 노드 `failed`, 로그에 `install-docker supports only ubuntu, debian, rhel, rocky, almalinux, centos, ol, fedora, amzn (Amazon Linux 2023), found <ID> <VERSION_ID>` |
 | docker | 없으면 AI-App 이 아래 표대로 깔고 docker 서비스를 켬. 이미 있는데 compose 플러그인(`docker compose`)이 없으면 노드의 저장소에 있는 `docker-compose-plugin` 이나 `moby-compose`(Azure 이미지)를 깖. dnf 를 쓰는 노드는 둘 다 없으면 compose 플러그인을 GitHub 에서 직접 받아 깖 | apt 를 쓰는 노드에서 둘 다 없으면 `failed`, 로그에 `no apt source offers docker-compose-plugin or moby-compose` |
 | SSH 키 | 노드의 `sshKeyId` 가 가리키는 CB-Tumblebug SSH 키에 **개인키(`privateKey`)가 들어 있어야** 함. CB-Tumblebug 이 키를 만들게 하면 들어 있음. PEM 개인키 블록이어야 함 | 노드 `failed` (키를 읽거나 검사하는 단계에서) |
-| SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎 | playbook 실패 |
+| SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎. 노드에 `cb-user` 가 없으면(아래) 배포 요청의 `targets[].sshUser` 로 이미지 기본 사용자를 줌 | playbook 실패 (`cb-user` 가 없으면 접속 단계에서 `error`) |
 | SSH 접속 | Semaphore 가 돌고 있는 호스트에서 노드의 공인 IP(없으면 사설 IP)와 SSH 포트로 닿아야 함 | 태스크 `error` (unreachable) |
-| 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 AI-App 이 서빙 포트를 엶. 없으면 포트를 열지 않고 `notes` 에 남김 | 배포는 `succeeded`, 밖에서 안 닿음 |
+| 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 AI-App 이 서빙 포트를 엶. 없으면 포트를 열지 않고 `notes` 에 남김 | 배포는 `running`, 밖에서 안 닿음 |
 | GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 런타임이 CPU 로 돌고, GPU 를 쓰기로 한 배포는 그 노드가 **`failed`** 가 됨(아래 3-2절) |
 | 바깥 통신 | 노드에서 Docker Hub, `ghcr.io`, Hugging Face, `registry.ollama.ai`, `download.docker.com`, GitHub(Dify, 직접 받는 compose 플러그인), `nvidia.github.io` 로 나갈 수 있어야 함 | docker 설치, 이미지·모델 받기 실패 |
 | 디스크 | 런타임 이미지와 모델 가중치가 들어갈 만큼. 모델 크기는 `GET /aiapp/models` 의 `sizeGiB` (모르면 비어 있음) | 받는 중 실패 |
@@ -41,6 +41,12 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 | Amazon Linux 2023 (`amzn`) | 배포판 저장소의 `docker`. 이 저장소에는 compose 플러그인이 없어 Docker 문서의 수동 설치대로 GitHub 의 compose 릴리스 바이너리(playbook 에 고정한 버전, 노드 아키텍처 x86_64 또는 aarch64)를 받아 릴리스의 sha256 과 맞춰 본 뒤 `/usr/local/lib/docker/cli-plugins/docker-compose` 에 둠 | NVIDIA 의 rpm 저장소 |
 
 GPU 사용을 직접 정하려면 배포 요청에 `"gpu": true` 를 넣습니다. 그러면 스펙을 보지 않습니다.
+
+CB-Tumblebug(cb-spider)은 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로 만듭니다. `sudo` 그룹이 없는 이미지(RHEL,
+Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해, 노드 정보에는 `cb-user` 가 있는데 노드에는 그 사용자가 없습니다.
+이미지의 기본 사용자(aws 는 `ec2-user`, azure 는 VM 을 만들 때 정한 관리자 사용자)는 같은 키로 접속되므로, 배포 요청의 대상에
+`"sshUser": "ec2-user"` 처럼 줍니다. 키는 그대로 CB-Tumblebug 이 가진 키를 쓰고, 실제로 접속한 사용자는 `nodes[].sshUser` 에 남으며
+같은 배포를 내릴 때도 그 사용자로 접속합니다([README](README.md) 10절).
 
 ### 2-1. 실제로 써 본 이미지 (2026-11-03)
 
@@ -117,7 +123,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 ```
 
 - 받으면 `202` 와 `{"id": "...", "status": "pending", ...}` 입니다. 그 `id` 로 `GET /aiapp/deployments/{id}` 를 `status` 가
-  `pending`·`running` 이 아닐 때까지 읽습니다. `succeeded` 면 됐습니다.
+  `pending`·`deploying` 이 아닐 때까지 읽습니다. `running` 이면 됐습니다.
 - 접근 승인이 필요한 Hugging Face 모델이면 `"env": {"HF_TOKEN": "<토큰>"}` 을 `inference` 안에 넣습니다. 이 값은 배포 기록과
   노드의 `.env` 에 평문으로 남습니다.
 - vm3 처럼 `"gpu": true` 를 주면 노드 스펙을 보지 않고 GPU 를 씁니다. 빼면 스펙의 `acceleratorType` 으로 정합니다(2절).
@@ -143,7 +149,7 @@ id=<위 응답의 id>
 for i in $(seq 1 90); do
   status=$(curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id" | jq -r .status)
   echo "$i $status"
-  case "$status" in pending|running) sleep 10 ;; *) break ;; esac
+  case "$status" in pending|deploying) sleep 10 ;; *) break ;; esac
 done
 ```
 
@@ -260,4 +266,4 @@ curl -sS -H "$AUTH" -X DELETE "$AIAPP_URL/deployments/$id"
 | 서빙 포트를 `0.0.0.0/0` 에 엽니다 | 시험 환경 기준입니다. 출처 제한은 정하지 않았습니다 |
 | 실제 클라우드 VM 에서의 배포 | 자세한 결과는 [live-test-2026-11-03.md](live-test-2026-11-03.md). 2026-11-03 aws(도쿄 T4·L4)·azure(koreacentral T4) 에서 확인: vLLM 임베딩, Ollama 대화, Dify·Open WebUI 화면이 밖에서 응답, 보안 그룹 포트 열림, 주소 조회, 내리기. gcp 는 자격증명 권한(`compute.machineTypes.list` 403) 때문에 못 함. docker 를 처음부터 까는 분기(이미지에 docker 가 없는 경우)는 아직 실제로 돌지 않았습니다 |
 | Qwen3-VL-8B 의 생각(thinking) 단계 | Ollama 의 `qwen3-vl:8b` 는 답 전에 생각을 길게 씁니다. `"think": false` 를 줘도 생각이 `message.thinking` 으로 나왔고, 1,500 토큰에서도 답(`content`)이 비어 있었습니다. 포털이 짧은 답을 바라면 시간 제한과 토큰 수를 넉넉히 두거나 모델을 바꿔야 합니다 |
-| 응용 배포의 성공 시점 | 응용은 script 가 끝난 뒤 응용 포트가 HTTP 로 응답하고 compose 프로젝트의 컨테이너가 재시작 없이 돌아야 `succeeded` 입니다([README](README.md) 7절). 2026-11-03 시험 때는 script 종료만 봐서 Open WebUI 가 성공 직후 잠깐 응답하지 않았고(약 20초 뒤 200), Dify 는 컨테이너 두 개가 계속 다시 시작하는데도 `succeeded` 였습니다. 확인은 배포 때 한 번이라 그 뒤에 죽는 것은 보지 않습니다 |
+| 응용 배포의 성공 시점 | 응용은 script 가 끝난 뒤 응용 포트가 HTTP 로 응답하고 compose 프로젝트의 컨테이너가 재시작 없이 돌아야 `running` 입니다([README](README.md) 7절). 2026-11-03 시험 때는 script 종료만 봐서 Open WebUI 가 성공 직후 잠깐 응답하지 않았고(약 20초 뒤 200), Dify 는 컨테이너 두 개가 계속 다시 시작하는데도 성공으로 기록됐습니다. 확인은 배포 때 한 번이라 그 뒤에 죽는 것은 보지 않습니다 |

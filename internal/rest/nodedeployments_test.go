@@ -147,12 +147,12 @@ func TestNodeDeploymentRoutes(t *testing.T) {
 			t.Fatalf("GET = %d: %s", rec.Code, rec.Body.String())
 		}
 		_ = json.Unmarshal(rec.Body.Bytes(), &got)
-		if got.Status == model.NodeDeploySucceeded {
+		if got.Status == model.NodeDeployRunning {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got.Status != model.NodeDeploySucceeded || runner.count() != 2 {
+	if got.Status != model.NodeDeployRunning || runner.count() != 2 {
 		t.Fatalf("status = %q after %d runs: %s", got.Status, runner.count(), rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "cmVzdC10ZXN0") || strings.Contains(rec.Body.String(), `"output"`) {
@@ -172,7 +172,7 @@ func TestNodeDeploymentRoutes(t *testing.T) {
 		"?type=inference":                   false,
 		"?nsId=etri":                        true,
 		"?nsId=other":                       false,
-		"?status=succeeded":                 true,
+		"?status=running":                   true,
 		"?status=failed":                    false,
 		"?type=app&nsId=etri&status=failed": false,
 	} {

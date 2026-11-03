@@ -315,7 +315,7 @@ func (s *Service) execute(ctx context.Context, id string, p *plan) {
 		return
 	}
 	if !s.opts.DryRun {
-		s.update(id, func(d *model.NodeDeployment) { d.Status = model.NodeDeployRunning })
+		s.update(id, func(d *model.NodeDeployment) { d.Status = model.NodeDeployDeploying })
 	}
 
 	limit := make(chan struct{}, s.opts.MaxParallel)
@@ -366,7 +366,7 @@ func overallStatus(d *model.NodeDeployment) string {
 	succeeded, failed := 0, 0
 	for _, n := range d.Nodes {
 		switch n.Status {
-		case model.NodeDeploySucceeded:
+		case model.NodeDeployRunning:
 			succeeded++
 		case model.NodeDeployInterrupted:
 			return model.NodeDeployInterrupted
@@ -376,7 +376,7 @@ func overallStatus(d *model.NodeDeployment) string {
 	}
 	switch {
 	case failed == 0:
-		return model.NodeDeploySucceeded
+		return model.NodeDeployRunning
 	case succeeded == 0:
 		return model.NodeDeployFailed
 	}
@@ -390,7 +390,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		Str("nodeId", target.NodeID).Logger()
 	started := time.Now().UTC()
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
-		n.Status = model.NodeDeployRunning
+		n.Status = model.NodeDeployDeploying
 		n.StartedAt = &started
 	})
 
@@ -434,12 +434,14 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 
 	gpu, source, note := s.decideGPU(ctx, req, node)
 	ports := servedPorts(req, p)
+	sshUser := firstNonEmpty(target.SSHUser, access.User)
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 		n.Ports = ports
 		n.Node = &model.NodeDeployNode{
 			CSP: access.CSP, Region: access.Region, Zone: access.Zone,
 			Host: access.Host, Port: access.Port, User: access.User, SpecID: node.SpecID,
 		}
+		n.SSHUser = sshUser
 		n.GPU, n.GPUSource = gpu, source
 		if note != "" {
 			n.Notes = append(n.Notes, note)
@@ -461,7 +463,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		})
 	}
 	logger.Info().Str("stageDir", dir).Str("workKey", p.place.WorkKey).Str("nodeDir", p.place.NodeDir).
-		Bool("gpu", gpu).Msg("Placed deployment files")
+		Bool("gpu", gpu).Str("sshUser", sshUser).Msg("Placed deployment files")
 
 	if s.opts.DryRun {
 		s.finishNode(id, idx, model.NodeDeployDryRun, "")
@@ -470,7 +472,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 
 	base := semaphore.RunSpec{
 		Name: shortID(id) + "-" + access.CSP + "-" + target.NodeID,
-		Host: access.Host, Port: access.Port, User: access.User, PrivateKey: access.PrivateKey,
+		Host: access.Host, Port: access.Port, User: sshUser, PrivateKey: access.PrivateKey,
 	}
 	steps := []semaphore.RunSpec{withPlaybook(base, PlaybookInstallDocker, map[string]any{"gpu": gpu})}
 	common := map[string]any{
@@ -508,7 +510,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	}
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) { n.GPUCheck = gpuCheckEvidence(n.Steps) })
 	s.openNodePorts(ctx, id, idx, target.NsID, node, ports)
-	s.finishNode(id, idx, model.NodeDeploySucceeded, "")
+	s.finishNode(id, idx, model.NodeDeployRunning, "")
 	logger.Info().Msg("Node deployment succeeded")
 	if req.Type == model.NodeDeployTypeInference {
 		s.markVerified(ctx, id, p)
@@ -567,7 +569,7 @@ func (s *Service) addNote(id string, idx int, note string) {
 
 // runStep runs one playbook, records it, and returns why the node cannot go on.
 func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphore.RunSpec) error {
-	step := model.NodeDeployStep{Playbook: spec.Playbook, StartedAt: time.Now().UTC()}
+	step := model.NodeDeployStep{Playbook: spec.Playbook, SSHUser: spec.User, StartedAt: time.Now().UTC()}
 	stepIdx := -1
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 		n.Steps = append(n.Steps, step)
@@ -745,6 +747,15 @@ func copyVars(vars map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // shortID is the first group of a UUID, enough to tell runs apart in the
@@ -931,7 +942,7 @@ func (s *Service) archiveDeployment(d *model.NodeDeployment) {
 			CalledAt: d.CreatedAt, Duration: ended.Sub(d.CreatedAt).Round(time.Millisecond).String(),
 		}},
 	}
-	if d.Status != model.NodeDeploySucceeded && d.Status != model.NodeDeployDryRun {
+	if d.Status != model.NodeDeployRunning && d.Status != model.NodeDeployDryRun {
 		record.Error = "deployment " + d.Status
 	}
 	if err := s.archive.Append(context.Background(), record); err != nil {
@@ -968,7 +979,7 @@ func firstNamespace(d *model.NodeDeployment) string {
 	return ""
 }
 
-// Shutdown cancels every running deployment and waits for them to clean up
+// Shutdown cancels every deployment in progress and waits for them to clean up
 // what they registered in Semaphore, or for ctx to end. Deployments cut off
 // are recorded interrupted.
 func (s *Service) Shutdown(ctx context.Context) error {
@@ -982,7 +993,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("deployments still running at shutdown: %w", ctx.Err())
+		return fmt.Errorf("deployments still in progress at shutdown: %w", ctx.Err())
 	}
 }
 

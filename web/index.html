@@ -237,16 +237,16 @@
 
   /* ---------- node deployment ---------- */
   /* Deployment and node statuses, and Semaphore task outcomes. */
-  .b-dp-succeeded { background: var(--ok-soft); color: var(--ok); }
+  .b-dp-running { background: var(--ok-soft); color: var(--ok); }
   .b-dp-dry-run { background: var(--info-soft); color: var(--info); }
   .b-dp-failed { background: var(--bad-soft); color: var(--bad); }
   .b-dp-partial { background: #FFE9C7; color: #8A4B00; }
-  .b-dp-pending, .b-dp-running { background: var(--accent-soft); color: var(--accent); }
+  .b-dp-pending, .b-dp-deploying { background: var(--accent-soft); color: var(--accent); }
   .b-dp-interrupted { background: #F0F0EC; color: var(--ink-3); }
   .b-dp-removing { background: var(--accent-soft); color: var(--accent); }
   .b-dp-removed { background: #F0F0EC; color: var(--ink-2); }
   .b-dp-remove-failed { background: var(--bad-soft); color: var(--bad); }
-  .tg-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 6px; }
+  .tg-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 6px; }
   .tg-row button { padding: 5px 10px; font-size: 12px; font-weight: 400; }
   .node-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 12px; background: #FDFDFB; }
   .node-box h4 { margin: 0 0 8px; font-size: 13.5px; }
@@ -554,7 +554,7 @@
         </select>
       </div>
     </div>
-    <label>대상 노드 (targets) · CB-Tumblebug 의 nsId / infraId / nodeId. CSP·리전은 노드 정보에서 읽습니다</label>
+    <label>대상 노드 (targets) · CB-Tumblebug 의 nsId / infraId / nodeId. CSP·리전·SSH 사용자는 노드 정보에서 읽습니다. sshUser 는 비워 두면 CB-Tumblebug 의 사용자(cb-user)로 접속하고, 적으면 그 사용자로 접속합니다(키는 같음). cb-user 가 없는 RHEL 계열·Amazon Linux 노드라면 ec2-user 처럼 이미지 기본 사용자를 적습니다</label>
     <div id="dp-targets"></div>
     <button class="ghost btn-sm" onclick="addTarget()">대상 추가</button>
 
@@ -1277,7 +1277,7 @@ function renderDepStatus(st) {
     </table>`;
 }
 
-/* statusCounts reads "succeeded 2 · dry-run 1" off a deployment listing. */
+/* statusCounts reads "running 2 · dry-run 1" off a deployment listing. */
 function statusCounts(dl) {
   const by = dl.reduce((m, d) => (m[d.status] = (m[d.status] || 0) + 1, m), {});
   return Object.keys(by).map((k) => `${esc(k)} ${by[k]}`).join(' · ');
@@ -1705,6 +1705,7 @@ function addTarget(t) {
     <input type="text" class="tg-ns" placeholder="nsId (etri)" value="${esc(t.nsId || '')}">
     <input type="text" class="tg-infra" placeholder="infraId (travel)" value="${esc(t.infraId || '')}">
     <input type="text" class="tg-node" placeholder="nodeId (vm1)" value="${esc(t.nodeId || '')}">
+    <input type="text" class="tg-user" placeholder="sshUser (생략 가능)" value="${esc(t.sshUser || '')}">
     <button class="ghost" onclick="this.parentNode.remove()">빼기</button>`;
   $('dp-targets').appendChild(row);
 }
@@ -1774,12 +1775,17 @@ function parseEnv(text, field) {
 
 /* buildDeployRequest reads the form into the body of POST /deployments. */
 function buildDeployRequest() {
-  const targets = [...document.querySelectorAll('#dp-targets .tg-row')].map((row) => ({
-    kind: 'node',
-    nsId: row.querySelector('.tg-ns').value.trim(),
-    infraId: row.querySelector('.tg-infra').value.trim(),
-    nodeId: row.querySelector('.tg-node').value.trim()
-  })).filter((t) => t.nsId || t.infraId || t.nodeId);
+  const targets = [...document.querySelectorAll('#dp-targets .tg-row')].map((row) => {
+    const t = {
+      kind: 'node',
+      nsId: row.querySelector('.tg-ns').value.trim(),
+      infraId: row.querySelector('.tg-infra').value.trim(),
+      nodeId: row.querySelector('.tg-node').value.trim()
+    };
+    const user = row.querySelector('.tg-user').value.trim();
+    if (user) t.sshUser = user;
+    return t;
+  }).filter((t) => t.nsId || t.infraId || t.nodeId);
 
   const type = $('dp-type').value;
   const req = { type, targets };
@@ -2004,7 +2010,9 @@ function renderNodeResult(n, d) {
   const node = n.node;
   const rows = [
     ['노드', node ? `<span class="mono">${esc(node.csp)}</span> · ${esc(node.region || '-')}${node.zone ? ' / ' + esc(node.zone) : ''}
-      · <span class="mono">${esc(node.user)}@${esc(node.host)}:${esc(node.port)}</span>` : '<span class="b b-mut">조회 못 함</span>'],
+      · <span class="mono">${esc(n.sshUser || node.user)}@${esc(node.host)}:${esc(node.port)}</span>` : '<span class="b b-mut">조회 못 함</span>'],
+    ['SSH 사용자 (sshUser)', n.sshUser ? `<span class="mono">${esc(n.sshUser)}</span>${node && node.user && node.user !== n.sshUser
+      ? ` · CB-Tumblebug 사용자 <span class="mono">${esc(node.user)}</span> 대신 요청의 sshUser` : ''}` : '-'],
     ['스펙', node && node.specId ? `<span class="mono">${esc(node.specId)}</span>` : '-'],
     ['GPU', `${n.gpu ? '<span class="b b-gpu">켬</span>' : '<span class="b b-mut">끔</span>'}${n.gpuSource ? ` · 근거 <span class="mono">${esc(n.gpuSource)}</span>` : ''}`],
     ['작업 키 (workKey)', n.workKey ? `<span class="mono">${esc(n.workKey)}</span>` : '-'],
@@ -2027,7 +2035,7 @@ function renderNodeResult(n, d) {
       <tr><th style="width:34px">#</th><th>플레이북</th><th style="width:100px">태스크</th><th style="width:96px">결과</th><th>오류</th></tr>
       ${steps.map((s, i) => `<tr>
         <td>${i + 1}</td>
-        <td class="mono" style="font-size:12px">${esc(s.playbook)}</td>
+        <td class="mono" style="font-size:12px">${esc(s.playbook)}${s.sshUser ? `<div style="color:var(--ink-3)">${esc(s.sshUser)}</div>` : ''}</td>
         <td class="mono" style="font-size:12px">${taskCell(s)}</td>
         <td>${taskBadge(s.status)}</td>
         <td style="font-size:12px">${esc(s.error || '')}${(s.cleanupErrors || []).length
@@ -2040,9 +2048,9 @@ function renderNodeResult(n, d) {
   </div>`;
 }
 
-/* A deployment that is still pending, running or removing is read again every
+/* A deployment that is still pending, deploying or removing is read again every
    few seconds while it is the one open, for at most ten minutes. */
-const DP_BUSY = ['pending', 'running', 'removing'];
+const DP_BUSY = ['pending', 'deploying', 'removing'];
 
 function pollDeployment(d) {
   if (DP_POLL) { clearTimeout(DP_POLL.timer); DP_POLL = null; }
@@ -2076,7 +2084,7 @@ async function showDeploymentLogs() {
       <h4><span class="mono">${esc(targetKey(n.target || {}))}</span> ${depBadge(n.status)}</h4>
       ${(n.steps || []).length ? n.steps.map((s) => `
         <div style="margin-top:8px;font-size:12px"><span class="mono">${esc(s.playbook)}</span>
-          ${s.taskId ? taskCell(s) : ''} ${taskBadge(s.status)}</div>
+          ${s.taskId ? taskCell(s) : ''} ${taskBadge(s.status)}${s.sshUser ? ` · <span class="mono">${esc(s.sshUser)}</span> 로 접속` : ''}</div>
         <pre class="log">${esc((s.output || []).join('\n') || '(로그 없음)')}</pre>`).join('')
         : '<div style="font-size:12px;color:var(--ink-3)">기록된 태스크가 없습니다. dry-run 이면 Semaphore 를 부르지 않습니다.</div>'}
     </div>`).join('')}`;
@@ -2145,7 +2153,7 @@ function platformNote(r) {
 /* ---------- 자동화 엔진 ---------- */
 const WF_DESC = {
   deploy: '배포 요청(배포 화면과 같은 모양: <code>type</code>, <code>targets</code>, <code>inference</code> 또는 <code>app</code>)을 받아 모델이나 응용을 읽고(<code>get_model</code>·<code>get_app</code>), 배포를 만들고(<code>create_deployment</code>), 모든 노드가 끝날 때까지 읽습니다(<code>get_deployment</code>). 일부 노드만 성공하면(partial) 실행은 실패입니다.',
-  heal: 'failed·partial·interrupted·dry-run 인 배포를 그때의 요청으로 한 번 다시 만들고 같은 방식으로 따라갑니다. succeeded 인 배포는 그대로 두고, running 인 배포는 거절합니다.',
+  heal: 'failed·partial·interrupted·dry-run 인 배포를 그때의 요청으로 한 번 다시 만들고 같은 방식으로 따라갑니다. 모든 노드에서 running 인 배포는 그대로 두고, pending·deploying 인 배포는 거절합니다.',
   control: '배포의 모든 노드에 CB-Tumblebug 노드 제어(정지·재개·재부팅·종료)를 보냅니다(<code>control_node</code>).',
   status: '배포 기록과 노드마다 마지막 태스크 로그 줄을 읽습니다(<code>get_deployment</code>, <code>get_deployment_logs</code>). 읽기만 합니다.'
 };
@@ -2344,7 +2352,7 @@ async function loadMonitor() {
 
   DEPS = (r.data && r.data.deployments) || [];
   fillDeploymentIds(DEPS);
-  const order = ['running', 'pending', 'succeeded', 'dry-run', 'partial', 'failed', 'interrupted'];
+  const order = ['deploying', 'pending', 'running', 'dry-run', 'partial', 'failed', 'interrupted'];
   const by = DEPS.reduce((m, d) => (m[d.status] = (m[d.status] || 0) + 1, m), {});
   const keys = order.filter((k) => by[k]).concat(Object.keys(by).filter((k) => !order.includes(k)));
   $('mo-stats').innerHTML = `<div class="stat"><div class="k">전체 배포</div><div class="v">${DEPS.length}</div></div>` +

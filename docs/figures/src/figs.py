@@ -117,7 +117,7 @@ note(1310, 735, 220, 160, ["노드 안에서 확인", "추론: 헬스 경로,", 
 msg(800, 1, 4, "끝날 때까지 상태 확인, 로그를 받아 기록", "orange")
 msg(860, 1, 4, "inventory · SSH 키 삭제 (성공 · 실패와 무관)", "orange", "6 5")
 msg(970, 1, 2, "보안 그룹에 서빙 포트 규칙 추가 (없는 포트만)", "amber", n=8)
-note(300, 1000, 500, 50, ["노드 결과가 모이면 배포 status 가 succeeded · partial · failed"])
+note(300, 1000, 500, 50, ["노드 결과가 모이면 배포 status 가 running · partial · failed"])
 msg(1100, 0, 1, "GET /deployments/{id} (끝날 때까지), GET /endpoints", "blue", n=9)
 save(f, "02-deploy-sequence")
 
@@ -165,7 +165,7 @@ steps = [
     ("1", "카탈로그 읽기", ["GET /runtimes", "GET /models · /apps"], "white"),
     ("2", "응용 올리기", ["POST /apps", "(없을 때만, ports 포함)"], "white"),
     ("3", "추론 서비스 배포", ["POST /deployments", "type inference"], "dark"),
-    ("4", "끝날 때까지 읽기", ["GET /deployments/{id}", "pending · running 동안"], "white"),
+    ("4", "끝날 때까지 읽기", ["GET /deployments/{id}", "pending · deploying 동안"], "white"),
     ("5", "추론 주소 읽기", ["GET /endpoints", "http://노드:8000/v1"], "store"),
     ("6", "응용 배포", ["POST /deployments", "type app, env 에 5의 주소"], "dark"),
     ("7", "끝날 때까지 읽기", ["GET /deployments/{id}", ""], "white"),
@@ -427,8 +427,8 @@ def st(x, y, name, sub, style, w=200, h=84):
     f.box(x, y, w, h, name, [sub], style, tsize=20, ssize=13)
 st(40, 300, "POST", "/aiapp/deployments", "dark", 210)
 st(330, 300, "pending", "받음 · 202", "white")
-st(610, 300, "running", "노드에서 진행", "node")
-st(900, 160, "succeeded", "모든 노드 성공", "store")
+st(610, 300, "deploying", "노드에서 배포 중", "node")
+st(900, 160, "running", "모든 노드 배포 끝", "store")
 st(900, 300, "partial", "일부만 성공", "warn")
 st(900, 440, "failed", "모든 노드 실패", "bad")
 st(610, 520, "interrupted", "AI-App 재기동 등", "ghost")
@@ -452,9 +452,9 @@ f.arrow("M1340,300 L1340,246", "gray", 2.5)
 f.arrow("M1340,384 L1340,438", "red", 2.5)
 f.arrow("M1440,482 L1500,482 L1500,342 L1442,342", "orange", 2, "6 5")
 label(f, 1510, 420, "DELETE 다시", "#9a3412", 13, 700, "start")
-f.lines(40, 640, ["pending · running · removing 인 기록에 DELETE 를 부르면 409. 끝날 때까지 GET /aiapp/deployments/{id} 를 읽는다.",
+f.lines(40, 640, ["pending · deploying · removing 인 기록에 DELETE 를 부르면 409. 끝날 때까지 GET /aiapp/deployments/{id} 를 읽는다.",
                   "노드 상태 nodes[].status 도 같은 값을 쓴다 (partial 만 없음). 실패한 노드의 이유는 nodes[].error 와 GET .../logs 에 있다.",
-                  "succeeded 인 노드의 주소는 GET /aiapp/endpoints 로 받는다. 같은 노드에 같은 런타임·같은 응용을 다시 배포하면 이전 배포는 주소 목록에서 빠진다."],
+                  "running 인 노드의 주소는 GET /aiapp/endpoints 로 받는다. 같은 노드에 같은 런타임·같은 응용을 다시 배포하면 이전 배포는 주소 목록에서 빠진다."],
         15, "#334155", 400, "start", 28)
 save(f, "09-deploy-states")
 
@@ -493,7 +493,7 @@ save(f, "10-node-layout")
 
 
 # ---------------------------------------------------------- 11 success checks
-f = Fig(1600, 800, title="노드가 succeeded 가 되기까지",
+f = Fig(1600, 800, title="노드가 running 이 되기까지",
         subtitle="Semaphore 태스크가 노드에서 차례로 확인한다. 하나라도 안 되면 그 노드는 failed 이고 이유가 기록에 남는다")
 def lane(y, title, steps):
     label(f, 40, y - 20, title, "#1e3a8a", 18, 700, "start")
@@ -523,10 +523,10 @@ lane(440, "응용 (Semaphore 템플릿 copy-and-run)", [
     ("30초 뒤 안정", ["재시작 0 번", "비정상 종료 0 개"], "gpu", True),
     ("playbook 성공", [""], "store", False),
 ])
-f.box(1300, 170, 260, 380, "포트 열기", ["AI-App 이 CB-Tumblebug 으로", "노드 보안 그룹에", "TCP 인바운드 추가", "", "실패해도 succeeded,", "portsError 에 이유"], "warn", tsize=19, ssize=14)
+f.box(1300, 170, 260, 380, "포트 열기", ["AI-App 이 CB-Tumblebug 으로", "노드 보안 그룹에", "TCP 인바운드 추가", "", "실패해도 running,", "portsError 에 이유"], "warn", tsize=19, ssize=14)
 f.arrow("M1060,225 L1298,225", "gray", 2.5)
 f.arrow("M1268,495 L1298,495", "gray", 2.5)
-f.pill(1330, 580, 200, 56, "succeeded")
+f.pill(1330, 580, 200, 56, "running")
 f.arrow("M1430,550 L1430,578", "gray", 2.5)
 f.lines(40, 680, ["HTTP 응답이면 상태 코드와 상관없이(404, 500 도) 응답으로 본다. 빈 응답·연결 거절은 아니다. docker-proxy 가 TCP 연결은 늘 받아 주기 때문이다.",
                   "GPU 를 요청했는데 CPU 로 돌면(드라이버가 오래됨 등) failed 이고, error 에 근거 줄(Ollama 의 library=cpu 줄 등)이 남는다.",

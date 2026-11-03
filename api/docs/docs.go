@@ -393,8 +393,8 @@ const docTemplate = `{
                     {
                         "enum": [
                             "pending",
+                            "deploying",
                             "running",
-                            "succeeded",
                             "failed",
                             "partial",
                             "dry-run",
@@ -424,7 +424,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds: CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user (ec2-user on aws, the admin user on azure) accepts the same key. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as. kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
                 "consumes": [
                     "application/json"
                 ],
@@ -500,7 +500,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
+                "description": "Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
                 "produces": [
                     "application/json"
                 ],
@@ -539,7 +539,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-\u003cwork key\u003e down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/\u003cwork key\u003e are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.\n\nOnly the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.\n\nWhen some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).",
+                "description": "Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-\u003cwork key\u003e down --remove-orphans, as the SSH user the node was deployed as (nodes[].sshUser, which is targets[].sshUser when the request gave it). Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/\u003cwork key\u003e are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.\n\nOnly the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.\n\nWhen some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).",
                 "produces": [
                     "application/json"
                 ],
@@ -577,7 +577,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "The deployment is still pending or running, or is being taken down",
+                        "description": "The deployment is still pending or deploying, or is being taken down",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -692,7 +692,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the addresses of what serves on the nodes now, derived from the deployment records of POST /deployments: one endpoint per node and work key (ms-\u003cruntimeId\u003e for an inference service, app-\u003cname\u003e for an app). Each filter is optional and matched exactly; all given filters must match. Endpoints are ordered by nsId, infraId, nodeId and workKey.\n\nOn a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or running, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment succeeded on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or running leaves none until it ends. Dry-run deployments never make an endpoint.\n\nAn inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://\u003chost\u003e:\u003cport\u003e\u003capiBasePath\u003e) and healthUrl. An app endpoint carries name, version and urls, one http://\u003chost\u003e:\u003cport\u003e per port it serves. host is the public IP of the node, or its private IP when it has none. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.",
+                "description": "List the addresses of what serves on the nodes now, derived from the deployment records of POST /deployments: one endpoint per node and work key (ms-\u003cruntimeId\u003e for an inference service, app-\u003cname\u003e for an app). Each filter is optional and matched exactly; all given filters must match. Endpoints are ordered by nsId, infraId, nodeId and workKey.\n\nOn a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or deploying, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment is running on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or deploying leaves none until it ends. Dry-run deployments never make an endpoint.\n\nAn inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://\u003chost\u003e:\u003cport\u003e\u003capiBasePath\u003e) and healthUrl. An app endpoint carries name, version and urls, one http://\u003chost\u003e:\u003cport\u003e per port it serves. host is the public IP of the node, or its private IP when it has none. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.",
                 "produces": [
                     "application/json"
                 ],
@@ -874,7 +874,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.\ndeploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, inference | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. An inference service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.\nheal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A succeeded deployment is left alone, a running one is refused.\ncontrol takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).\nstatus takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).\nA step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
+                "description": "Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.\ndeploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, inference | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. An inference service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.\nheal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A deployment running on every node is left alone, a pending or deploying one is refused.\ncontrol takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).\nstatus takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).\nA step held by the AI-App dry-run gate is reported as blocked and the steps that need it as waiting. A run whose steps failed is still returned with 200 and status failed. Served by the automation engine and forwarded by the AI-App service",
                 "consumes": [
                     "application/json"
                 ],
@@ -958,7 +958,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task and modality match the model. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
+                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
                 "produces": [
                     "application/json"
                 ],
@@ -997,6 +997,27 @@ const docTemplate = `{
                         "description": "Artifact source, such as huggingface or ollama",
                         "name": "source",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "seed",
+                            "manual",
+                            "huggingface",
+                            "ollama",
+                            "docker-model-runner",
+                            "ngc",
+                            "kaggle"
+                        ],
+                        "type": "string",
+                        "description": "Who put the model in the catalog. An absent origin is read as manual",
+                        "name": "origin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: an inference deployment of some artifact succeeded on some runtime (runtimes[].verifiedAt set); false: none did",
+                        "name": "verified",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1004,6 +1025,12 @@ const docTemplate = `{
                         "description": "AI model list, ordered by id",
                         "schema": {
                             "$ref": "#/definitions/model.ModelListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "origin is not a known origin, or verified is not a boolean",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
                         }
                     }
                 }
@@ -1014,7 +1041,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Register an AI model, or replace the model of the same id with this record. A model needs an id, a name and at least one artifact; each artifact needs an id unique within the model, a source, a ref, a format and at least one compatible runtime in runtimes[]. Runtimes are not checked against the runtime profiles here; a pairing that does not fit is refused when a compose file is rendered for it.",
+                "description": "Register an AI model, or replace the model of the same id with this record. A model needs an id, a name and at least one artifact; each artifact needs an id unique within the model, a source, a ref and a format. runtimes[] lists the compatible runtimes; an artifact with none is listed but refused with 422 when deployed. The model is recorded with origin manual, stale false and no syncedAt whatever the body says; runtimes[].verifiedAt is kept as given: the catalog sync leaves a model registered or edited here alone. Runtimes are not checked against the runtime profiles here; a pairing that does not fit is refused when a compose file is rendered for it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1052,6 +1079,68 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "The catalog file could not be written",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/models/sync": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report whether the catalog sync is enabled and running, how long it waits between scheduled runs, and how the last run of each configured source went: when it started and finished, how many models the source returned, what they did to the catalog (added, updated, marked stale, skipped because another origin holds the id, dropped as invalid) and the error when the source failed. A failed source leaves its entries as they were. Before a source has run once only its name is given. With AIAPP_CATALOG_SYNC_ENABLED off, enabled is false and sources is empty.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Read the catalog sync status",
+                "operationId": "GetModelSync",
+                "responses": {
+                    "200": {
+                        "description": "Catalog sync status",
+                        "schema": {
+                            "$ref": "#/definitions/catalogsync.Status"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Start one run of every configured source in the background and return at once with the status, running true. Poll GET /models/sync for the results. The sync adds the models a source lists, updates the ones it added before (keeping runtimes[].verifiedAt), marks stale the ones the source no longer lists and never changes a model of origin seed or manual or of another source. Only one run happens at a time: while one is in progress, including the scheduled one, this answers 409.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Run the catalog sync now",
+                "operationId": "PostModelSync",
+                "responses": {
+                    "202": {
+                        "description": "Run started",
+                        "schema": {
+                            "$ref": "#/definitions/catalogsync.Status"
+                        }
+                    },
+                    "409": {
+                        "description": "A run is already in progress",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "503": {
+                        "description": "The catalog sync is disabled (AIAPP_CATALOG_SYNC_ENABLED is off)",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1182,7 +1271,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Runtime profile ID. Defaults to the first runtime the artifact lists",
+                        "description": "Runtime profile ID. Defaults to the first runtime the artifact lists; an artifact that lists none is refused with 422",
                         "name": "runtimeId",
                         "in": "query"
                     },
@@ -1518,6 +1607,97 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "catalogsync.SourceResult": {
+            "type": "object",
+            "properties": {
+                "checkedAt": {
+                    "type": "string",
+                    "example": "2026-11-04T03:00:00Z"
+                },
+                "counts": {
+                    "description": "Counts is what the returned models did to the catalog. All zero when\nthe source was skipped or its fetch failed: the catalog is not touched\nthen.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/modelcat.SyncCounts"
+                        }
+                    ]
+                },
+                "error": {
+                    "description": "Error is why the last fetch from the source failed. Empty when it did\nnot.",
+                    "type": "string",
+                    "example": "huggingface: GET /api/models: 503 Service Unavailable"
+                },
+                "fetched": {
+                    "description": "Fetched is how many models the source returned.",
+                    "type": "integer",
+                    "example": 96
+                },
+                "finishedAt": {
+                    "type": "string",
+                    "example": "2026-11-04T03:00:12Z"
+                },
+                "name": {
+                    "description": "Name is the source, the origin its models are stored with.",
+                    "type": "string",
+                    "example": "huggingface"
+                },
+                "reachable": {
+                    "description": "Reachable is whether the source's host answered the check before the\nlast run, and CheckedAt is when that check was made. Both are absent\nuntil the source has been checked once.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "skipped": {
+                    "description": "Skipped is why the last run did not fetch from the source:\n\"unreachable\" when its host did not answer. The catalog is not touched\nthen. Empty when the source was fetched.",
+                    "type": "string",
+                    "enum": [
+                        "unreachable"
+                    ],
+                    "example": ""
+                },
+                "startedAt": {
+                    "description": "StartedAt and FinishedAt bound the last run of the source. Both are\nabsent until the source has run once.",
+                    "type": "string",
+                    "example": "2026-11-04T03:00:00Z"
+                }
+            }
+        },
+        "catalogsync.Status": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled is false when AIAPP_CATALOG_SYNC_ENABLED is off.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "interval": {
+                    "description": "Interval is how long the sync waits between scheduled runs while a\nsource is reachable, as a Go duration. Empty when the sync is disabled.",
+                    "type": "string",
+                    "example": "24h0m0s"
+                },
+                "nextRunAt": {
+                    "description": "NextRunAt is when the next scheduled run starts. Absent while a run is\nin progress, before the schedule has started and when the sync is\ndisabled.",
+                    "type": "string",
+                    "example": "2026-11-05T03:00:00Z"
+                },
+                "offline": {
+                    "description": "Offline is true when the last run reached no source. The schedule then\nretries sooner than the interval: after 5m, 15m, then every 1h, never\nlater than the interval.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "running": {
+                    "description": "Running is true while a run is in progress.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "sources": {
+                    "description": "Sources holds the last result of each configured source, in the\nconfigured order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/catalogsync.SourceResult"
+                    }
+                }
+            }
+        },
         "engine.Card": {
             "type": "object",
             "properties": {
@@ -1954,7 +2134,6 @@ const docTemplate = `{
                 "format",
                 "id",
                 "ref",
-                "runtimes",
                 "source"
             ],
             "properties": {
@@ -1979,7 +2158,7 @@ const docTemplate = `{
                     "example": "Qwen/Qwen3-VL-8B-Instruct"
                 },
                 "runtimes": {
-                    "description": "Runtimes are the inference runtimes known to load this artifact. Each\nruntime must be listed explicitly: the same file format may load in one\nruntime version and not in another. Filter with ?runtimeId=.",
+                    "description": "Runtimes are the inference runtimes known to load this artifact. Each\nruntime must be listed explicitly: the same file format may load in one\nruntime version and not in another. Filter with ?runtimeId=. An empty\nlist means no runtime is known to load the artifact: it is listed but\ncannot be deployed.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.RuntimeCompat"
@@ -2243,6 +2422,20 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Qwen3-VL-8B-Instruct"
                 },
+                "origin": {
+                    "description": "Origin is who put the model in the catalog: seed for a built-in model,\nmanual for a model registered or edited through POST /models, or the\nsource the catalog sync collected it from (huggingface, ollama,\ndocker-model-runner, ngc, kaggle). Absent is read as manual. POST /models\nalways records manual. Filter with ?origin=.",
+                    "type": "string",
+                    "enum": [
+                        "seed",
+                        "manual",
+                        "huggingface",
+                        "ollama",
+                        "docker-model-runner",
+                        "ngc",
+                        "kaggle"
+                    ],
+                    "example": "huggingface"
+                },
                 "parameters": {
                     "description": "Parameters is the parameter count as the publisher writes it.",
                     "type": "string",
@@ -2252,6 +2445,16 @@ const docTemplate = `{
                     "description": "Publisher is who released the model.",
                     "type": "string",
                     "example": "Qwen"
+                },
+                "stale": {
+                    "description": "Stale is true when the source of a collected model no longer lists it.\nThe entry is kept, and turns false again when the source lists it again.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "syncedAt": {
+                    "description": "SyncedAt is the last time the catalog sync saw the model at its source.\nAbsent for a model the sync does not keep.",
+                    "type": "string",
+                    "example": "2026-11-04T03:00:00Z"
                 },
                 "tasks": {
                     "description": "Tasks are what the model is used for, such as chat, vision-chat or\nembedding. Filter with ?task=.",
@@ -2402,7 +2605,7 @@ const docTemplate = `{
                     "example": "aws+ap-northeast-2+g4dn.xlarge"
                 },
                 "user": {
-                    "description": "User is the SSH user.",
+                    "description": "User is the SSH user CB-Tumblebug reports for the node. The\nplaybooks ran as nodes[].sshUser, which differs when the target\ngave sshUser.",
                     "type": "string",
                     "example": "cb-user"
                 },
@@ -2417,7 +2620,7 @@ const docTemplate = `{
             "properties": {
                 "status": {
                     "type": "string",
-                    "example": "succeeded"
+                    "example": "running"
                 },
                 "steps": {
                     "type": "array",
@@ -2517,6 +2720,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "http://203.0.113.10:8000/v1"
                 },
+                "sshUser": {
+                    "description": "SSHUser is the SSH user the playbooks ran as on the node: the\ntarget's sshUser when given, and node.user, the one CB-Tumblebug\nreports, otherwise. Taking the deployment down runs as the same user.",
+                    "type": "string",
+                    "example": "cb-user"
+                },
                 "stageDir": {
                     "description": "StageDir is the folder the files were placed in on the shared stage\nvolume: \u003cAIAPP_STAGE_ROOT\u003e/\u003cdeployment id\u003e/\u003ccsp\u003e-\u003cnode id\u003e.",
                     "type": "string",
@@ -2528,12 +2736,12 @@ const docTemplate = `{
                     "example": "2026-10-29T12:00:01Z"
                 },
                 "status": {
-                    "description": "Status is pending, running, succeeded, failed, dry-run or interrupted;\nonce taken down, removing, removed or remove-failed.",
+                    "description": "Status is pending, deploying, running, failed, dry-run or interrupted;\nonce taken down, removing, removed or remove-failed.",
                     "type": "string",
                     "enum": [
                         "pending",
+                        "deploying",
                         "running",
-                        "succeeded",
                         "failed",
                         "dry-run",
                         "interrupted",
@@ -2541,7 +2749,7 @@ const docTemplate = `{
                         "removed",
                         "remove-failed"
                     ],
-                    "example": "succeeded"
+                    "example": "running"
                 },
                 "steps": {
                     "description": "Steps are the playbooks run on the node, in order. A step that failed\nends the node.",
@@ -2594,6 +2802,11 @@ const docTemplate = `{
                     "description": "Playbook is install-docker.yml, compose-up.yml, copy-and-run.yml, or\ncompose-down.yml when the deployment was taken down.",
                     "type": "string",
                     "example": "compose-up.yml"
+                },
+                "sshUser": {
+                    "description": "SSHUser is the SSH user the playbook ran as.",
+                    "type": "string",
+                    "example": "cb-user"
                 },
                 "startedAt": {
                     "type": "string",
@@ -2656,6 +2869,11 @@ const docTemplate = `{
                     "description": "NsID is the CB-Tumblebug namespace of the Infra.",
                     "type": "string",
                     "example": "etri"
+                },
+                "sshUser": {
+                    "description": "SSHUser replaces, for this node, the SSH user CB-Tumblebug reports\n(nodeUserName) in the Semaphore inventory; the SSH key is still the one\nCB-Tumblebug holds for the node. Use it when the login user\nCB-Tumblebug creates, cb-user, is missing on the node and the image's\nown user (ec2-user on aws, the admin user on azure) accepts the same\nkey. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the\ndeployment down uses the user recorded at deploy time.",
+                    "type": "string",
+                    "example": "ec2-user"
                 }
             }
         },
@@ -2707,12 +2925,12 @@ const docTemplate = `{
                     ]
                 },
                 "status": {
-                    "description": "Status is pending, running, succeeded (every node), failed (every node),\npartial (some nodes), dry-run (files placed, nothing run) or interrupted\n(the service stopped while it ran); once taken down with\nDELETE /deployments/{id}, removing, removed or remove-failed.",
+                    "description": "Status is pending, deploying, running (every node), failed (every\nnode), partial (some nodes), dry-run (files placed, nothing run) or\ninterrupted (the service stopped while it was deploying); once taken\ndown with DELETE /deployments/{id}, removing, removed or remove-failed.",
                     "type": "string",
                     "enum": [
                         "pending",
+                        "deploying",
                         "running",
-                        "succeeded",
                         "failed",
                         "partial",
                         "dry-run",
@@ -2721,7 +2939,7 @@ const docTemplate = `{
                         "removed",
                         "remove-failed"
                     ],
-                    "example": "succeeded"
+                    "example": "running"
                 },
                 "type": {
                     "description": "Type is the request type.",
@@ -2762,7 +2980,7 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string",
-                    "example": "succeeded"
+                    "example": "running"
                 }
             }
         },
@@ -2909,6 +3127,11 @@ const docTemplate = `{
                     "description": "RuntimeID is the runtime profile ID, as listed by GET /runtimes.",
                     "type": "string",
                     "example": "vllm"
+                },
+                "verifiedAt": {
+                    "description": "VerifiedAt is when an inference deployment of this artifact on this\nruntime last succeeded on a node. A dry run does not count. Absent means\nnever verified. Filter with ?verified=.",
+                    "type": "string",
+                    "example": "2026-11-04T03:00:00Z"
                 }
             }
         },
@@ -3199,6 +3422,36 @@ const docTemplate = `{
                 "output": {},
                 "tool": {
                     "type": "string"
+                }
+            }
+        },
+        "modelcat.SyncCounts": {
+            "type": "object",
+            "properties": {
+                "added": {
+                    "description": "Added is how many fetched models were new to the catalog.",
+                    "type": "integer",
+                    "example": 12
+                },
+                "invalid": {
+                    "description": "Invalid is how many fetched models were dropped because they do not\nvalidate or repeat an ID earlier in the same fetch.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "skipped": {
+                    "description": "Skipped is how many fetched models were left alone because the catalog\nholds an entry of the same ID from another origin.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "staled": {
+                    "description": "Staled is how many entries of the origin the fetch did not return. Each\nis marked stale, whether or not it already was.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "updated": {
+                    "description": "Updated is how many entries of the origin were replaced from the fetch.",
+                    "type": "integer",
+                    "example": 80
                 }
             }
         },

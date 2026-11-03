@@ -39,6 +39,9 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 		"nsId":    stringProp("CB-Tumblebug namespace of the Infra"),
 		"infraId": stringProp("CB-Tumblebug Infra the node belongs to"),
 		"nodeId":  stringProp("Node within the Infra"),
+		"sshUser": stringProp("SSH user to run the playbooks as instead of the one CB-Tumblebug reports, with the key " +
+			"CB-Tumblebug holds. For images where CB-Tumblebug could not create cb-user (no sudo group: RHEL, Rocky, " +
+			"AlmaLinux, Amazon Linux), such as ec2-user on aws. Omit to use the CB-Tumblebug user"),
 	}, "kind", "nsId", "infraId", "nodeId")
 	envNote := "Written to a .env file beside the deployed files. Names match [A-Z_][A-Z0-9_]*; values hold no line break and no single quote."
 	return Tool{
@@ -49,7 +52,7 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 			"list_models, list_runtimes) and starts it; type app copies an uploaded application version (see list_apps) and runs its " +
 			"script. Each node is reached with its own SSH key through Semaphore: docker is installed when missing, then " +
 			"the service is started, and the ports it serves are opened in the node's CB-Tumblebug security groups. Returns the deployment record at once with status pending; follow it with " +
-			"get_deployment until it is succeeded, failed or partial, and read the task output with get_deployment_logs. " +
+			"get_deployment until it is running, failed or partial, and read the task output with get_deployment_logs. " +
 			"With dry run on, only the files are placed, nothing runs, and the record comes back with status dry-run.",
 		InputSchema: object(map[string]any{
 			"type": enumProp("What to deploy", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
@@ -108,7 +111,7 @@ func getDeploymentTool(svc *nodedeploy.Service) Tool {
 	return Tool{
 		Name:  "get_deployment",
 		Grade: GradeRead,
-		Description: "Read one deployment made by create_deployment: its status (pending, running, succeeded, failed, " +
+		Description: "Read one deployment made by create_deployment: its status (pending, deploying, running, failed, " +
 			"partial, dry-run, interrupted, or removing, removed, remove-failed once taken down by delete_deployment) and for every node its status, address, whether it got the GPU, the " +
 			"rendered compose and service URL of an inference service, and each playbook run with its status. Task output " +
 			"is left out; read it with get_deployment_logs.",
@@ -135,7 +138,7 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 		InputSchema: object(map[string]any{
 			"type":   enumProp("Deployment type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"nsId":   stringProp("CB-Tumblebug namespace of any target"),
-			"status": stringProp("Deployment status: pending, running, succeeded, failed, partial, dry-run, interrupted, removing, removed or remove-failed"),
+			"status": stringProp("Deployment status: pending, deploying, running, failed, partial, dry-run, interrupted, removing, removed or remove-failed"),
 		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var filter nodedeploy.ListFilter
@@ -162,7 +165,7 @@ func listEndpointsTool(svc *nodedeploy.Service) Tool {
 		Description: "List the addresses of the inference services and applications serving on the nodes now, one per " +
 			"node and work key (ms-<runtimeId> for an inference service, app-<name> for an app), derived from the " +
 			"deployments of create_deployment. The latest deployment of a work key on a node decides it: it is listed " +
-			"only when that deployment succeeded there, so a redeploy replaces it, delete_deployment removes it, and a " +
+			"only when that deployment is running there, so a redeploy replaces it, delete_deployment removes it, and a " +
 			"later deployment that failed after starting its service leaves none. Dry runs are never listed. An " +
 			"inference endpoint has runtimeId, modelId, artifactId, url (OpenAI compatible API) and healthUrl; an app " +
 			"endpoint has name, version and one url per port. portsOpened says whether every port was opened in the " +
@@ -221,7 +224,7 @@ func deleteDeploymentTool(svc *nodedeploy.Service) Tool {
 			"left running and marked removed with a note naming the later deployment. Returns the record with status " +
 			"removing; follow it with get_deployment until it is removed or remove-failed. Nothing needs running, and " +
 			"the record comes back removed at once, for a dry-run deployment or nodes where the service never started. " +
-			"A deployment still pending or running is refused. With dry run on, nothing is sent and the nodes keep " +
+			"A deployment still pending or deploying is refused. With dry run on, nothing is sent and the nodes keep " +
 			"their status with a note.",
 		InputSchema: object(map[string]any{
 			"id": stringProp("Deployment id returned by create_deployment"),

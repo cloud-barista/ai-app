@@ -307,7 +307,7 @@ func waitFinished(t *testing.T, svc *Service, id string) *model.NodeDeployment {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.Status != model.NodeDeployPending && d.Status != model.NodeDeployRunning {
+		if d.Status != model.NodeDeployPending && d.Status != model.NodeDeployDeploying {
 			return d
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -329,7 +329,7 @@ func TestInferenceDeploymentSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.Status != model.NodeDeployPending && created.Status != model.NodeDeployRunning {
+	if created.Status != model.NodeDeployPending && created.Status != model.NodeDeployDeploying {
 		t.Errorf("created status = %q, want pending", created.Status)
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(created.ID) {
@@ -340,7 +340,7 @@ func TestInferenceDeploymentSucceeds(t *testing.T) {
 	}
 
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 	vm1, vm2 := d.Nodes[0], d.Nodes[1]
@@ -439,7 +439,7 @@ func TestAppDeploymentStagesFilesScriptAndEnv(t *testing.T) {
 		t.Errorf("version = %d, want the latest (2) filled in", created.Request.App.Version)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 	dir := d.Nodes[0].StageDir
@@ -480,7 +480,7 @@ func TestAppDeploymentWithoutPortsPassesAnEmptyPortList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded {
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 
@@ -508,7 +508,7 @@ func TestDeploymentFailsAndPartiallyFails(t *testing.T) {
 	if d.Nodes[0].Status != model.NodeDeployFailed || !strings.Contains(d.Nodes[0].Error, "compose-up.yml ended with status \"error\"") {
 		t.Errorf("vm1 = %s %q", d.Nodes[0].Status, d.Nodes[0].Error)
 	}
-	if d.Nodes[1].Status != model.NodeDeploySucceeded {
+	if d.Nodes[1].Status != model.NodeDeployRunning {
 		t.Errorf("vm2 = %s", d.Nodes[1].Status)
 	}
 
@@ -575,7 +575,7 @@ func TestGPUCheckRunsForGPUInferenceOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			d := waitFinished(t, f.svc, created.ID)
-			if d.Status != model.NodeDeploySucceeded {
+			if d.Status != model.NodeDeployRunning {
 				t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 			}
 			f.runner.mu.Lock()
@@ -609,7 +609,7 @@ func TestUnreadableSpecTakesNoGPUAndSaysWhy(t *testing.T) {
 	if n.GPU || n.GPUSource != "default" || len(n.Notes) != 1 || !strings.Contains(n.Notes[0], "gcp+missing") {
 		t.Errorf("node = gpu %v source %q notes %v", n.GPU, n.GPUSource, n.Notes)
 	}
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Errorf("status = %q; an unreadable spec must not fail the node", d.Status)
 	}
 }
@@ -700,6 +700,10 @@ func TestRequestsRefusedBeforeAnythingRuns(t *testing.T) {
 		"no targets":           func(r *model.NodeDeploymentReq) { r.Targets = nil },
 		"duplicate target":     func(r *model.NodeDeploymentReq) { r.Targets = append(r.Targets, r.Targets[0]) },
 		"path in node id":      func(r *model.NodeDeploymentReq) { r.Targets[0].NodeID = "../x" },
+		"upper case ssh user":  func(r *model.NodeDeploymentReq) { r.Targets[0].SSHUser = "Admin" },
+		"ssh user with space":  func(r *model.NodeDeploymentReq) { r.Targets[0].SSHUser = "ec2 user" },
+		"ssh user too long":    func(r *model.NodeDeploymentReq) { r.Targets[0].SSHUser = strings.Repeat("u", 33) },
+		"ssh user digit first": func(r *model.NodeDeploymentReq) { r.Targets[0].SSHUser = "1user" },
 		"no model service":     func(r *model.NodeDeploymentReq) { r.Inference = nil },
 		"unknown type":         func(r *model.NodeDeploymentReq) { r.Type = "vm" },
 	}
@@ -799,11 +803,11 @@ func TestShutdownInterruptsARunningDeploymentAndReopenKeepsIt(t *testing.T) {
 	}
 }
 
-func TestOpenStoreMarksRunningRecordsInterrupted(t *testing.T) {
+func TestOpenStoreMarksDeployingRecordsInterrupted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.json")
-	body := `{"deployments":[
-		{"id":"a","status":"running","createdAt":"2026-10-29T12:00:00Z","nodes":[{"status":"running"},{"status":"succeeded"}]},
-		{"id":"b","status":"succeeded","createdAt":"2026-10-29T13:00:00Z","nodes":[{"status":"succeeded"}]}]}`
+	body := `{"version":2,"deployments":[
+		{"id":"a","status":"deploying","createdAt":"2026-10-29T12:00:00Z","nodes":[{"status":"deploying"},{"status":"running"}]},
+		{"id":"b","status":"running","createdAt":"2026-10-29T13:00:00Z","nodes":[{"status":"running"}]}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -814,10 +818,10 @@ func TestOpenStoreMarksRunningRecordsInterrupted(t *testing.T) {
 	a, _ := store.Get("a")
 	b, _ := store.Get("b")
 	if a.Status != model.NodeDeployInterrupted || a.Nodes[0].Status != model.NodeDeployInterrupted ||
-		a.Nodes[1].Status != model.NodeDeploySucceeded || a.FinishedAt == nil {
+		a.Nodes[1].Status != model.NodeDeployRunning || a.FinishedAt == nil {
 		t.Errorf("a = %+v", a)
 	}
-	if b.Status != model.NodeDeploySucceeded {
+	if b.Status != model.NodeDeployRunning {
 		t.Errorf("b = %+v", b)
 	}
 	list := store.List()
@@ -827,6 +831,137 @@ func TestOpenStoreMarksRunningRecordsInterrupted(t *testing.T) {
 	raw, _ := io.ReadAll(mustOpen(t, path))
 	if !strings.Contains(string(raw), `"interrupted"`) {
 		t.Error("the interrupted status was not written back")
+	}
+}
+
+func TestOpenStoreMigratesAVersion1File(t *testing.T) {
+	old, err := os.ReadFile(filepath.Join("testdata", "deployments-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "d.json")
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string][]string{
+		"0b5d3c1e-1111-4a00-8000-000000000001": {model.NodeDeployRunning, model.NodeDeployRunning},
+		"0b5d3c1e-2222-4a00-8000-000000000002": {model.NodeDeployPartial, model.NodeDeployRunning, model.NodeDeployFailed},
+		"0b5d3c1e-3333-4a00-8000-000000000003": {model.NodeDeployInterrupted, model.NodeDeployRunning, model.NodeDeployInterrupted},
+		"0b5d3c1e-4444-4a00-8000-000000000004": {model.NodeDeployRemoved, model.NodeDeployRemoved},
+	}
+	check := func(what string, s *Store) {
+		t.Helper()
+		for id, statuses := range want {
+			d, ok := s.Get(id)
+			if !ok {
+				t.Errorf("%s: %s missing", what, id)
+				continue
+			}
+			got := []string{d.Status}
+			for _, n := range d.Nodes {
+				got = append(got, n.Status)
+			}
+			if !slices.Equal(got, statuses) {
+				t.Errorf("%s: %s statuses = %v, want %v", what, id, got, statuses)
+			}
+		}
+	}
+	check("migrated", store)
+	if d, _ := store.Get("0b5d3c1e-3333-4a00-8000-000000000003"); d.FinishedAt == nil || d.Error == "" {
+		t.Errorf("interrupted record = %+v, want finishedAt and error set", d)
+	}
+
+	var written struct {
+		Version     int               `json:"version"`
+		Deployments []json.RawMessage `json:"deployments"`
+	}
+	raw, _ := io.ReadAll(mustOpen(t, path))
+	if err := json.Unmarshal(raw, &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.Version != storeVersion || len(written.Deployments) != 4 {
+		t.Errorf("written version %d with %d records, want %d with 4", written.Version, len(written.Deployments), storeVersion)
+	}
+	if strings.Contains(string(raw), `"succeeded"`) {
+		t.Error("the written file still holds a succeeded status")
+	}
+
+	reopened, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("reopened", reopened)
+	if d, _ := reopened.Get("0b5d3c1e-1111-4a00-8000-000000000001"); d.Nodes[0].Steps[1].Status != semaphore.StatusSuccess {
+		t.Errorf("step status = %q, want the Semaphore status kept", d.Nodes[0].Steps[1].Status)
+	}
+}
+
+func TestOpenStoreRefusesANewerVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "d.json")
+	if err := os.WriteFile(path, []byte(`{"version":3,"deployments":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenStore(path); err == nil || !strings.Contains(err.Error(), "version 3") {
+		t.Errorf("err = %v, want version 3 refused", err)
+	}
+}
+
+func TestSSHUserReplacesTheCBTumblebugUser(t *testing.T) {
+	f := newFixture(t, false)
+	req := appReq("vm1", "vm2")
+	req.Targets[0].SSHUser = "ec2-user"
+	d := deployed(t, f, req)
+	if d.Status != model.NodeDeployRunning {
+		t.Fatalf("deploy = %q", d.Status)
+	}
+	wantUser := map[string]string{"vm1": "ec2-user", "vm2": "cb-user"}
+	for _, n := range d.Nodes {
+		want := wantUser[n.Target.NodeID]
+		if n.SSHUser != want || n.Node == nil || n.Node.User != "cb-user" {
+			t.Errorf("%s: sshUser %q node %+v, want %q and node.user cb-user", n.Target.NodeID, n.SSHUser, n.Node, want)
+		}
+		for _, st := range n.Steps {
+			if st.SSHUser != want {
+				t.Errorf("%s: step %s sshUser %q, want %q", n.Target.NodeID, st.Playbook, st.SSHUser, want)
+			}
+		}
+	}
+	f.runner.mu.Lock()
+	for _, run := range f.runner.runs {
+		want := "cb-user"
+		if strings.Contains(run.Name, "-vm1") {
+			want = "ec2-user"
+		}
+		if run.User != want || run.PrivateKey != testKey {
+			t.Errorf("run %s as %q, want %q with the CB-Tumblebug key", run.Name, run.User, want)
+		}
+	}
+	f.runner.mu.Unlock()
+
+	logs, err := f.svc.Logs(context.Background(), d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := logs.Nodes[0].Steps[0]; st.SSHUser != "ec2-user" {
+		t.Errorf("logs step = %+v, want sshUser ec2-user", st)
+	}
+}
+
+func TestSSHUserIsRecordedInADryRun(t *testing.T) {
+	f := newFixture(t, true)
+	req := modelReq("vm1")
+	req.Targets[0].SSHUser = "azureuser"
+	d, err := f.svc.Create(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Status != model.NodeDeployDryRun || d.Nodes[0].SSHUser != "azureuser" || d.Request.Targets[0].SSHUser != "azureuser" {
+		t.Errorf("dry run = %q, node sshUser %q, target sshUser %q", d.Status, d.Nodes[0].SSHUser, d.Request.Targets[0].SSHUser)
 	}
 }
 
@@ -851,7 +986,7 @@ func TestCloudNameOutsideThePatternIsRefused(t *testing.T) {
 	if n.Status != model.NodeDeployFailed || !strings.Contains(n.Error, "not a plain name") || n.StageDir != "" || len(n.Steps) != 0 {
 		t.Errorf("evil node = %+v, want refused before staging", n)
 	}
-	if d.Nodes[1].Status != model.NodeDeploySucceeded || d.Status != model.NodeDeployPartial {
+	if d.Nodes[1].Status != model.NodeDeployRunning || d.Status != model.NodeDeployPartial {
 		t.Errorf("status = %q, vm1 = %q", d.Status, d.Nodes[1].Status)
 	}
 	// Only vm1's folder exists under the deployment, and nothing above the root.
@@ -910,7 +1045,7 @@ func placementRun(t *testing.T, f *fixture, req model.NodeDeploymentReq) (*model
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 	f.runner.mu.Lock()
@@ -1032,7 +1167,7 @@ func TestSamePlacementOfANodeRunsOneDeploymentAtATime(t *testing.T) {
 	}
 	close(f.runner.block)
 	for _, id := range []string{first.ID, second.ID} {
-		if d := waitFinished(t, f.svc, id); d.Status != model.NodeDeploySucceeded {
+		if d := waitFinished(t, f.svc, id); d.Status != model.NodeDeployRunning {
 			t.Errorf("deployment %s = %q", id, d.Status)
 		}
 	}
@@ -1080,7 +1215,7 @@ func TestSucceededInferenceMarksTheRuntimeVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded {
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q", d.Status)
 	}
 	got := verifiedAt(t, f)
@@ -1128,8 +1263,8 @@ func TestModelDeletedDuringTheDeploymentLeavesTheNodeSucceeded(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(f.runner.block)
-	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded || d.Nodes[0].Error != "" {
-		t.Errorf("deployment = %q %q, want succeeded", d.Status, d.Nodes[0].Error)
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeployRunning || d.Nodes[0].Error != "" {
+		t.Errorf("deployment = %q %q, want running", d.Status, d.Nodes[0].Error)
 	}
 	if _, err := f.svc.models.Get(context.Background(), "tiny"); !errors.Is(err, modelcat.ErrNotFound) {
 		t.Errorf("deleted model came back: %v", err)

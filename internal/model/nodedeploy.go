@@ -33,13 +33,14 @@ const (
 const (
 	// NodeDeployPending is a deployment accepted and not started yet.
 	NodeDeployPending = "pending"
-	// NodeDeployRunning is a deployment whose playbooks are running.
+	// NodeDeployDeploying is a deployment whose playbooks are running.
+	NodeDeployDeploying = "deploying"
+	// NodeDeployRunning is a deployment whose every node was deployed: its
+	// playbooks succeeded and the service runs there.
 	NodeDeployRunning = "running"
-	// NodeDeploySucceeded is a deployment whose every node succeeded.
-	NodeDeploySucceeded = "succeeded"
 	// NodeDeployFailed is a deployment whose every node failed.
 	NodeDeployFailed = "failed"
-	// NodeDeployPartial is a deployment where some nodes succeeded and some
+	// NodeDeployPartial is a deployment where some nodes run and some
 	// failed. Only a deployment has it, never a node.
 	NodeDeployPartial = "partial"
 	// NodeDeployDryRun is a deployment that only placed its files, because the
@@ -70,6 +71,10 @@ const MaxNodeDeployTargets = 32
 // like. Identifiers become a folder name on the shared stage volume.
 var nodeTargetIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
+// sshUserPattern is what a target SSH user may look like: a Linux user name of
+// 1 to 32 characters.
+var sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
 // ErrUnsupportedTarget marks a target kind that is reserved but not deployed
 // to yet.
 var ErrUnsupportedTarget = errors.New("unsupported deployment target")
@@ -86,6 +91,14 @@ type NodeDeployTarget struct {
 	InfraID string `json:"infraId,omitempty" example:"travel"`
 	// NodeID is the node within the Infra.
 	NodeID string `json:"nodeId,omitempty" example:"vm1"`
+	// SSHUser replaces, for this node, the SSH user CB-Tumblebug reports
+	// (nodeUserName) in the Semaphore inventory; the SSH key is still the one
+	// CB-Tumblebug holds for the node. Use it when the login user
+	// CB-Tumblebug creates, cb-user, is missing on the node and the image's
+	// own user (ec2-user on aws, the admin user on azure) accepts the same
+	// key. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the
+	// deployment down uses the user recorded at deploy time.
+	SSHUser string `json:"sshUser,omitempty" example:"ec2-user"`
 	// K8sClusterID is reserved for kind "k8s".
 	K8sClusterID string `json:"k8sClusterId,omitempty" example:""`
 	// NodeGroupID is reserved for kind "k8s".
@@ -238,6 +251,9 @@ func (r *NodeDeploymentReq) Validate() error {
 				return errInvalid(field+"."+id.name, "must match [A-Za-z0-9][A-Za-z0-9._-]* and be at most 128 characters")
 			}
 		}
+		if t.SSHUser != "" && !sshUserPattern.MatchString(t.SSHUser) {
+			return errInvalid(field+".sshUser", "must match [a-z_][a-z0-9_-]* and be at most 32 characters")
+		}
 		if seen[t.Key()] {
 			return errInvalid(field, "names a node that is already a target")
 		}
@@ -312,11 +328,11 @@ type NodeDeployment struct {
 	ID string `json:"id" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
 	// Type is the request type.
 	Type string `json:"type" enums:"inference,app" example:"inference"`
-	// Status is pending, running, succeeded (every node), failed (every node),
-	// partial (some nodes), dry-run (files placed, nothing run) or interrupted
-	// (the service stopped while it ran); once taken down with
-	// DELETE /deployments/{id}, removing, removed or remove-failed.
-	Status string `json:"status" enums:"pending,running,succeeded,failed,partial,dry-run,interrupted,removing,removed,remove-failed" example:"succeeded"`
+	// Status is pending, deploying, running (every node), failed (every
+	// node), partial (some nodes), dry-run (files placed, nothing run) or
+	// interrupted (the service stopped while it was deploying); once taken
+	// down with DELETE /deployments/{id}, removing, removed or remove-failed.
+	Status string `json:"status" enums:"pending,deploying,running,failed,partial,dry-run,interrupted,removing,removed,remove-failed" example:"running"`
 	// DryRun is true when the service ran with dry run on: only the node
 	// look-up and file placement were done.
 	DryRun bool `json:"dryRun" example:"false"`
@@ -340,12 +356,16 @@ type NodeDeployment struct {
 type NodeDeployResult struct {
 	// Target is the target as requested.
 	Target NodeDeployTarget `json:"target"`
-	// Status is pending, running, succeeded, failed, dry-run or interrupted;
+	// Status is pending, deploying, running, failed, dry-run or interrupted;
 	// once taken down, removing, removed or remove-failed.
-	Status string `json:"status" enums:"pending,running,succeeded,failed,dry-run,interrupted,removing,removed,remove-failed" example:"succeeded"`
+	Status string `json:"status" enums:"pending,deploying,running,failed,dry-run,interrupted,removing,removed,remove-failed" example:"running"`
 	// Node is how the node was reached, as read from CB-Tumblebug. Absent
 	// when the node could not be read. The SSH key is never included.
 	Node *NodeDeployNode `json:"node,omitempty"`
+	// SSHUser is the SSH user the playbooks ran as on the node: the
+	// target's sshUser when given, and node.user, the one CB-Tumblebug
+	// reports, otherwise. Taking the deployment down runs as the same user.
+	SSHUser string `json:"sshUser,omitempty" example:"cb-user"`
 	// GPU is whether the runtime was given the node's GPUs and the NVIDIA
 	// Container Toolkit was installed.
 	GPU bool `json:"gpu" example:"false"`
@@ -415,7 +435,9 @@ type NodeDeployNode struct {
 	Host string `json:"host" example:"203.0.113.10"`
 	// Port is the SSH port.
 	Port int `json:"port" example:"22"`
-	// User is the SSH user.
+	// User is the SSH user CB-Tumblebug reports for the node. The
+	// playbooks ran as nodes[].sshUser, which differs when the target
+	// gave sshUser.
 	User string `json:"user" example:"cb-user"`
 	// SpecID is the node spec in CB-Tumblebug.
 	SpecID string `json:"specId,omitempty" example:"aws+ap-northeast-2+g4dn.xlarge"`
@@ -450,6 +472,8 @@ type NodeDeployStep struct {
 	Playbook string `json:"playbook" example:"compose-up.yml"`
 	// TaskID is the Semaphore task, kept in Semaphore with its log.
 	TaskID int `json:"taskId,omitempty" example:"2147483645"`
+	// SSHUser is the SSH user the playbook ran as.
+	SSHUser string `json:"sshUser,omitempty" example:"cb-user"`
 	// TaskURL is the page of the task in the Semaphore web UI, with its log.
 	// Absent when the task never started or AIAPP_SEMAPHORE_UI_URL was not
 	// set when it ran.
@@ -478,7 +502,7 @@ type NodeDeploymentListResp struct {
 // NodeDeploymentLogs is the task output of one deployment.
 type NodeDeploymentLogs struct {
 	ID     string `json:"id" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
-	Status string `json:"status" example:"succeeded"`
+	Status string `json:"status" example:"running"`
 	// Nodes hold, per target, the steps with their output.
 	Nodes []NodeDeployNodeLogs `json:"nodes"`
 }
@@ -486,7 +510,7 @@ type NodeDeploymentLogs struct {
 // NodeDeployNodeLogs is the task output of one node.
 type NodeDeployNodeLogs struct {
 	Target NodeDeployTarget `json:"target"`
-	Status string           `json:"status" example:"succeeded"`
+	Status string           `json:"status" example:"running"`
 	Steps  []NodeDeployStep `json:"steps"`
 }
 

@@ -30,15 +30,33 @@ type Store struct {
 	records map[string]*model.NodeDeployment
 }
 
+// storeVersion is the layout version of the store file that save writes.
+//
+// Version 2 names a deployment whose playbooks run deploying and one whose
+// every node was deployed running. A file without a version is version 1,
+// which named them running and succeeded; OpenStore renames them on load.
+const storeVersion = 2
+
 // storeFile is the layout of the store file.
 type storeFile struct {
+	Version     int                    `json:"version"`
 	Deployments []model.NodeDeployment `json:"deployments"`
+}
+
+// v1Statuses maps the deployment and node statuses of a version 1 store file
+// to the ones of the current version.
+var v1Statuses = map[string]string{
+	"running":   model.NodeDeployDeploying,
+	"succeeded": model.NodeDeployRunning,
 }
 
 // OpenStore builds a Store backed by the JSON file at path. An empty path keeps
 // records in memory only.
 //
-// A record left pending or running by a previous process is marked
+// A file of an older version is migrated to the current one and written back
+// in it; a file of a newer version is refused.
+//
+// A record left pending or deploying by a previous process is marked
 // interrupted: nothing follows it any more, and what its nodes ended up with is
 // unknown. A record left removing is marked remove-failed, so that it can be
 // taken down again.
@@ -59,6 +77,14 @@ func OpenStore(path string) (*Store, error) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, fmt.Errorf("failed to decode deployment records %q: %w", path, err)
 	}
+	version := body.Version
+	if version == 0 {
+		version = 1
+	}
+	if version > storeVersion {
+		return nil, fmt.Errorf("deployment records %q are of version %d; this service reads up to version %d",
+			path, version, storeVersion)
+	}
 
 	interrupted := 0
 	now := time.Now().UTC()
@@ -67,19 +93,39 @@ func OpenStore(path string) (*Store, error) {
 		if d.ID == "" {
 			return nil, fmt.Errorf("deployment records %q hold a record without an id", path)
 		}
+		if version == 1 {
+			migrateV1(&d)
+		}
 		if markInterrupted(&d, now) {
 			interrupted++
 		}
 		s.records[d.ID] = &d
 	}
-	if interrupted > 0 {
+	if interrupted > 0 || version < storeVersion {
 		if err := s.save(); err != nil {
 			return nil, err
 		}
-		log.Warn().Int("count", interrupted).Msg("Marked deployments left running by a previous start as interrupted")
+	}
+	if version < storeVersion {
+		log.Info().Str("file", path).Int("from", version).Int("to", storeVersion).Msg("Migrated deployment records")
+	}
+	if interrupted > 0 {
+		log.Warn().Int("count", interrupted).Msg("Marked deployments left deploying by a previous start as interrupted")
 	}
 	log.Info().Str("file", path).Int("count", len(s.records)).Msg("Loaded deployment records")
 	return s, nil
+}
+
+// migrateV1 renames the statuses of a record read from a version 1 store file.
+func migrateV1(d *model.NodeDeployment) {
+	if status, ok := v1Statuses[d.Status]; ok {
+		d.Status = status
+	}
+	for i := range d.Nodes {
+		if status, ok := v1Statuses[d.Nodes[i].Status]; ok {
+			d.Nodes[i].Status = status
+		}
+	}
 }
 
 // markInterrupted marks an unfinished record and its unfinished nodes
@@ -97,7 +143,7 @@ func markInterrupted(d *model.NodeDeployment, now time.Time) bool {
 		}
 		return true
 	}
-	if d.Status != model.NodeDeployPending && d.Status != model.NodeDeployRunning {
+	if d.Status != model.NodeDeployPending && d.Status != model.NodeDeployDeploying {
 		return false
 	}
 	d.Status = model.NodeDeployInterrupted
@@ -107,7 +153,7 @@ func markInterrupted(d *model.NodeDeployment, now time.Time) bool {
 	d.FinishedAt = &now
 	for i := range d.Nodes {
 		n := &d.Nodes[i]
-		if n.Status == model.NodeDeployPending || n.Status == model.NodeDeployRunning {
+		if n.Status == model.NodeDeployPending || n.Status == model.NodeDeployDeploying {
 			n.Status = model.NodeDeployInterrupted
 			if n.FinishedAt == nil {
 				n.FinishedAt = &now
@@ -191,7 +237,7 @@ func (s *Store) save() error {
 	if s.path == "" {
 		return nil
 	}
-	body := storeFile{Deployments: make([]model.NodeDeployment, 0, len(s.records))}
+	body := storeFile{Version: storeVersion, Deployments: make([]model.NodeDeployment, 0, len(s.records))}
 	for _, d := range s.records {
 		body.Deployments = append(body.Deployments, *d)
 	}

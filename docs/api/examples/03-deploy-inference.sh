@@ -11,11 +11,14 @@
 #   HF_TOKEN         optional; passed as inference.env.HF_TOKEN for gated
 #                    Hugging Face models. It is stored in plain text in the
 #                    deployment record and on the node.
+#   SSH_USER         optional; targets[].sshUser, the SSH user to run the
+#                    playbooks as instead of the CB-Tumblebug one, for
+#                    example ec2-user on an Amazon Linux or RHEL node
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 
 if [ $# -lt 3 ]; then
-	sed -n '2,13p' "$0" >&2
+	sed -n '2,16p' "$0" >&2
 	exit 2
 fi
 ns=$1 infra=$2 node=$3
@@ -25,9 +28,10 @@ runtime="${6:-}"
 
 body=$(jq -n --arg ns "$ns" --arg infra "$infra" --arg node "$node" \
 	--arg model "$model" --arg artifact "$artifact" --arg runtime "$runtime" \
-	--arg gpu "${GPU:-}" --arg hf "${HF_TOKEN:-}" '{
+	--arg gpu "${GPU:-}" --arg hf "${HF_TOKEN:-}" --arg user "${SSH_USER:-}" '{
 	type: "inference",
-	targets: [{kind: "node", nsId: $ns, infraId: $infra, nodeId: $node}],
+	targets: [{kind: "node", nsId: $ns, infraId: $infra, nodeId: $node}
+		+ (if $user != "" then {sshUser: $user} else {} end)],
 	inference: ({modelId: $model, artifactId: $artifact}
 		+ (if $runtime != "" then {runtimeId: $runtime} else {} end)
 		+ (if $gpu != "" then {gpu: ($gpu == "true")} else {} end)

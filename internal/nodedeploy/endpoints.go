@@ -35,12 +35,12 @@ func (f EndpointFilter) matches(typ string, t model.NodeDeployTarget) bool {
 // touched it there, the order laterOn takes: one that holds the work key (see
 // holdsWorkKey), or one that started its service and was taken down since,
 // since compose-down of the work key's project stopped whatever ran in it.
-// The work key has an endpoint only when that deployment succeeded on the
+// The work key has an endpoint only when that deployment is running on the
 // node. A later deployment that failed or was interrupted after it started
 // compose-up or copy-and-run leaves none: the same compose project was
 // recreated, so the containers of the earlier deployment are gone or in an
 // unknown state. A later deployment that failed before starting its service
-// does not count, and the earlier one stays. One still pending or running
+// does not count, and the earlier one stays. One still pending or deploying
 // leaves none until it ends. Dry-run deployments never count.
 func (s *Service) Endpoints(ctx context.Context, filter EndpointFilter) []model.Endpoint {
 	decided := make(map[string]bool)
@@ -63,7 +63,7 @@ func (s *Service) Endpoints(ctx context.Context, filter EndpointFilter) []model.
 				continue
 			}
 			decided[key] = true
-			if n.Status == model.NodeDeploySucceeded && n.Node != nil {
+			if n.Status == model.NodeDeployRunning && n.Node != nil {
 				out = append(out, endpointOf(&d, n, place.WorkKey))
 			}
 		}
@@ -94,7 +94,7 @@ func touchedWorkKey(n *model.NodeDeployResult) bool {
 	return (n.Status == model.NodeDeployRemoving || n.Status == model.NodeDeployRemoved) && startedService(n)
 }
 
-// endpointOf builds the endpoint of node result n of d, which succeeded.
+// endpointOf builds the endpoint of node result n of d, which is running there.
 func endpointOf(d *model.NodeDeployment, n *model.NodeDeployResult, workKey string) model.Endpoint {
 	e := model.Endpoint{
 		NsID: n.Target.NsID, InfraID: n.Target.InfraID, NodeID: n.Target.NodeID,

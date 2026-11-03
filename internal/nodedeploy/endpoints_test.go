@@ -28,7 +28,7 @@ func TestEndpointsListTheInferenceAndTheAppServing(t *testing.T) {
 	inf := deployed(t, f, modelReq("vm1"))
 	time.Sleep(2 * time.Millisecond)
 	app := deployed(t, f, appReq("vm1"))
-	if inf.Status != model.NodeDeploySucceeded || app.Status != model.NodeDeploySucceeded {
+	if inf.Status != model.NodeDeployRunning || app.Status != model.NodeDeployRunning {
 		t.Fatalf("deploy = %q, %q", inf.Status, app.Status)
 	}
 
@@ -78,7 +78,7 @@ func TestRedeployingAWorkKeyKeepsOneEndpointOfTheNewDeployment(t *testing.T) {
 	deployed(t, f, appReq("vm1", "vm2"))
 	time.Sleep(2 * time.Millisecond)
 	again := deployed(t, f, appReq("vm1"))
-	if again.Status != model.NodeDeploySucceeded {
+	if again.Status != model.NodeDeployRunning {
 		t.Fatalf("redeploy = %q", again.Status)
 	}
 	list := endpointsOf(f, EndpointFilter{})
@@ -153,7 +153,7 @@ func TestPortsNotOpenedAreFlagged(t *testing.T) {
 	f := newFixture(t, false)
 	f.tb.failRules = "sg-aws"
 	d := deployed(t, f, appReq("vm1"))
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("deploy = %q", d.Status)
 	}
 	list := endpointsOf(f, EndpointFilter{})

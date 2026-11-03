@@ -137,7 +137,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 ```
 
 - `202` 이면 받은 것이고 본문은 `pending` 기록입니다. `id` 를 저장해 두고 `GET /aiapp/deployments/{id}` 를 몇 초 간격으로 읽어
-  `status` 가 `pending`·`running` 이 아니게 될 때까지 진행을 보여 줍니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수 있습니다.
+  `status` 가 `pending`·`deploying` 이 아니게 될 때까지 진행을 보여 줍니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수 있습니다.
 - dry-run 이면 `200` 과 끝난 기록(`dry-run`)입니다.
 - 요청 오류는 `400`/`404`/`422` 와 `{"message": "..."}` 입니다. 그 `message` 를 그대로 보여 주면 무엇이 틀렸는지 알 수 있습니다.
 
@@ -147,7 +147,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 {
   "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48",
   "type": "inference",
-  "status": "succeeded",
+  "status": "running",
   "dryRun": false,
   "createdAt": "2026-11-03T12:00:00Z",
   "finishedAt": "2026-11-03T12:05:00Z",
@@ -155,18 +155,19 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
               "inference": {"modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16", "runtimeId": "vllm"}},
   "nodes": [{
     "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
-    "status": "succeeded",
+    "status": "running",
     "node": {"csp": "aws", "region": "ap-northeast-2", "zone": "ap-northeast-2a", "host": "203.0.113.10",
              "port": 22, "user": "cb-user", "specId": "aws+ap-northeast-2+g4dn.xlarge"},
+    "sshUser": "cb-user",
     "gpu": true, "gpuSource": "spec",
     "workKey": "ms-vllm", "nodeDir": "/opt/aiapp/ms-vllm",
     "serviceUrl": "http://203.0.113.10:8000/v1",
     "ports": [8000],
     "openedPorts": [{"securityGroupId": "etri-shared-aws-ap-northeast-2", "port": 8000, "protocol": "TCP", "result": "added"}],
     "steps": [
-      {"playbook": "install-docker.yml", "taskId": 41, "status": "success",
+      {"playbook": "install-docker.yml", "sshUser": "cb-user", "taskId": 41, "status": "success",
        "taskUrl": "http://203.0.113.5:3001/project/1/history?t=41"},
-      {"playbook": "compose-up.yml", "taskId": 42, "status": "success",
+      {"playbook": "compose-up.yml", "sshUser": "cb-user", "taskId": 42, "status": "success",
        "taskUrl": "http://203.0.113.5:3001/project/1/history?t=42"}
     ]
   }]
@@ -177,6 +178,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 |---|---|
 | 전체 상태 | `status` (README 7절의 표) |
 | 노드별 상태와 실패 이유 | `nodes[].status`, `nodes[].error`, `nodes[].notes` |
+| 노드에 접속한 SSH 사용자 | `nodes[].sshUser` (요청에 `targets[].sshUser` 를 주면 그 값, 아니면 CB-Tumblebug 의 `nodes[].node.user`) |
 | 지금 어느 단계인지 | `nodes[].steps[]` 의 마지막 항목 `playbook` |
 | Semaphore 화면 링크 | `nodes[].steps[].taskUrl` (AI-App 에 `AIAPP_SEMAPHORE_UI_URL` 이 있을 때만) |
 | 연 포트 | `nodes[].openedPorts[]`, 실패하면 `nodes[].portsError` |
@@ -190,11 +192,11 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/logs"
 ```json
 {
   "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48",
-  "status": "succeeded",
+  "status": "running",
   "nodes": [{
     "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
-    "status": "succeeded",
-    "steps": [{"playbook": "compose-up.yml", "taskId": 42, "status": "success",
+    "status": "running",
+    "steps": [{"playbook": "compose-up.yml", "sshUser": "cb-user", "taskId": 42, "status": "success",
                "taskUrl": "http://203.0.113.5:3001/project/1/history?t=42",
                "output": ["...태스크 로그 한 줄...", "..."]}]
   }]
@@ -234,7 +236,7 @@ curl -sS -H "$AUTH" -X DELETE "$AIAPP_URL/deployments/$id"
 ```
 
 - `202`·`removing` 이면 `removed` 또는 `remove-failed` 가 될 때까지 읽습니다. 할 일이 없으면 바로 `200`·`removed` 입니다.
-- 아직 `pending`·`running` 인 배포는 `409` 입니다. 끝난 뒤 다시 부릅니다.
+- 아직 `pending`·`deploying` 인 배포는 `409` 입니다. 끝난 뒤 다시 부릅니다.
 - `remove-failed` 면 `DELETE` 를 다시 부르면 남은 노드만 다시 시도합니다.
 - 컨테이너만 내리고 모델 가중치(named volume)와 연 포트는 남깁니다.
 

@@ -54,7 +54,7 @@ func TestInferenceOpensTheRuntimePortInEverySecurityGroup(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 
@@ -85,7 +85,7 @@ func TestAppOpensItsUploadedPortsAndSkipsOpenOnes(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 
@@ -116,7 +116,7 @@ func TestAppRequestPortsReplaceTheUploadedOnes(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
 	}
 	if got := rulesBySG(t, f.tb.rulesCalls()); !maps.Equal(got, map[string]string{"sg-aws": "9443"}) {
@@ -159,16 +159,16 @@ func TestPortsThatCannotBeOpenedLeaveTheNodeSucceeded(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
-		t.Fatalf("status = %q, want succeeded although a port could not be opened; nodes = %+v", d.Status, d.Nodes)
+	if d.Status != model.NodeDeployRunning {
+		t.Fatalf("status = %q, want running although a port could not be opened; nodes = %+v", d.Status, d.Nodes)
 	}
 	vm1, vm2 := d.Nodes[0], d.Nodes[1]
 	if vm1.PortsError != "" {
 		t.Errorf("vm1 ports error = %q", vm1.PortsError)
 	}
-	if vm2.Status != model.NodeDeploySucceeded || !strings.Contains(vm2.PortsError, "sg-azure-a") ||
+	if vm2.Status != model.NodeDeployRunning || !strings.Contains(vm2.PortsError, "sg-azure-a") ||
 		!strings.Contains(vm2.PortsError, "cannot change") {
-		t.Errorf("vm2 status %q ports error %q, want succeeded with the group and the reason", vm2.Status, vm2.PortsError)
+		t.Errorf("vm2 status %q ports error %q, want running with the group and the reason", vm2.Status, vm2.PortsError)
 	}
 	if !slices.ContainsFunc(vm2.Notes, func(n string) bool { return strings.Contains(n, "portsError") }) {
 		t.Errorf("vm2 notes = %v, want one pointing to portsError", vm2.Notes)
@@ -207,7 +207,7 @@ func TestPortOpeningOffOnlyNotes(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeploySucceeded {
+	if d.Status != model.NodeDeployRunning {
 		t.Fatalf("status = %q", d.Status)
 	}
 	if calls := f.tb.rulesCalls(); len(calls) != 0 {

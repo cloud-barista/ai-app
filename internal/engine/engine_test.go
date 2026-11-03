@@ -35,7 +35,7 @@ type fakeApp struct {
 	mu     sync.Mutex
 	dryRun bool
 	// progress is the status each get_deployment read of a created deployment
-	// answers in turn; the last one repeats. Empty answers succeeded.
+	// answers in turn; the last one repeats. Empty answers running.
 	progress []string
 	// records are deployments that exist before the test, by id.
 	records map[string]model.NodeDeployment
@@ -83,7 +83,7 @@ func (f *fakeApp) nextStatus() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.progress) == 0 {
-		return model.NodeDeploySucceeded
+		return model.NodeDeployRunning
 	}
 	status := f.progress[0]
 	if len(f.progress) > 1 {
@@ -93,18 +93,18 @@ func (f *fakeApp) nextStatus() string {
 }
 
 // deployment builds a record of req whose nodes match status: a partial one
-// succeeded on the first node only.
+// runs on the first node only.
 func deployment(id, status string, dryRun bool, req model.NodeDeploymentReq) model.NodeDeployment {
 	d := model.NodeDeployment{ID: id, Type: req.Type, Status: status, DryRun: dryRun, Request: req}
 	for i, t := range req.Targets {
 		n := model.NodeDeployResult{Target: t, Status: status}
 		switch status {
-		case model.NodeDeploySucceeded:
+		case model.NodeDeployRunning:
 			n.ServiceURL = "http://10.0.0." + fmt.Sprint(i+1) + ":11434/v1"
 		case model.NodeDeployPartial:
 			n.Status = model.NodeDeployFailed
 			if i == 0 {
-				n.Status = model.NodeDeploySucceeded
+				n.Status = model.NodeDeployRunning
 			}
 		}
 		if n.Status == model.NodeDeployFailed {
@@ -395,17 +395,17 @@ func TestDeployAppDryRun(t *testing.T) {
 }
 
 func TestDeploySucceeds(t *testing.T) {
-	fake := &fakeApp{progress: []string{"running", "running", "succeeded"}}
+	fake := &fakeApp{progress: []string{"deploying", "deploying", "running"}}
 	e, _ := newEngine(t, fake)
 
 	run := execute(t, e, WorkflowDeploy, modelRequest("vm1", "vm2"))
 
 	expectShape(t, run, "get_model:succeeded create_deployment:succeeded get_deployment:succeeded")
-	if run.Status != RunSucceeded || run.DryRun || run.Message != "deployment dep-1 succeeded on every node" {
+	if run.Status != RunSucceeded || run.DryRun || run.Message != "deployment dep-1 is running on every node" {
 		t.Errorf("run = %s dryRun %t %q", run.Status, run.DryRun, run.Message)
 	}
 	wait := run.Steps[2]
-	if !strings.HasPrefix(wait.Message, "deployment dep-1 succeeded, 2 of 2 nodes succeeded; serving at "+
+	if !strings.HasPrefix(wait.Message, "deployment dep-1 running, 2 of 2 nodes running; serving at "+
 		"etri/travel/vm1 http://10.0.0.1:11434/v1") || !strings.Contains(wait.Message, "after 3 reads") {
 		t.Errorf("wait message = %q", wait.Message)
 	}
@@ -416,10 +416,10 @@ func TestDeploySucceeds(t *testing.T) {
 
 func TestDeployFailedAndPartialFailTheRun(t *testing.T) {
 	for status, want := range map[string]string{
-		model.NodeDeployFailed:  "deployment dep-1 failed, 0 of 2 nodes succeeded; not succeeded on etri/travel/vm1 failed: compose-up.yml",
-		model.NodeDeployPartial: "deployment dep-1 partial, 1 of 2 nodes succeeded; not succeeded on etri/travel/vm2 failed: compose-up.yml",
+		model.NodeDeployFailed:  "deployment dep-1 failed, 0 of 2 nodes running; not running on etri/travel/vm1 failed: compose-up.yml",
+		model.NodeDeployPartial: "deployment dep-1 partial, 1 of 2 nodes running; not running on etri/travel/vm2 failed: compose-up.yml",
 	} {
-		fake := &fakeApp{progress: []string{"running", status}}
+		fake := &fakeApp{progress: []string{"deploying", status}}
 		e, _ := newEngine(t, fake)
 
 		run := execute(t, e, WorkflowDeploy, modelRequest("vm1", "vm2"))
@@ -432,7 +432,7 @@ func TestDeployFailedAndPartialFailTheRun(t *testing.T) {
 }
 
 func TestDeployStopsAtThePollLimit(t *testing.T) {
-	fake := &fakeApp{progress: []string{"running"}}
+	fake := &fakeApp{progress: []string{"deploying"}}
 	e, _ := newEngine(t, fake)
 	e.waitTimeout, e.waitInterval = 5*time.Millisecond, time.Millisecond
 
@@ -442,7 +442,7 @@ func TestDeployStopsAtThePollLimit(t *testing.T) {
 	if got := fake.count("get_deployment"); got != 6 {
 		t.Errorf("get_deployment called %d times, want 6 (5ms / 1ms + 1)", got)
 	}
-	if err := run.Steps[2].Error; !strings.HasPrefix(err, "still running after 6 reads") ||
+	if err := run.Steps[2].Error; !strings.HasPrefix(err, "still deploying after 6 reads") ||
 		!strings.Contains(err, ToolStatus) {
 		t.Errorf("wait error = %q", err)
 	}
@@ -482,7 +482,7 @@ func TestDeployCreateFailureSkipsWait(t *testing.T) {
 
 func TestHealSucceededDoesNothing(t *testing.T) {
 	fake := &fakeApp{records: map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeploySucceeded, false, modelRequest("vm1"))}}
+		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1"))}}
 	e, _ := newEngine(t, fake)
 
 	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "old"})
@@ -492,14 +492,14 @@ func TestHealSucceededDoesNothing(t *testing.T) {
 		t.Errorf("run = %s %q", run.Status, run.Message)
 	}
 	if fake.count("create_deployment") != 0 {
-		t.Errorf("a succeeded deployment was run again: %v", fake.calledTools())
+		t.Errorf("a running deployment was run again: %v", fake.calledTools())
 	}
 }
 
 func TestHealRunsTheSameRequestAgainOnce(t *testing.T) {
 	for _, status := range []string{model.NodeDeployFailed, model.NodeDeployPartial, model.NodeDeployInterrupted} {
 		original := appRequest(2, "vm1", "vm2")
-		fake := &fakeApp{progress: []string{"running", "succeeded"}, records: map[string]model.NodeDeployment{
+		fake := &fakeApp{progress: []string{"deploying", "running"}, records: map[string]model.NodeDeployment{
 			"old": deployment("old", status, false, original)}}
 		e, _ := newEngine(t, fake)
 
@@ -507,7 +507,7 @@ func TestHealRunsTheSameRequestAgainOnce(t *testing.T) {
 
 		expectShape(t, run, "get_deployment:succeeded create_deployment:succeeded get_deployment:succeeded")
 		if run.Status != RunSucceeded || run.Message !=
-			"deployment old was "+status+" and succeeded on every node when run again as dep-1" {
+			"deployment old was "+status+" and is running on every node when run again as dep-1" {
 			t.Errorf("%s: run = %s %q", status, run.Status, run.Message)
 		}
 		if len(fake.requests) != 1 || fake.requests[0].App.Version != 2 || len(fake.requests[0].Targets) != 2 ||
@@ -535,13 +535,13 @@ func TestHealAgainFailedFailsTheRun(t *testing.T) {
 
 func TestHealLeavesARunningDeployment(t *testing.T) {
 	fake := &fakeApp{records: map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1"))}}
+		"old": deployment("old", model.NodeDeployDeploying, false, modelRequest("vm1"))}}
 	e, _ := newEngine(t, fake)
 
 	run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "old"})
 
 	expectShape(t, run, "get_deployment:failed create_deployment:skipped get_deployment:skipped")
-	if got := run.Steps[0].Error; got != "deployment old is still running; heal it after it ends" {
+	if got := run.Steps[0].Error; got != "deployment old is still deploying; heal it after it ends" {
 		t.Errorf("read error = %q", got)
 	}
 }
@@ -561,7 +561,7 @@ func TestHealUnderDryRunBlocksCreate(t *testing.T) {
 
 func TestControl(t *testing.T) {
 	records := map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeploySucceeded, false, modelRequest("vm1", "vm2"))}
+		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1", "vm2"))}
 	cases := []struct {
 		fake  *fakeApp
 		shape string
@@ -593,17 +593,17 @@ func TestControl(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	fake := &fakeApp{records: map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeploySucceeded, false, modelRequest("vm1"))}}
+		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1"))}}
 	e, _ := newEngine(t, fake)
 
 	run := execute(t, e, WorkflowStatus, StatusInput{DeploymentID: "old"})
 
 	expectShape(t, run, "get_deployment:succeeded get_deployment_logs:succeeded")
-	want := "etri/travel/vm1 succeeded (compose-up.yml): l3 | l4 | l5 | l6 | PLAY RECAP ok=6 failed=0"
+	want := "etri/travel/vm1 running (compose-up.yml): l3 | l4 | l5 | l6 | PLAY RECAP ok=6 failed=0"
 	if run.Steps[1].Message != want {
 		t.Errorf("logs message = %q, want %q", run.Steps[1].Message, want)
 	}
-	if run.Status != RunSucceeded || !strings.HasPrefix(run.Message, "deployment old succeeded, 1 of 1 nodes") ||
+	if run.Status != RunSucceeded || !strings.HasPrefix(run.Message, "deployment old running, 1 of 1 nodes") ||
 		!strings.HasSuffix(run.Message, "output: "+want) {
 		t.Errorf("status run = %s %q", run.Status, run.Message)
 	}
@@ -656,7 +656,7 @@ func TestUnreachableAppServerRunsNothing(t *testing.T) {
 
 func TestRunsAreArchived(t *testing.T) {
 	fake := &fakeApp{dryRun: true, records: map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeploySucceeded, false, modelRequest("vm1"))}}
+		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1"))}}
 	e, dir := newEngine(t, fake)
 
 	first := execute(t, e, WorkflowDeploy, modelRequest("vm1"))
@@ -684,7 +684,7 @@ func TestRunsAreArchived(t *testing.T) {
 
 func TestEngineMCPPublishesWorkflowAndCatalogToolsWithGrades(t *testing.T) {
 	fake := &fakeApp{dryRun: true, records: map[string]model.NodeDeployment{
-		"old": deployment("old", model.NodeDeploySucceeded, false, modelRequest("vm1"))}}
+		"old": deployment("old", model.NodeDeployRunning, false, modelRequest("vm1"))}}
 	e, _ := newEngine(t, fake)
 	srv := httptest.NewServer(mcpserver.NewNamedHandler(MCPServerName, NewRegistry(e)))
 	t.Cleanup(srv.Close)
