@@ -13,13 +13,14 @@
 |---|---|
 | AI-App 은 무엇을 하나 | CB-Tumblebug 이 이미 만든 VM(노드)에 **추론 서비스(런타임 + 모델)와 AI 응용을 올리고 내리는 API** 입니다. VM 은 만들지 않습니다 (1절) |
 | 기관마다 무엇을 하나 | ETRI 는 Tumblebug API 로 GPU VM 을 만듭니다([etri.md](etri.md)). BESP AI-Web 은 카탈로그를 읽고 배포를 요청하고 주소를 읽습니다([besp.md](besp.md)). 경희대는 모델·응용 추천을 이 repo 안에 구현합니다. 지금은 자리만 있고 `501` 입니다([khu.md](khu.md)) |
-| 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다. 응용은 올린 파일 묶음과 `deploy.sh` 이고, Dify, Open WebUI, Langflow 예시가 있습니다 (9절) |
+| 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다. 응용은 올린 파일 묶음과 `deploy.sh` 이고, Dify, Open WebUI, Langflow 예시가 있습니다. 셋이 각각 모델에 어떻게 붙는지와 실제 화면은 12절입니다 |
 | 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
-| 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절) |
+| 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절). Semaphore 는 Ansible playbook 을 웹 화면·API 로 돌려 주는 서버이고, 노드에서 무슨 일이 있었는지 화면으로 볼 수 있습니다 (3-1절) |
 | 언제 `succeeded` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
+| API 는 어디로 열려 있나 | 관리 API 는 AI-App(`:8090/aiapp`, Bearer 토큰), 모델 호출(vLLM `:8000/v1`, Ollama `:11434`)과 응용 화면은 노드가 직접 엽니다. AI-App 은 중계하지 않습니다 (1-1절) |
 | 주소는 어디서 얻나 | `GET /aiapp/endpoints` 입니다. 서빙 포트는 배포가 성공하면 노드 보안 그룹에 자동으로 열립니다 (8절) |
 | 내리기는 | `DELETE /aiapp/deployments/{id}` 입니다. 노드에서 `docker compose down` 을 하고 named volume 은 남깁니다 (7절) |
-| 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](live-test-2026-11-03.md)) |
+| 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](live-test-2026-11-03.md)). 각 응용에서 모델을 실제로 부른 화면은 12절입니다 |
 
 ---
 
@@ -49,6 +50,57 @@ AI-App 은 **CB-Tumblebug 이 이미 만든 VM 에 추론 서비스와 AI 응용
 | 6 | AI-Web 기반 전체 배포 | BESP | 11/30 | AI-Web 이 AI-App API 를 부름 ([besp.md](besp.md)) |
 | 7 | Travel Planner 통합 | ETRI | 12/11 | 포털이 `GET /aiapp/endpoints` 의 주소를 씀 |
 
+### 1-1. API 는 어디로 열려 있나
+
+API 는 두 층입니다. **관리 API** 는 AI-App 서버 하나가 열고, 무엇을 어디에 올릴지 정하고 주소를 알려 줍니다.
+**서비스 API** 는 배포가 끝난 노드가 직접 엽니다. 모델에 질문하는 요청과 응용 화면은 AI-App 을 거치지 않고 노드로 바로 갑니다.
+
+![API 는 어디로 열려 있나](../figures/08-api-exposure.svg)
+
+| 층 | 주소 | 인증 | 누가 부르나 |
+|---|---|---|---|
+| 관리 API | `http://<AI-App 호스트>:8090/aiapp/...` (9절 목록) | `Authorization: Bearer <토큰>` (5절). `readyz`·Swagger·콘솔은 토큰 없이 | AI-Web, ETRI 스크립트, MCP 클라이언트 |
+| Swagger | `http://<AI-App 호스트>:8090/aiapp/api/index.html` | 없음 (화면에서 Authorize 로 토큰을 넣고 바로 불러 볼 수 있음) | 개발자 |
+| 추론 서비스 (vLLM) | `http://<노드>:8000/v1` (OpenAI 호환: `/v1/models`, `/v1/chat/completions`, `/v1/embeddings`) | 없음 | 응용, 포털 |
+| 추론 서비스 (Ollama) | `http://<노드>:11434` (Ollama API `/api/*`), `http://<노드>:11434/v1` (OpenAI 호환) | 없음 | 응용, 포털 |
+| 응용 | `http://<노드>:<응용 포트>` (Dify `80`, Open WebUI `3000`, Langflow `7860`) | 응용 자체의 로그인 | 사람 (브라우저), 응용 API |
+
+- 노드 쪽 주소는 직접 조립하지 않고 `GET /aiapp/endpoints` 로 받습니다. 추론 서비스는 `url`·`healthUrl`, 응용은 `urls[]` 입니다.
+- 노드 쪽 포트는 배포가 성공하면 AI-App 이 노드의 보안 그룹에 엽니다(8절). **출처 제한 없이(`0.0.0.0/0`) 열리고 추론 서비스에는
+  인증이 없습니다.** 시험 환경 기준이며 운영에서 막을 방법은 열린 문제입니다.
+- AI-App 의 토큰은 노드 쪽 서비스에 쓰이지 않습니다.
+- 노드를 정지했다가 다시 켜면 CSP 에 따라 공인 IP 가 바뀝니다(aws 에서 확인). `GET /aiapp/endpoints` 의 주소는 **배포할 때의 IP**
+  이므로, 다시 켠 뒤에는 그 노드에 다시 배포해야 새 주소가 나옵니다. 지금 노드 IP 는 CB-Tumblebug 의 노드 조회로 봅니다.
+
+실제 응답 예입니다(2026-11-03, IP 는 `<vm2>` 로 가림).
+
+```sh
+curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/endpoints?nodeId=vm2b-2"
+```
+
+```json
+{"endpoints": [
+  {"nodeId": "vm2b-2", "csp": "azure", "type": "app", "workKey": "app-open-webui", "name": "open-webui", "version": 1,
+   "urls": [{"port": 3000, "url": "http://<vm2>:3000"}], "portsOpened": true,
+   "openedPorts": [{"securityGroupId": "travel-vm2b", "port": 3000, "protocol": "TCP", "result": "added"}]},
+  {"nodeId": "vm2b-2", "csp": "azure", "type": "inference", "workKey": "ms-ollama",
+   "runtimeId": "ollama", "modelId": "qwen3-vl-8b", "artifactId": "ollama-gguf",
+   "url": "http://<vm2>:11434/v1", "healthUrl": "http://<vm2>:11434/", "portsOpened": true}
+]}
+```
+
+받은 `url` 로 모델을 바로 부릅니다. 아래는 vm1 의 vLLM 임베딩 서비스를 부른 실제 결과입니다.
+
+```sh
+curl -sS http://<vm1>:8000/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen/Qwen3-Embedding-0.6B","input":["남산서울타워 야경"]}'
+# 결과: model Qwen/Qwen3-Embedding-0.6B, 1024차원 벡터 하나, prompt_tokens 10
+```
+
+Swagger 화면입니다. 모든 경로와 필드 설명이 여기 있습니다.
+
+![Swagger UI](../figures/shots/swagger.png)
+
 ## 2. 전체 흐름
 
 전체 구조는 맨 위 한 장 요약의 그림입니다. 번호는 부르는 순서입니다.
@@ -63,7 +115,37 @@ AI-App 은 **CB-Tumblebug 이 이미 만든 VM 에 추론 서비스와 AI 응용
 
 ## 3. Semaphore 구조
 
-Semaphore 는 Ansible playbook 을 웹 화면과 API 로 돌려 주는 도구입니다(`semaphoreui/semaphore:v2.12.17`).
+### 3-1. Semaphore 가 무엇인가
+
+**Ansible** 은 SSH 로 여러 서버에 같은 작업을 돌리는 도구입니다. 무엇을 할지는 **playbook**(YAML 작업 파일)에 적습니다.
+예를 들면 "docker 를 깔아라", "이 파일을 복사하고 `docker compose up` 을 해라" 같은 것입니다.
+**Semaphore**(Semaphore UI, `semaphoreui/semaphore:v2.12.17`)는 Ansible 을 웹 화면과 REST API 로 돌려 주는 서버입니다.
+누가 언제 무엇을 돌렸는지, 성공했는지, 출력이 무엇이었는지를 태스크 이력으로 남깁니다.
+
+AI-App 은 노드에 직접 SSH 하지 않고 Semaphore 에 맡깁니다. 그래서 노드에서 일어난 일을 사람이 Semaphore 화면에서 그대로 볼 수
+있습니다. 협력 기관은 Semaphore 를 직접 부르지 않습니다. AI-App API 의 `GET /aiapp/deployments/{id}/logs` 가 같은 출력을
+돌려주고, 단계마다 Semaphore 화면 링크(`taskUrl`)를 붙입니다.
+
+| Semaphore 의 말 | 뜻 | AI-App 에서는 |
+|---|---|---|
+| 프로젝트 (project) | 작업 묶음 | `aiapp` 하나. 처음 배포할 때 AI-App 이 만듭니다 |
+| 저장소 (repository) | playbook 이 있는 곳 | 이 repo 의 `deploy/ansible/` 을 Semaphore 컨테이너에 마운트한 폴더 |
+| 키 저장소 (key store) | SSH 키·비밀번호 | 배포할 노드의 SSH 키. CB-Tumblebug 에서 받아 **실행할 때만** 넣고 끝나면 지웁니다 |
+| 인벤토리 (inventory) | 작업할 서버 목록 | 그 노드의 주소 한 줄. 키와 같이 실행 때만 있습니다 |
+| 템플릿 (task template) | "이 playbook 을 이 인벤토리에" 의 저장된 실행 설정 | playbook 마다 하나씩 고정(`aiapp-install-docker`, `aiapp-compose-up`, `aiapp-copy-and-run`, `aiapp-compose-down`) |
+| 태스크 (task) | 템플릿을 한 번 실행한 것 | 노드 하나의 단계 하나. 배포 기록의 `nodes[].steps[]` 와 1:1 |
+
+아래는 시험 환경의 실제 화면입니다(2026-11-03). 태스크 목록에는 AI-App 이 돌린 태스크가 템플릿 이름, 성공·실패, 걸린 시간과
+함께 쌓입니다. 한 줄을 열면 playbook 의 단계가 하나씩 찍힌 로그가 나옵니다.
+
+![Semaphore 태스크 목록](../figures/shots/semaphore-history.png)
+
+![Semaphore 태스크 로그 (compose-up)](../figures/shots/semaphore-tasklog.png)
+
+![Semaphore 템플릿 넷](../figures/shots/semaphore-templates.png)
+
+### 3-2. AI-App 이 Semaphore 를 쓰는 방법
+
 Semaphore 에 관리자 계정이 있고(docker compose 의 `deploy` 프로필이 `AIAPP_SEMAPHORE_USERNAME`·`AIAPP_SEMAPHORE_PASSWORD` 로 만듦)
 AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사용자·비밀번호 또는 `AIAPP_SEMAPHORE_TOKEN`), 나머지는 AI-App 이
 첫 배포 때 스스로 만듭니다. Semaphore 화면에서 미리 만들 것은 없습니다. 이것은 AI-App 운영자(이노그리드)가 맞추는 부분입니다.
@@ -183,6 +265,8 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 
 배포 상태(`status`)는 아래 열 가지입니다. 노드 상태(`nodes[].status`)는 `partial` 을 뺀 같은 값입니다.
 
+![배포 기록의 상태](../figures/09-deploy-states.svg)
+
 | 상태 | 뜻 | 다음 |
 |---|---|---|
 | `pending` | 받았고 아직 시작 전 | 계속 읽음 |
@@ -195,6 +279,10 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 | `removing` | `DELETE` 를 받아 노드에서 내리는 중 | 계속 읽음 |
 | `removed` | 모든 노드에서 내림 | 끝 |
 | `remove-failed` | 일부 노드에서 내리기 실패 | `nodes[].error` 를 보고 `DELETE` 를 다시 부르면 남은 노드만 다시 시도 |
+
+노드 하나가 `succeeded` 가 되기까지 확인하는 것은 아래와 같습니다. 자세한 것은 그림 아래 두 문단입니다.
+
+![노드가 succeeded 가 되기까지](../figures/11-success-checks.svg)
 
 헬스: 추론 서비스는 `compose-up` 이 노드 안에서 런타임 헬스 경로(vLLM `/health`, Ollama `/`)가 응답할 때까지 기다려야 노드가
 `succeeded` 가 됩니다. GPU 를 쓰는 추론 서비스(`nodes[].gpu` 가 `true`)는 그다음 런타임이 GPU 위에 있는지 봅니다. vLLM 은
@@ -334,3 +422,86 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
   `catalog`, `/app/data/catalog/models.json`)은 아티팩트 필드가 `engines` 라 새 코드가 읽지 못해 기동이 실패합니다. 그 파일을 지우면 기본
   모델 3개로 다시 시작합니다. 옛 배포 기록의 `type: model-service` 는 `inference` 로 읽히지 않습니다(목록에는 남지만 필터와 주소 조회에서 빠짐).
   자세한 것은 저장소 README 의 "업그레이드" 절.
+
+## 12. 예시 응용 셋은 어떻게 동작하나
+
+`examples/apps/` 의 세 응용은 업로드(`POST /aiapp/apps`)해서 바로 배포할 수 있는 예시입니다. 셋 다 노드에서 `deploy.sh` 가
+`docker compose up -d` 로 컨테이너를 띄우는 같은 방식이고, 다른 것은 **모델 주소를 어떻게 받느냐** 입니다.
+배포 요청의 `app.env` 가 노드의 `.env` 가 되고, 응용은 그 값으로 추론 서비스를 부릅니다.
+
+![예시 응용 셋은 모델에 어떻게 닿나](../figures/12-example-apps.svg)
+
+| | Dify | Open WebUI | Langflow |
+|---|---|---|---|
+| 무엇인가 | LLM 앱·RAG(문서 검색 + 생성)·워크플로를 화면에서 만드는 플랫폼 | ChatGPT 같은 대화 화면 | 컴포넌트를 선으로 이어 LLM 흐름(에이전트)을 만들고 API 로 공개하는 빌더 |
+| 버전 | 1.18.0 (공식 compose 를 그 태그로 받음) | v0.12.4 | 1.13.0 |
+| 컨테이너 | 16개 (nginx, web, api, worker, postgres, redis, weaviate, sandbox, plugin_daemon 등) | 1개 | 1개 (내장 SQLite) |
+| 포트 | `80` | `3000` | `7860` |
+| 모델 주소 env | `VLLM_BASE_URL` (안내용) | `OLLAMA_BASE_URL` (필수) | `MODEL_BASE_URL` |
+| 모델에 붙는 방법 | Dify 는 모델 공급자를 화면이나 콘솔 API 로 등록합니다. 스크립트는 넣을 주소를 출력만 합니다 | 기동할 때 그 Ollama 를 붙입니다. 모델 목록이 바로 보입니다. 주소는 `/v1` 없이 `:11434` 까지입니다 | 전역 변수 `MODEL_BASE_URL` 로 들어갑니다. 모델 컴포넌트의 Base URL 칸에서 그 변수를 고릅니다 |
+| 그 밖의 env | `DIFY_PORT`, `DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN` (없으면 노드에서 만들어 둠) | `OPEN_WEBUI_PORT` | `LANGFLOW_SUPERUSER_PASSWORD` (필수), `LANGFLOW_SUPERUSER`, `LANGFLOW_PORT` |
+| 첫 화면에서 할 일 | `/install` 에서 관리자 계정 만들기 | 처음 가입한 계정이 관리자 | env 로 준 관리자로 로그인 |
+
+env 값은 배포 기록과 노드의 `.env` 에 평문으로 남습니다(10절). 비밀번호를 넣을 때는 이 점을 알고 넣습니다.
+
+### 12-0. 시험한 노드 (2026-11-03)
+
+아래 화면은 모두 이 노드 3대에서 찍었습니다. 값은 CB-Tumblebug 의 노드·스펙 조회와 노드 안의 명령(`uname -m`, `nvidia-smi`,
+`docker ps`)으로 확인한 것입니다. vm3 는 계획상 gcp `g2-standard-4`(L4) 이지만 gcp 서비스 계정 권한 문제로 일단 aws `g6.xlarge`(L4) 로
+진행했습니다.
+
+| 노드 | CSP · 리전 (존) | 스펙 | 아키텍처 | 이미지 · OS | GPU 드라이버 · docker |
+|---|---|---|---|---|---|
+| vm1 (`vm1-2`) | aws `ap-northeast-1` 도쿄 (`ap-northeast-1a`) | `g4dn.xlarge`: 4 vCPU, 16 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `ami-0e8e3e0f677c0f395`, Ubuntu 22.04.5 LTS | 595.112.07 · 29.9.2 |
+| vm2 (`vm2b-2`) | azure `koreacentral` (존 1) | `Standard_NC4as_T4_v3`: 4 vCPU, 28 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `microsoft-dsvm:ubuntu-hpc:2204:22.04.2026100101`, Ubuntu 22.04.5 LTS | 580.178.04 · 29.8.1 |
+| vm3 (`vm3-2`) | aws `ap-northeast-1` 도쿄 (`ap-northeast-1a`) | `g6.xlarge`: 4 vCPU, 16 GiB, NVIDIA L4 1장(24 GB), 디스크 150 GB | x86_64 | `ami-0e8e3e0f677c0f395`, Ubuntu 22.04.5 LTS | 595.112.07 · 29.9.2 |
+
+| 노드 | 런타임 (엔진) 버전 | 모델 · 아티팩트 | 응용 · 버전 |
+|---|---|---|---|
+| vm1 | vLLM `v0.32.0` (`vllm/vllm-openai:v0.32.0`), 포트 8000 | `qwen3-embedding-0.6b` / `hf-bf16` (`Qwen/Qwen3-Embedding-0.6B`, BF16, 1024차원 임베딩) | Dify `1.18.0` (plugin_daemon `0.6.10`, weaviate `1.39.13`, postgres 15, redis 6), 포트 80 |
+| vm2 | Ollama `0.40.13` (`ollama/ollama:0.40.13`), 포트 11434 | `qwen3-vl-8b` / `ollama-gguf` (`qwen3-vl:8b`, GGUF Q4_K_M, 6.2 GB) | Open WebUI `v0.12.4`, 포트 3000 |
+| vm3 | vLLM `v0.32.0` (`vllm/vllm-openai:v0.32.0`), 포트 8000 | `ministral-3-8b` / `hf-fp8` (`mistralai/Ministral-3-8B-Instruct-2512`, FP8, 카탈로그 인자 `--max-model-len 32768` 등) | Langflow `1.13.0`, 포트 7860 |
+
+### 12-1. Open WebUI (azure vm2, Ollama + Qwen3-VL-8B)
+
+`OLLAMA_BASE_URL=http://<vm2>:11434` 로 배포했습니다. 관리자 설정의 연결 화면에 그 주소가 들어가 있고, 대화 화면에서
+`qwen3-vl:8b` 를 바로 고를 수 있습니다. 이 모델은 답하기 전에 생각하는 단계가 있어 "N초 동안 생각함" 이 먼저 보입니다.
+답의 내용(장소 설명이 틀린 것 포함)은 모델의 몫이고 AI-App 이 고치지 않습니다.
+
+![Open WebUI 연결 설정](../figures/shots/open-webui-connections.png)
+
+![Open WebUI 대화](../figures/shots/open-webui-chat.png)
+
+### 12-2. Dify (aws vm1, vLLM + Qwen3-Embedding-0.6B)
+
+vm1 의 모델은 임베딩 모델이라, Dify 의 **지식(Knowledge)** 기능으로 RAG 의 검색 쪽을 확인했습니다.
+
+1. `/install` 에서 관리자를 만들고 로그인합니다.
+2. 플러그인 `langgenius/openai_api_compatible` 를 설치하고, 모델 공급자 OpenAI-API-compatible 에 Text Embedding 모델
+   `Qwen/Qwen3-Embedding-0.6B`, API endpoint `http://<vm1>:8000/v1` 을 등록합니다. Dify 는 등록할 때 그 주소를 실제로 불러 봅니다.
+3. 관광 안내 문서(경복궁, 북촌, 남산서울타워, 한강공원, 광장시장 다섯 단락)를 지식으로 올립니다. 인덱스 방식은 고품질(임베딩)입니다.
+   단락마다 vLLM 이 1024차원 벡터를 만들고 Dify 의 weaviate 에 저장합니다.
+4. 검색 테스트에서 "밤에 서울 야경을 보려면 어디로 가야 해?" 를 넣으면 남산서울타워 단락이 맨 위(점수 0.44)로 나옵니다.
+   질문에 "남산" 이라는 말이 없는데도 뜻으로 찾았습니다.
+
+![Dify 지식에 올린 문서](../figures/shots/dify-knowledge.png)
+
+![Dify 검색 테스트](../figures/shots/dify-retrieval-test.png)
+
+이 지식을 쓰는 대화 앱(검색한 단락을 붙여 LLM 이 답함)을 만들려면 대화 모델이 하나 더 있어야 합니다. 예를 들어 vm2 의 Ollama 나 vm3 의
+vLLM 을 같은 방법으로 LLM 공급자로 등록합니다.
+
+### 12-3. Langflow (aws vm3, vLLM + Ministral 3 8B)
+
+`MODEL_BASE_URL=http://<vm3>:8000/v1` 로 배포했고(배포 `succeeded`), 관리자로 로그인해 흐름
+`Chat Input → Prompt → OpenAI 컴포넌트(모델 mistralai/Ministral-3-8B-Instruct-2512) → Chat Output` 을 만들었습니다.
+같은 노드의 vLLM 은 `succeeded` 이고 `gpuCheck` 가 `nvidia-smi: 3344, VLLM::EngineCore, 20614 MiB` 입니다.
+**그러나 2026-11-03 시험에서 Langflow 1.13.0 이 그 vLLM 을 부르지 못했습니다.** 흐름 실행(`POST /api/v1/run/<flow id>`)에서 두 가지로 막혔습니다.
+
+| # | 막힌 곳 | Langflow 의 오류 (줄임) | 고칠 방법 (아직 안 함) |
+|---|---|---|---|
+| 1 | env 로 넣은 전역 변수 `MODEL_BASE_URL` 이 Credential 형식으로 만들어져, Base URL 칸에 쓸 수 없음 | `Cannot use a Credential-typed global variable in 'openai_api_base'` | 화면에서 변수 형식을 Generic 으로 바꾸거나, Base URL 칸에 주소를 직접 넣음 |
+| 2 | 주소를 직접 넣어도 `http` 주소는 거절함 | `Provider endpoint 'http://<vm3>:8000/v1' must use https ... allowlist the host via LANGFLOW_SSRF_ALLOWED_HOSTS` | 예시 compose 에 `LANGFLOW_SSRF_ALLOWED_HOSTS` 를 env 로 받게 고침 |
+
+Langflow 1.13 의 기본 모델 컴포넌트(Language Model)에는 OpenAI 호환 주소를 넣는 칸이 없습니다. 그래서 OpenAI 컴포넌트의
+`OpenAI API Base` 칸을 씁니다. 위 2번을 고치기 전까지 Langflow 예시는 "화면이 열리고 로그인되는 것" 까지 확인된 상태입니다.

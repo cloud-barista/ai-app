@@ -1,6 +1,6 @@
 # AI 모델 카탈로그와 노드 배포 재구성 설계 (3차 개편)
 
-> 작성 2026-10-29. 2차 개편의 프로세스 구성(AI-App 서비스 + 자동화 엔진 +
+> 작성 2026-10-29, 갱신 2026-11-03. 2차 개편의 프로세스 구성(AI-App 서비스 + 자동화 엔진 +
 > 협력 기관 모의)은 그대로 두고, 그 안의 **데이터 모델과 배포 실행 경로**를 다시 짠다.
 >
 > **4차 개편(2026-11-03)에서 이름이 바뀌었다.** 엔진(`/aiapp/engines`, `engines[].engine`, `engine`)은 런타임(`/aiapp/runtimes`,
@@ -21,6 +21,8 @@
 | 노드에는 어떻게 올리나 | AI-App 이 파일을 공유 저장소에 놓고, Semaphore 가 SSH 로 playbook 을 돌린다. template 은 고정, SSH 키와 inventory 는 실행마다 만들고 지운다 (4.3, 4.4) |
 | 노드 위에서 겹치면 | 작업 키(`ms-<runtimeId>`, `app-<name>`)가 같으면 앞의 배포를 바꾼다. 노드 하나에 추론 서비스는 런타임당 하나, 응용은 이름당 하나다 (4.5) |
 | 추천은 | 이 repo 의 담당이 아니다. AI-App 은 판단 재료(정밀도 · 크기 · 형식)를 원래 값 그대로 내주고, 경희대가 구현할 자리(`/aiapp/recommendations/*`)만 둔다 (2절, [khu.md](../api/khu.md)) |
+| 배포는 언제 끝나나 | 노드마다 `docker 준비 → 파일 놓기·기동 → 헬스(응용은 포트 응답) → GPU(응용은 컨테이너 안정)` 를 확인해야 `succeeded` 다. 그 뒤 AI-App 이 보안 그룹에 포트를 연다 (4.4) |
+| 부르는 쪽은 어디로 가나 | 관리 요청은 AI-App(`:8090/aiapp`), 모델 호출과 응용 화면은 노드로 바로 간다. 주소는 `GET /aiapp/endpoints` 가 준다 (5절) |
 | 지금의 API 계약은 | 이 문서가 아니라 [docs/api/](../api/README.md) 에 있다. 이 문서는 왜 이렇게 나눴는지의 기록이다 |
 
 ---
@@ -157,6 +159,14 @@ AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로�
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
 | 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
+노드 하나가 `succeeded` 가 되기까지 4단계 태스크 안에서 확인하는 것은 아래와 같다(4차 개편에서 GPU 확인과 응용의 포트 응답·안정 확인이 더해졌다).
+
+![노드가 succeeded 가 되기까지](../figures/11-success-checks.svg)
+
+배포 기록은 아래 상태를 지난다. 노드마다 같은 값을 따로 갖고, 배포 기록은 그것을 모은 값이다.
+
+![배포 기록의 상태](../figures/09-deploy-states.svg)
+
 **배포마다 등록하는 방식을 고른 이유.** mc-observability·o11y-manager 는 고정 템플릿에 대상 정보를 env 로 넘긴다. 그 방식은
 Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 위해 템플릿을 여러 벌 돌려 쓴다. 배포마다 key·inventory 를
 등록하면 노드별로 무엇이 돌았는지 보이는 대신, 키가 Semaphore DB 에 남지 않도록 지우는 단계(6)가 반드시 있어야 한다.
@@ -168,6 +178,8 @@ Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 �
 ### 4.5 노드 위의 배치
 
 노드 위의 폴더와 compose 프로젝트는 배포 ID 가 아니라 작업 키로 정한다.
+
+![노드 위에 놓이는 것](../figures/10-node-layout.svg)
 
 | 종류 | 작업 키 | 노드 폴더 | compose 프로젝트 |
 |------|---------|-----------|------------------|
@@ -202,6 +214,10 @@ dry-run 이면 1·2 까지만 한다(조회와 파일 배치). Semaphore 에 아
 결과로 돌려준다.
 
 ## 5. API
+
+![API 는 어디로 열려 있나](../figures/08-api-exposure.svg)
+
+관리 API 는 AI-App 하나가 열고, 노드에 올라간 추론 서비스와 응용은 노드가 직접 연다. AI-App 은 모델 호출을 중계하지 않고 주소만 알려 준다(`GET /aiapp/endpoints`).
 
 | 리소스 | 경로 | 비고 |
 |--------|------|------|
@@ -253,7 +269,9 @@ ETRI 가 제시한 여행 계획 통합 포털 시나리오. 포털은 별도 �
 |------|------|------|----------|------|------|
 | aws vm1 | 관광 문서 분석 (RAG) | Qwen3-Embedding-0.6B | HF `Qwen/Qwen3-Embedding-0.6B`, BF16 | vLLM | Dify |
 | azure vm2 | 이미지 분석·여행 계획 생성 | Qwen3-VL-8B | Ollama `qwen3-vl:8b` (GGUF, 6.2GB) | Ollama | Open WebUI |
-| gcp vm3 | 일정 검증·외부 API·알림 (에이전트) | Ministral 3 8B | HF `mistralai/Ministral-3-8B-Instruct-2512`, FP8 | vLLM | Langflow |
+| aws vm3 | 일정 검증·외부 API·알림 (에이전트) | Ministral 3 8B | HF `mistralai/Ministral-3-8B-Instruct-2512`, FP8 | vLLM | Langflow |
+
+vm3 는 계획상 gcp `g2-standard-4`(L4) 이지만 gcp 권한 문제로 일단 aws `g6.xlarge`(L4) 로 진행했다.
 
 HF 값은 2026-10-29 에 `https://huggingface.co/api/models/<id>` 로 확인했다(Qwen3-Embedding-0.6B `feature-extraction` BF16,
 Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8 가중치 + BF16 일부, 아키텍처

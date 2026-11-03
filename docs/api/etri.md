@@ -2,6 +2,8 @@
 
 > 대상: CB-Tumblebug 으로 GPU VM 을 만들고 그 위에 추론 서비스와 응용을 올려 Travel Planner 포털에 붙이는 ETRI 개발자.
 > 공통 내용(인증, 오류, 상태, 포트)은 [README.md](README.md) 에 있습니다.
+> API 가 어디로 열려 있는지는 [README.md 1-1절](README.md#1-1-api-는-어디로-열려-있나), Semaphore 는 [3-1절](README.md#3-1-semaphore-가-무엇인가),
+> 예시 응용 셋의 동작과 실제 화면은 [12절](README.md#12-예시-응용-셋은-어떻게-동작하나) 에 있습니다.
 
 ## 1. 나누는 일
 

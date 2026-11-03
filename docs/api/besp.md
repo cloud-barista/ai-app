@@ -2,6 +2,8 @@
 
 > 대상: AI-Web 화면에서 런타임·모델·응용을 고르고 배포·상태·주소·내리기를 보여 줄 BESP 개발자.
 > 공통 내용(인증, 오류 형식, 상태 코드, 배포 상태 목록)은 [README.md](README.md) 에 있습니다.
+> API 가 어디로 열려 있는지는 [README.md 1-1절](README.md#1-1-api-는-어디로-열려-있나), Semaphore 는 [3-1절](README.md#3-1-semaphore-가-무엇인가),
+> 예시 응용 셋의 동작과 실제 화면은 [12절](README.md#12-예시-응용-셋은-어떻게-동작하나) 에 있습니다.
 > 아래 응답 예시는 Swagger(`api/docs/swagger.yaml`)의 필드 예시를 모아 줄인 것이고, 실제 응답에는 필드가 더 있습니다.
 
 ## 1. 인증
@@ -87,7 +89,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/apps"
 ```json
 {"apps": [
   {"name": "open-webui", "versions": [
-    {"version": 1, "script": "docker compose up -d", "ports": [3000], "createdAt": "2026-10-29T12:00:00Z",
+    {"version": 1, "script": "docker compose up -d", "ports": [3000], "createdAt": "2026-11-03T12:00:00Z",
      "files": [{"name": "docker-compose.yml", "sizeBytes": 812, "sha256": "9f86d081..."}]}
   ]}
 ]}
@@ -147,8 +149,8 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
   "type": "inference",
   "status": "succeeded",
   "dryRun": false,
-  "createdAt": "2026-10-29T12:00:00Z",
-  "finishedAt": "2026-10-29T12:05:00Z",
+  "createdAt": "2026-11-03T12:00:00Z",
+  "finishedAt": "2026-11-03T12:05:00Z",
   "request": {"type": "inference", "targets": [{"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"}],
               "inference": {"modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16", "runtimeId": "vllm"}},
   "nodes": [{
