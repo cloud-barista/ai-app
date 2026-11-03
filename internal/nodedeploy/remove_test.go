@@ -315,7 +315,7 @@ func TestRemoveInADryRunServiceSendsNothingAndKeepsTheStatus(t *testing.T) {
 
 func TestRemoveOfANodeCBTumblebugNoLongerHas(t *testing.T) {
 	f := newFixture(t, false)
-	storeRecord(t, f, succeededApp("old", time.Now().UTC(), "gone", "vm9"))
+	storeRecord(t, f, succeededApp("old", time.Now().UTC(), "gone", "vm9", "down"))
 
 	if _, err := f.svc.Remove(context.Background(), "old"); err != nil {
 		t.Fatal(err)
@@ -324,9 +324,13 @@ func TestRemoveOfANodeCBTumblebugNoLongerHas(t *testing.T) {
 	if n := done.Nodes[0]; n.Status != model.NodeDeployRemoved || len(n.Notes) != 1 || n.Notes[0] != noteRemoveNodeGone {
 		t.Errorf("gone = %+v", n)
 	}
-	// Any other failure to read the node fails the node.
-	if n := done.Nodes[1]; n.Status != model.NodeDeployRemoveFailed || n.Error == "" {
+	// CB-Tumblebug 0.13.8 answers a missing node with 500 "no Node found".
+	if n := done.Nodes[1]; n.Status != model.NodeDeployRemoved || len(n.Notes) != 1 || n.Notes[0] != noteRemoveNodeGone {
 		t.Errorf("vm9 = %+v", n)
+	}
+	// Any other failure to read the node fails the node.
+	if n := done.Nodes[2]; n.Status != model.NodeDeployRemoveFailed || n.Error == "" {
+		t.Errorf("down = %+v", n)
 	}
 	if done.Status != model.NodeDeployRemoveFailed || f.runner.count() != 0 {
 		t.Errorf("status %q, runs %d", done.Status, f.runner.count())

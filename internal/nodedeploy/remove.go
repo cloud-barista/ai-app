@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -303,7 +302,7 @@ func (s *Service) removeNode(ctx context.Context, id string, idx int, place plac
 	}
 
 	node, err := s.tb.GetNode(ctx, target.NsID, target.InfraID, target.NodeID)
-	if tumblebug.StatusCode(err) == http.StatusNotFound {
+	if errors.Is(err, tumblebug.ErrNodeNotFound) {
 		s.finishRemoval(id, idx, model.NodeDeployRemoved, "", noteRemoveNodeGone)
 		return
 	}
