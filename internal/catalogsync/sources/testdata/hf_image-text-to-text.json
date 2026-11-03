@@ -1,0 +1,99 @@
+[
+ {
+  "_id": "6a72f2e302294c7d32dd278e",
+  "id": "Qwen/Qwen3.8-27B",
+  "cardData": {
+   "license": "apache-2.0"
+  },
+  "config": {
+   "architectures": [
+    "Qwen3_5ForConditionalGeneration"
+   ],
+   "model_type": "qwen3_5"
+  },
+  "safetensors": {
+   "parameters": {
+    "BF16": 27781427952
+   },
+   "total": 27781427952
+  },
+  "tags": [
+   "transformers",
+   "safetensors",
+   "qwen3_5",
+   "image-text-to-text"
+  ],
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "transformers"
+ },
+ {
+  "_id": "69b1b2ec895b2d5026e6bc2e",
+  "id": "google/gemma-4-31B-it",
+  "cardData": {
+   "license": "apache-2.0"
+  },
+  "config": {
+   "architectures": [
+    "Gemma4ForConditionalGeneration"
+   ],
+   "model_type": "gemma4"
+  },
+  "safetensors": {
+   "parameters": {
+    "BF16": 31273088876
+   },
+   "total": 31273088876
+  },
+  "tags": [
+   "transformers",
+   "safetensors",
+   "gemma4",
+   "image-text-to-text"
+  ],
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "transformers"
+ },
+ {
+  "_id": "6a9e86d1dab7f88030e2af20",
+  "id": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+  "cardData": {
+   "license": "apache-2.0"
+  },
+  "config": {},
+  "tags": [
+   "gguf",
+   "gsq",
+   "rco",
+   "quantization"
+  ],
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "gguf"
+ },
+ {
+  "_id": "68ea05fb43df37d95ad2491d",
+  "id": "Qwen/Qwen3-VL-8B-Instruct",
+  "cardData": {
+   "license": "apache-2.0"
+  },
+  "config": {
+   "architectures": [
+    "Qwen3VLForConditionalGeneration"
+   ],
+   "model_type": "qwen3_vl"
+  },
+  "safetensors": {
+   "parameters": {
+    "BF16": 8767123696
+   },
+   "total": 8767123696
+  },
+  "tags": [
+   "transformers",
+   "safetensors",
+   "qwen3_vl",
+   "image-text-to-text"
+  ],
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "transformers"
+ }
+]

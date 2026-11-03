@@ -1,0 +1,56 @@
+[
+ {
+  "_id": "621ffdc036468d709f17434d",
+  "id": "openai-community/gpt2",
+  "cardData": {
+   "license": "mit"
+  },
+  "config": {
+   "architectures": [
+    "GPT2LMHeadModel"
+   ],
+   "model_type": "gpt2"
+  },
+  "safetensors": {
+   "parameters": {
+    "F32": 137022720
+   },
+   "total": 137022720
+  },
+  "tags": [
+   "transformers",
+   "pytorch",
+   "tf",
+   "jax"
+  ],
+  "pipeline_tag": "text-generation",
+  "library_name": "transformers"
+ },
+ {
+  "_id": "680da718233834890aa01f51",
+  "id": "Qwen/Qwen3-0.6B",
+  "cardData": {
+   "license": "apache-2.0"
+  },
+  "config": {
+   "architectures": [
+    "Qwen3ForCausalLM"
+   ],
+   "model_type": "qwen3"
+  },
+  "safetensors": {
+   "parameters": {
+    "BF16": 751632384
+   },
+   "total": 751632384
+  },
+  "tags": [
+   "transformers",
+   "safetensors",
+   "qwen3",
+   "text-generation"
+  ],
+  "pipeline_tag": "text-generation",
+  "library_name": "transformers"
+ }
+]

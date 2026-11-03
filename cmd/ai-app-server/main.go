@@ -22,6 +22,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
 	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync/sources"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
@@ -90,7 +91,7 @@ func main() {
 	defer stopSync()
 	var syncRunner *catalogsync.Runner
 	if cfg.CatalogSync.Enabled {
-		syncSources, err := newSyncSources(cfg.CatalogSync.Sources)
+		syncSources, err := sources.New(cfg.CatalogSync.Sources)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to set up catalog sync sources")
 			os.Exit(1)

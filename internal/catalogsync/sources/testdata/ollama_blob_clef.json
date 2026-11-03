@@ -1,0 +1,10 @@
+{
+ "model_format": "gguf",
+ "model_family": "clef",
+ "model_families": [
+  "clef"
+ ],
+ "model_type": "27.0B",
+ "file_type": "Q4_K_M",
+ "requires": "0.40.4"
+}

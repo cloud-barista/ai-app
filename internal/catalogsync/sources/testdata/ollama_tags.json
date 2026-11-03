@@ -1,0 +1,84 @@
+{
+ "models": [
+  {
+   "name": "nemotron-3-super",
+   "model": "nemotron-3-super",
+   "modified_at": "2026-03-11T00:00:00Z",
+   "size": 230500000000,
+   "digest": "da11955bb451",
+   "details": {
+    "parent_model": "",
+    "format": "",
+    "family": "",
+    "families": null,
+    "parameter_size": "",
+    "quantization_level": ""
+   },
+   "capabilities": [
+    "completion",
+    "thinking",
+    "tools"
+   ]
+  },
+  {
+   "name": "gpt-oss:20b",
+   "model": "gpt-oss:20b",
+   "modified_at": "2025-08-05T00:00:00Z",
+   "size": 13780162412,
+   "digest": "05afbac4bad6",
+   "details": {
+    "parent_model": "",
+    "format": "",
+    "family": "",
+    "families": null,
+    "parameter_size": "",
+    "quantization_level": ""
+   },
+   "capabilities": [
+    "completion",
+    "tools",
+    "thinking"
+   ]
+  },
+  {
+   "name": "clef:27b",
+   "model": "clef:27b",
+   "modified_at": "2026-10-04T09:00:00-07:00",
+   "size": 54969731792,
+   "digest": "490a326b58a0",
+   "details": {
+    "parent_model": "",
+    "format": "",
+    "family": "",
+    "families": null,
+    "parameter_size": "",
+    "quantization_level": ""
+   },
+   "capabilities": [
+    "decision",
+    "vision"
+   ]
+  },
+  {
+   "name": "kimi-k2.6",
+   "model": "kimi-k2.6",
+   "modified_at": "2026-04-20T00:00:00Z",
+   "size": 595148192736,
+   "digest": "4764ecb21f85",
+   "details": {
+    "parent_model": "",
+    "format": "",
+    "family": "",
+    "families": null,
+    "parameter_size": "",
+    "quantization_level": ""
+   },
+   "capabilities": [
+    "vision",
+    "thinking",
+    "completion",
+    "tools"
+   ]
+  }
+ ]
+}
