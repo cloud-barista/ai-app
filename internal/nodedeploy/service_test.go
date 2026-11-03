@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -465,6 +466,30 @@ func TestAppDeploymentStagesFilesScriptAndEnv(t *testing.T) {
 	last := f.runner.runs[len(f.runner.runs)-1]
 	if last.Playbook != PlaybookCopyAndRun || last.ExtraVars["script"] != ScriptFile {
 		t.Errorf("last run = %s %v", last.Playbook, last.ExtraVars)
+	}
+	if ports, _ := last.ExtraVars["app_ports"].([]int); !slices.Equal(ports, []int{3000, 8080}) {
+		t.Errorf("app_ports = %#v, want the ports of app version 2", last.ExtraVars["app_ports"])
+	}
+}
+
+func TestAppDeploymentWithoutPortsPassesAnEmptyPortList(t *testing.T) {
+	f := newFixture(t, false)
+	req := appReq("vm1")
+	req.App.Version = 1
+	created, err := f.svc.Create(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded {
+		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
+	}
+
+	f.runner.mu.Lock()
+	defer f.runner.mu.Unlock()
+	last := f.runner.runs[len(f.runner.runs)-1]
+	ports, ok := last.ExtraVars["app_ports"].([]int)
+	if last.Playbook != PlaybookCopyAndRun || !ok || ports == nil || len(ports) != 0 {
+		t.Errorf("last run = %s app_ports %#v, want an empty, non-nil list", last.Playbook, last.ExtraVars["app_ports"])
 	}
 }
 

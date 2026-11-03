@@ -486,6 +486,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	} else {
 		vars := copyVars(common)
 		vars["script"] = ScriptFile
+		vars["app_ports"] = append([]int{}, ports...)
 		steps = append(steps, withPlaybook(base, PlaybookCopyAndRun, vars))
 	}
 

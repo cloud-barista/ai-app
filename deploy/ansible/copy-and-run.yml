@@ -14,6 +14,25 @@
 #                  from that folder. A .env in the folder is exported first.
 #                  It may start with "." (AI-App stages it as .aiapp-run.sh so
 #                  that it never clashes with an uploaded file name).
+#   app_ports      ports the application serves on the node; each must give
+#                  an HTTP answer from the node itself before the deployment
+#                  counts as done. An empty list skips this check.
+#   ready_retries  optional, attempts per port before giving up (default 60)
+#   ready_delay    optional, seconds between attempts (default 10)
+#   settle_seconds optional, seconds to wait after the ports answer before the
+#                  containers are checked (default 30)
+#
+# The script only starts the application, so its exit code alone does not
+# tell whether the application runs. After it, every port in app_ports is
+# polled with curl from the node. Any HTTP answer, error statuses included,
+# counts: Docker publishes ports through docker-proxy, which accepts a TCP
+# connection even when nothing listens in the container, so a plain connect
+# would pass; curl reports that as an empty reply or a refused connection.
+# Then, after settle_seconds, the containers of the compose project are
+# checked: one that is restarting, has restarted, or exited with a non-zero
+# code fails the run with its state, restart count and last log lines. A
+# container that exited 0, like a one-shot init service, is fine. A script
+# that starts no container of the project passes this check.
 #
 # Deploying the same application again replaces the files in its folder
 # (tasks/place-files.yml), takes down the containers of the compose project,
@@ -73,3 +92,66 @@
     - name: Show the script output
       ansible.builtin.debug:
         var: script_result.stdout_lines
+
+    - name: Wait until the application ports answer
+      ansible.builtin.command:
+        argv: [curl, -sS, -o, /dev/null, --max-time, "10", "http://127.0.0.1:{{ item }}/"]
+      loop: "{{ app_ports | default([]) }}"
+      register: ready_result
+      until: ready_result.rc == 0
+      retries: "{{ ready_retries | default(60) | int }}"
+      delay: "{{ ready_delay | default(10) | int }}"
+      changed_when: false
+
+    - name: Let the containers settle
+      ansible.builtin.wait_for:
+        timeout: "{{ settle_seconds | default(30) | int }}"
+      when: settle_seconds | default(30) | int > 0
+
+    # Exits 3 when a container is not stable, printing one block per
+    # container; any other non-zero code is an error of the check itself.
+    - name: Check that the containers of the project are stable
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if ! command -v docker >/dev/null 2>&1; then
+          echo "docker is not installed; no container to check"
+          exit 0
+        fi
+        ids=$(docker ps -aq --filter label=com.docker.compose.project={{ compose_project | quote }})
+        if [ -z "$ids" ]; then
+          echo "no container of the project to check"
+          exit 0
+        fi
+        bad=0
+        for id in $ids; do
+          info=$(docker inspect --format \
+            '{% raw %}{{.Name}} {{.State.Status}} {{.State.Restarting}} {{.RestartCount}} {{.State.ExitCode}}{% endraw %}' \
+            "$id" 2>/dev/null) || continue
+          read -r name status restarting count code <<<"$info"
+          name=${name#/}
+          if [ "$status" = restarting ] || [ "$restarting" = true ] || [ "$count" -gt 0 ] ||
+            { { [ "$status" = exited ] || [ "$status" = dead ]; } && [ "$code" -ne 0 ]; }; then
+            bad=1
+            echo "$name: state $status, restarts $count, exit code $code; last log lines:"
+            docker logs --tail 5 "$id" 2>&1 | sed 's/^/    /' || true
+          else
+            echo "$name: state $status, restarts $count, exit code $code"
+          fi
+        done
+        if [ "$bad" -ne 0 ]; then
+          exit 3
+        fi
+      args:
+        executable: /bin/bash
+      register: stable_result
+      changed_when: false
+      failed_when: stable_result.rc not in [0, 3]
+
+    - name: Show the container states
+      ansible.builtin.debug:
+        var: stable_result.stdout_lines
+
+    - name: Fail when a container is not stable
+      ansible.builtin.fail:
+        msg: "Containers of {{ compose_project }} are not stable:\n{{ stable_result.stdout }}"
+      when: stable_result.rc == 3

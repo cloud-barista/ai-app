@@ -421,7 +421,9 @@ NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가�
 
 - 추론 서비스: `compose-up` 이 노드 안에서 `curl http://127.0.0.1:<port><healthPath>` 를 10초 간격 60번까지 시도하고, 응답해야 노드가 `succeeded` 입니다.
   Ollama 는 서버가 모델을 받기 전에 응답하므로 `model-pull` 컨테이너가 0 으로 끝나기를 먼저 기다립니다(`wait_timeout` 기본 1800초).
-- 응용: script 의 종료 코드가 전부입니다. 응용이 응답하는지는 확인하지 않습니다.
+- 응용: script 가 0 으로 끝난 뒤 `copy-and-run` 이 응용 포트(`nodes[].ports`)마다 노드 안에서 `curl http://127.0.0.1:<port>/` 를 10초 간격 60번까지 보내고,
+  HTTP 응답(상태 코드는 묻지 않음)이 와야 넘어갑니다. 이어 30초 뒤 compose 프로젝트의 컨테이너 중 재시작 중이거나 재시작했거나 0 이 아닌 코드로
+  끝난 것이 있으면 실패합니다. 0 으로 끝난 초기화 컨테이너는 괜찮습니다. 자세한 것은 [docs/api/README.md](docs/api/README.md) 7절.
 - Infra 기준 헬스 경로(`.../{infraId}/health`, `check_serving_health`)와 엔진의 별도 헬스 단계는 없습니다.
 
 ### 5-6. 서빙 포트 열기 (4차 개편)
