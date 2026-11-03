@@ -317,7 +317,7 @@ AI 응용은 **이름 + 파일 + 노드에서 돌릴 script** 입니다 (`intern
 | 번들 | 파일 | 배포 요청 `env` | 업로드 `ports` |
 |---|---|---|---|
 | `examples/apps/open-webui` | `deploy.sh`, `docker-compose.yml` (`ghcr.io/open-webui/open-webui:v0.12.4`) | `OLLAMA_BASE_URL` (필수), `OPEN_WEBUI_PORT` (기본 `3000`) | `3000` |
-| `examples/apps/langflow` | `deploy.sh`, `docker-compose.yml` (`langflowai/langflow:1.13.0`) | `MODEL_BASE_URL`, `LANGFLOW_PORT` (기본 `7860`) | `7860` |
+| `examples/apps/langflow` | `deploy.sh`, `docker-compose.yml` (`langflowai/langflow:1.13.0`) | `LANGFLOW_SUPERUSER_PASSWORD`(필수), `MODEL_BASE_URL`(Langflow 의 Generic 전역 변수가 됨), `LANGFLOW_SSRF_ALLOWED_HOSTS`, `LANGFLOW_PORT` (기본 `7860`) | `7860` |
 | `examples/apps/dify` | `deploy.sh` 하나. 노드에서 Dify `1.18.0` 공식 compose 를 `git clone` 해 띄움 (노드에 `git` 필요) | `DIFY_PORT` (기본 `80`), `VLLM_BASE_URL` (Dify 화면에 넣을 값을 출력만 함) | `80` |
 
 ```sh

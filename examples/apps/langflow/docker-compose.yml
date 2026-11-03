@@ -1,16 +1,23 @@
 # Langflow: builds LangChain based agents and flows from connected nodes and
-# serves them over an API. One container with its built-in SQLite database,
-# kept with logs and secret keys in the langflow volume.
+# serves them over an API. One container with its built-in SQLite database.
+# LANGFLOW_SAVE_DB_IN_CONFIG_DIR puts that database in the config folder, the
+# langflow volume, with the secret key; without it Langflow 1.13 keeps it in
+# the image and a redeploy loses every flow.
 #
 # Settings come from .env beside this file, which the deployment request
-# writes:
+# writes, and from deploy.sh:
 #   LANGFLOW_SUPERUSER_PASSWORD  password of the admin account (required:
 #                    Langflow 1.13 refuses to start without it)
 #   LANGFLOW_SUPERUSER  name of the admin account (default admin)
-#   MODEL_BASE_URL   OpenAI compatible model server, e.g. http://203.0.113.7:8000/v1.
-#                    Langflow stores it as the global variable MODEL_BASE_URL,
-#                    which a model component's base URL field can select.
+#   LANGFLOW_SSRF_ALLOWED_HOSTS  hosts Langflow may call over plain http.
+#                    Langflow 1.13 refuses an http model endpoint unless its
+#                    host is listed; deploy.sh fills it with the host of
+#                    MODEL_BASE_URL when it is not set.
 #   LANGFLOW_PORT    host port of the web interface and API (default 7860)
+#
+# MODEL_BASE_URL is not passed to the container: Langflow turns environment
+# variables into Credential variables, which a base URL field refuses.
+# deploy.sh stores it as a Generic global variable through the Langflow API.
 services:
   langflow:
     image: langflowai/langflow:1.13.0
@@ -19,11 +26,11 @@ services:
       - "${LANGFLOW_PORT:-7860}:7860"
     environment:
       LANGFLOW_CONFIG_DIR: /app/langflow
+      LANGFLOW_SAVE_DB_IN_CONFIG_DIR: "true"
       LANGFLOW_AUTO_LOGIN: "false"
       LANGFLOW_SUPERUSER: "${LANGFLOW_SUPERUSER:-admin}"
       LANGFLOW_SUPERUSER_PASSWORD: "${LANGFLOW_SUPERUSER_PASSWORD:?set LANGFLOW_SUPERUSER_PASSWORD in the deployment env}"
-      MODEL_BASE_URL: "${MODEL_BASE_URL:-}"
-      LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT: MODEL_BASE_URL
+      LANGFLOW_SSRF_ALLOWED_HOSTS: "${LANGFLOW_SSRF_ALLOWED_HOSTS:-}"
     volumes:
       - langflow:/app/langflow
 

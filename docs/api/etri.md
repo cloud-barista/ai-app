@@ -195,7 +195,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 |---|---|---|
 | Dify | `VLLM_BASE_URL` (화면에 넣을 값을 로그에 찍기만 함), `DIFY_PORT`(기본 80) | `http://<vm1>/install` 에서 관리자 계정을 만들고, 설정 > Model Provider > OpenAI-API-compatible 에 `VLLM_BASE_URL` 을 넣음 |
 | Open WebUI | `OLLAMA_BASE_URL` (필수), `OPEN_WEBUI_PORT`(기본 3000) | `http://<vm2>:3000` |
-| Langflow | `MODEL_BASE_URL`, `LANGFLOW_PORT`(기본 7860) | `http://<vm3>:7860`. 모델 컴포넌트의 base URL 에서 전역 변수 `MODEL_BASE_URL` 을 고름 |
+| Langflow | `LANGFLOW_SUPERUSER_PASSWORD`(필수), `MODEL_BASE_URL`, `LANGFLOW_PORT`(기본 7860) | `http://<vm3>:7860`. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 전역 변수 `MODEL_BASE_URL` 을 고름 ([README.md](README.md) 12-3절) |
 
 포트를 기본값과 다르게 쓰면(`OPEN_WEBUI_PORT=8080` 처럼) 열 포트도 같이 바꿔야 합니다: `"app": {..., "ports": [8080]}`.
 
