@@ -1658,6 +1658,11 @@ const docTemplate = `{
                     "description": "StartedAt and FinishedAt bound the last run of the source. Both are\nabsent until the source has run once.",
                     "type": "string",
                     "example": "2026-11-04T03:00:00Z"
+                },
+                "unreachable": {
+                    "description": "Unreachable is why the reachability check failed, such as a timeout\nor a TLS certificate the client does not trust. Empty when the host\nanswered.",
+                    "type": "string",
+                    "example": "Head \"https://huggingface.co\": context deadline exceeded"
                 }
             }
         },

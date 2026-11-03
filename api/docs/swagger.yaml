@@ -51,6 +51,13 @@ definitions:
           absent until the source has run once.
         example: "2026-11-04T03:00:00Z"
         type: string
+      unreachable:
+        description: |-
+          Unreachable is why the reachability check failed, such as a timeout
+          or a TLS certificate the client does not trust. Empty when the host
+          answered.
+        example: 'Head "https://huggingface.co": context deadline exceeded'
+        type: string
     type: object
   catalogsync.Status:
     properties:

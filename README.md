@@ -899,6 +899,10 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 | `AIAPP_HEALTH_INTERVAL` | `20s` | Engine | 그 사이 다시 묻는 간격 |
 | `AIAPP_ARCHIVE_DIR` | `./data/archive` | App | 배포·제어 아카이브 위치 |
 | `AIAPP_MODEL_STORE_FILE` | | App | 모델 카탈로그를 쓰고 기동 때 다시 읽는 JSON 파일. 파일이 아직 없을 때만 시드 3개를 넣음. 비우면 메모리에만 둠(재기동하면 시드부터 다시) |
+| `AIAPP_CATALOG_SYNC_ENABLED` | `true` | App | 모델 카탈로그 자동 수집. 기동 때 한 번, 그 뒤 주기마다 출처에서 모델 정보를 받아 넣음 ([docs/api/README.md](docs/api/README.md) 9-2) |
+| `AIAPP_CATALOG_SYNC_INTERVAL` | `24h` | App | 수집 주기 (Go duration). 닿는 출처가 하나도 없으면 5분, 15분, 1시간 뒤에 먼저 다시 시도 |
+| `AIAPP_CATALOG_SYNC_SOURCES` | 다섯 개 전부 | App | 쉼표로 나눈 출처 이름: `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle` |
+| `AIAPP_CATALOG_SYNC_LIMIT` | `100` | App | 출처마다(HF 는 태스크마다) 받는 모델 수의 상한. 양을 줄이는 값이고 거르는 기준이 아님 |
 | `AIAPP_APP_STORE_DIR` | `./data/apps` | App | 업로드한 응용 저장 위치. `<name>/<version>/` 아래 `files/`, `script.sh`, `meta.json`. 기동 때 다시 읽음 |
 | `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` (256 MiB) | App | 업로드 한 번의 script 와 파일 합계 상한 (바이트) |
 | `AIAPP_SEMAPHORE_URL` | | App | 노드에 playbook 을 돌릴 Semaphore 주소(`/api` 없이). 비우면 dry-run 이 아닐 때 노드 배포만 실패 |

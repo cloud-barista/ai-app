@@ -343,8 +343,10 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 |---|---|---|
 | GET | `/aiapp/runtimes` | 런타임 목록 (`id`, `image`, `formats`, `port`, `healthPath`, `apiBasePath`) |
 | GET | `/aiapp/runtimes/{runtimeId}` | 런타임 하나 |
-| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source` |
-| POST | `/aiapp/models` | 모델 등록. 같은 `id` 면 바꿔 씀 |
+| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified` |
+| POST | `/aiapp/models` | 모델 등록. 같은 `id` 면 바꿔 씀. 언제나 `origin: manual` 로 저장되고 수집이 더는 건드리지 않음 |
+| GET | `/aiapp/models/sync` | 카탈로그 자동 수집 상태: 켜짐, 실행 중, 다음 실행 시각, 출처마다 닿는지·받은 수·결과 |
+| POST | `/aiapp/models/sync` | 지금 바로 수집. `202`, 이미 도는 중이면 `409`, 꺼져 있으면 `503` |
 | GET | `/aiapp/models/{modelId}` | 모델 하나 |
 | DELETE | `/aiapp/models/{modelId}` | 모델 삭제. 이미 떠 있는 추론 서비스는 그대로 |
 | GET | `/aiapp/models/{modelId}/artifacts/{artifactId}/compose` | 노드에 갈 compose 파일 미리 보기 (쿼리 `runtimeId`, `gpu`, 되풀이하는 `arg`) |
@@ -353,6 +355,43 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 | GET | `/aiapp/apps/{name}` | 응용 하나 (모든 버전) |
 | GET | `/aiapp/apps/{name}/versions/{version}` | 응용 한 버전 |
 | DELETE | `/aiapp/apps/{name}` | 응용 삭제 (모든 버전). 노드에 올라간 것은 그대로 |
+
+#### 모델 카탈로그 자동 수집
+
+AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYNC_INTERVAL`) 공개 모델 출처 다섯 곳에서 모델 정보를 받아 카탈로그에 넣습니다.
+받은 값은 **출처가 적은 그대로** 넣습니다. 어떤 모델이 요청이나 GPU 에 맞는지 고르는 일은 하지 않습니다(추천 몫, [khu.md](khu.md)).
+
+| 출처 (`origin`) | 읽는 곳 | 넣는 것 | 배포 가능 (`runtimes[]`) |
+|---|---|---|---|
+| `huggingface` | Hugging Face 모델 API. 태스크마다 내려받기 순 상위 N개 (`text-generation`→chat, `image-text-to-text`→vision-chat, `feature-extraction`→embedding) | 이름, 공개 주체, 파라미터 수, 정밀도(safetensors 표기 그대로), 라이선스 | 아키텍처가 AI-App 이 쓰는 vLLM 버전의 지원 목록에 있으면 `vllm` |
+| `ollama` | Ollama 라이브러리와 레지스트리 | 태그마다 양자화, 파라미터 수, 크기 | `ollama` (GGUF) |
+| `docker-model-runner` | Docker Hub `ai/` | 태그마다 형식과 양자화 | 없음 |
+| `ngc` | NVIDIA NGC 카탈로그 | 이름, 라벨, 형식 | 없음 |
+| `kaggle` | Kaggle 모델 | 프레임워크별 변형 | 없음 |
+
+- 런타임이 없는 아티팩트는 목록에는 나오지만, 배포하면 `422` 입니다. 지금 런타임(vLLM, Ollama)이 그 형식을 읽지 못합니다.
+- **사람이 등록한 모델(`manual`)과 기본 모델(`seed`)은 수집이 건드리지 않습니다.** 수집한 모델을 `POST /aiapp/models` 로 고치면 그 모델은 `manual` 이 됩니다.
+- 출처에서 사라진 모델은 지우지 않고 `stale: true` 로 둡니다. `syncedAt` 은 출처에서 마지막으로 본 시각입니다.
+- 런타임 인자(`runtimes[].args`)는 수집이 채우지 않습니다. 모델마다 띄워 봐야 아는 값이기 때문입니다.
+- **`runtimes[].verifiedAt`** 은 그 아티팩트를 그 런타임으로 배포해 노드가 `running` 이 된 마지막 시각입니다. 실제로 떠 본 적이 있는 모델만 보려면
+  `GET /aiapp/models?verified=true` 입니다. dry-run 과 응용 배포는 남기지 않습니다.
+- 매번 출처마다 그 서버가 응답하는지 먼저 봅니다(5초). 응답하지 않는 출처는 건너뛰고 그 출처의 모델은 그대로 둡니다. 이유는
+  `GET /aiapp/models/sync` 의 `sources[].unreachable` 에 남습니다(예: 인증서 오류, 시간 초과). 다섯 곳 모두 닿지 않으면 5분, 15분, 1시간
+  뒤에 먼저 다시 시도하고, 한 곳이라도 닿으면 원래 주기로 돌아갑니다.
+- 출처마다 받는 수의 상한은 `AIAPP_CATALOG_SYNC_LIMIT`(기본 100)입니다. 양을 줄이는 값이지 거르는 기준이 아닙니다. 끄려면
+  `AIAPP_CATALOG_SYNC_ENABLED=false` 입니다.
+
+`GET /aiapp/models/sync` 응답 예(줄임):
+
+```json
+{"enabled": true, "running": false, "offline": false, "interval": "24h0m0s", "nextRunAt": "...",
+ "sources": [
+  {"name": "huggingface", "reachable": true, "fetched": 300,
+   "counts": {"added": 300, "updated": 0, "staled": 0, "skipped": 0, "invalid": 0}},
+  {"name": "kaggle", "reachable": false, "skipped": "unreachable",
+   "unreachable": "Head \"https://www.kaggle.com\": context deadline exceeded", "fetched": 0, "counts": {"added": 0, "updated": 0, "staled": 0, "skipped": 0, "invalid": 0}}
+ ]}
+```
 
 ### 9-3. 배포와 주소
 
@@ -455,7 +494,7 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 | 무엇 | 어디에 정해져 있나 | 어떻게 늘리나 | 조회 |
 |---|---|---|---|
 | 런타임 (`vllm`, `ollama`) | AI-App 코드에 들어 있음 (이미지 태그 고정) | 코드 변경 | `GET /aiapp/runtimes` |
-| 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 등록한 것은 카탈로그 파일에 저장 | `POST /aiapp/models` | `GET /aiapp/models` |
+| 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 출처 다섯 곳에서 자동으로 수집한 것과 사람이 등록한 것이 카탈로그 파일에 저장 (9-2) | 자동 수집, `POST /aiapp/models` | `GET /aiapp/models` |
 | 응용 (Dify, Open WebUI, Langflow, 그 밖의 것) | **응용 카탈로그(응용 저장소).** 처음에는 비어 있고, 업로드한 파일 묶음과 스크립트가 버전마다 AI-App 의 저장 폴더(`AIAPP_APP_STORE_DIR`)에 남음 | `POST /aiapp/apps` (multipart: `name`, `script`, `files`, `ports`) | `GET /aiapp/apps` |
 
 `examples/apps/` 는 이 repo 에 들어 있는 업로드용 예시 묶음일 뿐이고, AI-App 이 저절로 읽지 않습니다. 쓰려면 누군가 한 번 업로드합니다
