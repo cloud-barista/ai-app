@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,6 +80,8 @@ func TestAppBundleRoutes(t *testing.T) {
 		part{field: "script", content: "docker compose up -d\n"},
 		part{field: "files", fileName: "docker-compose.yml", content: "services: {}\n"},
 		part{field: "files", fileName: "README.txt", content: "hello\n"},
+		part{field: "ports", content: "3000, 8080"},
+		part{field: "ports", content: "9000"},
 	)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("upload = %d: %s", rec.Code, rec.Body)
@@ -87,7 +90,7 @@ func TestAppBundleRoutes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &v1); err != nil {
 		t.Fatal(err)
 	}
-	if v1.Version != 1 || len(v1.Files) != 2 || v1.Files[0].Name != "docker-compose.yml" {
+	if v1.Version != 1 || len(v1.Files) != 2 || v1.Files[0].Name != "docker-compose.yml" || !slices.Equal(v1.Ports, []int{3000, 8080, 9000}) {
 		t.Errorf("first upload = %+v", v1)
 	}
 
@@ -102,7 +105,7 @@ func TestAppBundleRoutes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &v2); err != nil {
 		t.Fatal(err)
 	}
-	if v2.Version != 2 || v2.Script != "echo from a file part\n" || len(v2.Files) != 0 {
+	if v2.Version != 2 || v2.Script != "echo from a file part\n" || len(v2.Files) != 0 || len(v2.Ports) != 0 {
 		t.Errorf("second upload = %+v", v2)
 	}
 	if raw, err := os.ReadFile(filepath.Join(root, "open-webui", "1", appstore.FilesDir, "docker-compose.yml")); err != nil || string(raw) != "services: {}\n" {
@@ -114,7 +117,7 @@ func TestAppBundleRoutes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("list = %d %s", rec.Code, rec.Body)
 	}
-	if len(list.Apps) != 1 || len(list.Apps[0].Versions) != 2 {
+	if len(list.Apps) != 1 || len(list.Apps[0].Versions) != 2 || !slices.Equal(list.Apps[0].Versions[0].Ports, []int{3000, 8080, 9000}) {
 		t.Errorf("list = %+v", list)
 	}
 
@@ -169,6 +172,10 @@ func TestAppBundleUploadRefusals(t *testing.T) {
 		{"hidden file", []part{name, script, {field: "files", fileName: ".env", content: "x"}}, http.StatusBadRequest},
 		{"duplicate file", []part{name, script, {field: "files", fileName: "a", content: "x"}, {field: "files", fileName: "a", content: "y"}}, http.StatusBadRequest},
 		{"files as text", []part{name, script, {field: "files", content: "x"}}, http.StatusBadRequest},
+		{"port not a number", []part{name, script, {field: "ports", content: "80,http"}}, http.StatusBadRequest},
+		{"port zero", []part{name, script, {field: "ports", content: "0"}}, http.StatusBadRequest},
+		{"port too high", []part{name, script, {field: "ports", content: "65536"}}, http.StatusBadRequest},
+		{"port twice", []part{name, script, {field: "ports", content: "80"}, {field: "ports", content: "80"}}, http.StatusBadRequest},
 		{"over the bound", []part{name, script, {field: "files", fileName: "big", content: strings.Repeat("x", 64)}}, http.StatusRequestEntityTooLarge},
 	} {
 		rec := postMultipart(t, s, tc.parts...)

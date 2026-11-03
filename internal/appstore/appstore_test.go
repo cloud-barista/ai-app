@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,21 +33,21 @@ func TestRegisterVersionsAndReload(t *testing.T) {
 		t.Errorf("max upload = %d, want default", s.MaxUploadBytes())
 	}
 
-	v1, err := s.Register(ctx, "open-webui", "docker compose up -d\n", files("docker-compose.yml", "services: {}\n"))
+	v1, err := s.Register(ctx, "open-webui", "docker compose up -d\n", []int{3000, 8080}, files("docker-compose.yml", "services: {}\n"))
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	if v1.Version != 1 || len(v1.Files) != 1 || v1.Files[0].SizeBytes != 13 {
+	if v1.Version != 1 || len(v1.Files) != 1 || v1.Files[0].SizeBytes != 13 || !slices.Equal(v1.Ports, []int{3000, 8080}) {
 		t.Fatalf("first version = %+v", v1)
 	}
 	if sum := sha256.Sum256([]byte("services: {}\n")); v1.Files[0].SHA256 != hex.EncodeToString(sum[:]) {
 		t.Errorf("sha256 = %q", v1.Files[0].SHA256)
 	}
-	v2, err := s.Register(ctx, "open-webui", "echo two\n", nil)
+	v2, err := s.Register(ctx, "open-webui", "echo two\n", nil, nil)
 	if err != nil {
 		t.Fatalf("Register again: %v", err)
 	}
-	if v2.Version != 2 || len(v2.Files) != 0 {
+	if v2.Version != 2 || len(v2.Files) != 0 || len(v2.Ports) != 0 {
 		t.Fatalf("second version = %+v", v2)
 	}
 
@@ -79,7 +80,7 @@ func TestRegisterVersionsAndReload(t *testing.T) {
 		t.Errorf("reloaded file = %+v, want %+v", app.Versions[0].Files[0], v1.Files[0])
 	}
 	got, err := reopened.GetVersion(ctx, "open-webui", 1)
-	if err != nil || got.Script != "docker compose up -d\n" {
+	if err != nil || got.Script != "docker compose up -d\n" || !slices.Equal(got.Ports, []int{3000, 8080}) {
 		t.Errorf("GetVersion = %+v, %v", got, err)
 	}
 	if _, err := reopened.GetVersion(ctx, "open-webui", 9); !errors.Is(err, ErrVersionNotFound) {
@@ -98,7 +99,7 @@ func TestDeleteRemovesEveryVersion(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	for range 2 {
-		if _, err := s.Register(ctx, "langflow", "true\n", files("a.txt", "a")); err != nil {
+		if _, err := s.Register(ctx, "langflow", "true\n", nil, files("a.txt", "a")); err != nil {
 			t.Fatalf("Register: %v", err)
 		}
 	}
@@ -119,7 +120,7 @@ func TestDeleteRemovesEveryVersion(t *testing.T) {
 		t.Errorf("staging after delete = %v, %v", staged, err)
 	}
 
-	v, err := s.Register(ctx, "langflow", "true\n", nil)
+	v, err := s.Register(ctx, "langflow", "true\n", nil, nil)
 	if err != nil || v.Version != 1 {
 		t.Errorf("Register after Delete = %+v, %v; want version 1", v, err)
 	}
@@ -148,7 +149,20 @@ func TestRegisterRefusesBadInput(t *testing.T) {
 		{"space", "dify", "true", files("a b", "x")},
 		{"duplicate", "dify", "true", files("a", "x", "a", "y")},
 	} {
-		if _, err := s.Register(ctx, tc.app, tc.script, tc.files); !errors.Is(err, model.ErrValidation) {
+		if _, err := s.Register(ctx, tc.app, tc.script, nil, tc.files); !errors.Is(err, model.ErrValidation) {
+			t.Errorf("%s: err = %v, want a validation error", tc.name, err)
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		ports []int
+	}{
+		{"port zero", []int{0}},
+		{"port too high", []int{65536}},
+		{"port twice", []int{3000, 3000}},
+		{"too many ports", []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
+	} {
+		if _, err := s.Register(ctx, "dify", "true", tc.ports, nil); !errors.Is(err, model.ErrValidation) {
 			t.Errorf("%s: err = %v, want a validation error", tc.name, err)
 		}
 	}
@@ -160,11 +174,11 @@ func TestRegisterRefusesBadInput(t *testing.T) {
 		{"one file", "true", files("big", strings.Repeat("x", 13))},
 		{"files together", "true", files("a", "12345678", "b", "123456")},
 	} {
-		if _, err := s.Register(ctx, "dify", tc.script, tc.files); !errors.Is(err, ErrTooLarge) {
+		if _, err := s.Register(ctx, "dify", tc.script, nil, tc.files); !errors.Is(err, ErrTooLarge) {
 			t.Errorf("%s: err = %v, want ErrTooLarge", tc.name, err)
 		}
 	}
-	if _, err := s.Register(ctx, "dify", "true", files("a", "123456789012")); err != nil {
+	if _, err := s.Register(ctx, "dify", "true", nil, files("a", "123456789012")); err != nil {
 		t.Errorf("upload at the bound: %v", err)
 	}
 

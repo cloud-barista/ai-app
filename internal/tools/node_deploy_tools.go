@@ -47,7 +47,7 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 			"no VM is created. type inference renders a compose file for a model artifact and a runtime (see " +
 			"list_models, list_runtimes) and starts it; type app copies an uploaded application version (see list_apps) and runs its " +
 			"script. Each node is reached with its own SSH key through Semaphore: docker is installed when missing, then " +
-			"the service is started. Returns the deployment record at once with status pending; follow it with " +
+			"the service is started, and the ports it serves are opened in the node's CB-Tumblebug security groups. Returns the deployment record at once with status pending; follow it with " +
 			"get_deployment until it is succeeded, failed or partial, and read the task output with get_deployment_logs. " +
 			"With dry run on, only the files are placed, nothing runs, and the record comes back with status dry-run.",
 		InputSchema: object(map[string]any{
@@ -67,6 +67,10 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 				"name":    stringProp("Uploaded application name from list_apps"),
 				"version": integerProp("Version number. Omit or 0 for the latest"),
 				"env":     envProp("Exported before the script runs, for example addresses of other nodes. " + envNote),
+				"ports": map[string]any{
+					"type": "array", "items": map[string]any{"type": "integer", "minimum": 1, "maximum": 65535},
+					"description": "TCP ports to open for this deployment, at most 16. Omit to take the ports the app version was uploaded with",
+				},
 			}, "name"),
 		}, "type", "targets"),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {

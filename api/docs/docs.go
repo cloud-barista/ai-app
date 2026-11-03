@@ -26,7 +26,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256) and upload time. Versions are listed oldest first.",
+                "description": "List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first.",
                 "produces": [
                     "application/json"
                 ],
@@ -83,6 +83,13 @@ const docTemplate = `{
                         "description": "Files the script uses, such as docker-compose.yml. Repeat the part for each file",
                         "name": "files",
                         "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "default": "3000",
+                        "description": "TCP ports the application serves on the node, comma separated or one per repeated field, each from 1 to 65535, at most 16. A deployment opens them inbound from 0.0.0.0/0 in every CB-Tumblebug security group of the node; empty opens nothing",
+                        "name": "ports",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -93,7 +100,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Not multipart, name or script missing, script given twice, or a file name not allowed",
+                        "description": "Not multipart, name or script missing, script given twice, a file name not allowed, or a port not a number from 1 to 65535",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -207,7 +214,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read one version of an AI application: its script and the name, size and SHA-256 of every file",
+                "description": "Read one version of an AI application: its script, the name, size and SHA-256 of every file, and the ports it serves",
                 "produces": [
                     "application/json"
                 ],
@@ -417,7 +424,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
                 "consumes": [
                     "application/json"
                 ],
@@ -526,7 +533,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-\u003cwork key\u003e down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/\u003cwork key\u003e are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds.\n\nOnly the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.\n\nWhen some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).",
+                "description": "Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-\u003cwork key\u003e down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/\u003cwork key\u003e are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.\n\nOnly the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.\n\nWhen some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).",
                 "produces": [
                     "application/json"
                 ],
@@ -1770,6 +1777,17 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.AppFile"
                     }
                 },
+                "ports": {
+                    "description": "Ports are the TCP ports the application serves on the node. A\ndeployment opens them inbound in the node's CB-Tumblebug security\ngroups. Empty opens nothing.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        3000,
+                        8080
+                    ]
+                },
                 "script": {
                     "description": "Script is the shell script run on the node from the folder the files\nare copied to. At most 64 KiB.",
                     "type": "string",
@@ -1983,6 +2001,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "open-webui"
                 },
+                "ports": {
+                    "description": "Ports replace, for this deployment, the ports the application version\nwas uploaded with: the TCP ports opened inbound in the node's\nCB-Tumblebug security groups, each from 1 to 65535, at most 16.\nOmitted takes the version's ports.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        3000
+                    ]
+                },
                 "version": {
                     "description": "Version is the version to deploy. 0 takes the latest; the record keeps\nthe version taken.",
                     "type": "integer",
@@ -2159,6 +2187,27 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "openedPorts": {
+                    "description": "OpenedPorts are, per security group and port, the inbound rules found\nor added in CB-Tumblebug. Taking the deployment down closes none of\nthem, since other workloads may share the group.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeOpenedPort"
+                    }
+                },
+                "ports": {
+                    "description": "Ports are the TCP ports the deployment serves on the node: the runtime\nport of an inference service, the ports of an application. They are\nopened inbound from 0.0.0.0/0 in every security group of the node once\nthe playbooks succeed. A dry run and a failed node open none; with\nport opening turned off (AIAPP_DEPLOYMENT_OPEN_PORTS=false) none are\nopened and notes says so.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        8000
+                    ]
+                },
+                "portsError": {
+                    "description": "PortsError is why some ports could not be opened. The node still\nsucceeds; the ports can be opened in CB-Tumblebug by hand.",
+                    "type": "string"
                 },
                 "removedAt": {
                     "description": "RemovedAt is when the deployment was taken down from the node.",
@@ -2488,6 +2537,35 @@ const docTemplate = `{
                     "description": "RuntimeID is a runtime profile ID (GET /runtimes) the artifact lists.\nEmpty takes the first runtime the artifact lists.",
                     "type": "string",
                     "example": "vllm"
+                }
+            }
+        },
+        "model.NodeOpenedPort": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "description": "Port is the TCP port.",
+                    "type": "integer",
+                    "example": 8000
+                },
+                "protocol": {
+                    "description": "Protocol is TCP.",
+                    "type": "string",
+                    "example": "TCP"
+                },
+                "result": {
+                    "description": "Result is added when this deployment added the rule, existing when an\ninbound rule of the group already opened the port to 0.0.0.0/0.",
+                    "type": "string",
+                    "enum": [
+                        "added",
+                        "existing"
+                    ],
+                    "example": "added"
+                },
+                "securityGroupId": {
+                    "description": "SecurityGroupID is the CB-Tumblebug security group, in the namespace\nof the target.",
+                    "type": "string",
+                    "example": "etri-shared-aws-ap-northeast-2"
                 }
             }
         },

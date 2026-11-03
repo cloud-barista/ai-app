@@ -82,7 +82,7 @@ func newNodeDeployServer(t *testing.T, dryRun bool) (*Server, *countingRunner, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apps.Register(context.Background(), "web", "docker compose up -d",
+	if _, err := apps.Register(context.Background(), "web", "docker compose up -d", nil,
 		[]appstore.File{{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")}}); err != nil {
 		t.Fatal(err)
 	}

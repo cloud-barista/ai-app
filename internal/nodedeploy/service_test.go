@@ -32,25 +32,44 @@ const (
 	testKey      = "-----BEGIN " + testKeyLabel + "-----\n" + testKeyBody + "\n-----END " + testKeyLabel + "-----\n"
 )
 
-// fakeTumblebug answers the node, ssh key, spec and node control routes for
-// nodes vm1 (aws, GPU spec), vm2 (azure, CPU spec) and vm3 (gcp, spec that
-// cannot be read), all in namespace etri, infra travel. Node gone answers 404.
+// fakeTumblebug answers the node, ssh key, spec, node control and security
+// group routes for nodes vm1 (aws, GPU spec), vm2 (azure, CPU spec, two
+// security groups) and vm3 (gcp, spec that cannot be read), all in namespace
+// etri, infra travel. Node gone answers 404. Security group sg-azure-b
+// already lets in TCP 8000-9000 from anywhere.
 type fakeTumblebug struct {
 	mu       sync.Mutex
 	controls []string
 	// failControl makes control of this node answer 500.
 	failControl string
+	// rules are the rule requests received, in order.
+	rules []rulesCall
+	// failRules makes adding rules to this security group answer 500.
+	failRules string
+}
+
+// rulesCall is one POST .../securityGroup/{id}/rules the fake received.
+type rulesCall struct {
+	SecurityGroupID string
+	Body            tumblebug.SecurityGroupUpdateReq
+}
+
+func (f *fakeTumblebug) rulesCalls() []rulesCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]rulesCall(nil), f.rules...)
 }
 
 func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nodes := map[string]map[string]any{
 		"vm1": {"id": "vm1", "publicIP": "203.0.113.11", "sshKeyId": "key1", "nodeUserName": "cb-user",
-			"specId": "aws+gpu", "connectionConfig": map[string]any{"providerName": "AWS",
+			"specId": "aws+gpu", "securityGroupIds": []string{"sg-aws"}, "connectionConfig": map[string]any{"providerName": "AWS",
 				"regionZoneInfo": map[string]any{"assignedRegion": "ap-northeast-2", "assignedZone": "ap-northeast-2a"}}},
 		"vm2": {"id": "vm2", "privateIP": "198.51.100.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
-			"specId": "azure+cpu", "connectionConfig": map[string]any{"providerName": "Azure"}},
+			"specId": "azure+cpu", "securityGroupIds": []string{"sg-azure-a", "sg-azure-b", "sg-azure-a"},
+			"connectionConfig": map[string]any{"providerName": "Azure"}},
 		"vm3": {"id": "vm3", "publicIP": "203.0.113.13", "sshKeyId": "key1", "nodeUserName": "cb-user",
-			"specId": "gcp+missing", "connectionConfig": map[string]any{"providerName": "GCP"}},
+			"specId": "gcp+missing", "securityGroupIds": []string{"sg-gcp"}, "connectionConfig": map[string]any{"providerName": "GCP"}},
 		"evil": {"id": "evil", "publicIP": "203.0.113.14", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"connectionConfig": map[string]any{"providerName": "../../../../tmp/evil"}},
 		"badkey": {"id": "badkey", "publicIP": "203.0.113.15", "sshKeyId": "broken", "nodeUserName": "cb-user",
@@ -78,6 +97,35 @@ func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"message": r.URL.Query().Get("action") + " " + m[1]})
 		return
+	}
+	if m := regexp.MustCompile(`^/ns/etri/resources/securityGroup/([^/]+)(/rules)?$`).FindStringSubmatch(path); m != nil {
+		sgID := m[1]
+		rules := []map[string]any{{"Direction": "inbound", "Protocol": "TCP", "Port": "22", "CIDR": "0.0.0.0/0"}}
+		if sgID == "sg-azure-b" {
+			rules = append(rules, map[string]any{"Direction": "inbound", "Protocol": "TCP", "Port": "8000-9000", "CIDR": "0.0.0.0/0"})
+		}
+		if m[2] == "" && r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"id": sgID, "name": sgID, "firewallRules": rules})
+			return
+		}
+		if m[2] != "" && r.Method == http.MethodPost {
+			var body tumblebug.SecurityGroupUpdateReq
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"message": err.Error()})
+				return
+			}
+			f.mu.Lock()
+			f.rules = append(f.rules, rulesCall{SecurityGroupID: sgID, Body: body})
+			fail := f.failRules == sgID
+			f.mu.Unlock()
+			if fail {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "cannot change " + sgID})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"success": true, "id": sgID, "name": sgID,
+				"message": "Successfully added new firewall rules"})
+			return
+		}
 	}
 	switch path {
 	case "/ns/etri/resources/sshKey/key1":
@@ -176,12 +224,12 @@ func newFixture(t *testing.T, dryRun bool) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apps.Register(context.Background(), "web", "echo v1", []appstore.File{
+	if _, err := apps.Register(context.Background(), "web", "echo v1", nil, []appstore.File{
 		{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apps.Register(context.Background(), "web", "docker compose up -d", []appstore.File{
+	if _, err := apps.Register(context.Background(), "web", "docker compose up -d", []int{3000, 8080}, []appstore.File{
 		{Name: "docker-compose.yml", Content: strings.NewReader("services:\n  web:\n    image: nginx:alpine\n")},
 		{Name: "index.html", Content: strings.NewReader("hello")},
 	}); err != nil {
@@ -201,7 +249,7 @@ func newFixture(t *testing.T, dryRun bool) *fixture {
 	stage := filepath.Join(dir, "stage")
 	runner := &fakeRunner{statuses: map[string]string{}}
 	svc := NewService(tbClient, runner, models, apps, store, archiveStore, Options{
-		StageRoot: stage, SpecNamespace: "system", DryRun: dryRun, MaxParallel: 2,
+		StageRoot: stage, SpecNamespace: "system", DryRun: dryRun, MaxParallel: 2, OpenPorts: true,
 	})
 	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
 	return &fixture{svc: svc, tb: tb, runner: runner, stage: stage, archive: archiveStore, store: storePath}
@@ -767,7 +815,7 @@ func TestRedeployLandsInTheSameNodeFolderAndProject(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.apps.Register(context.Background(), "api", "docker compose up -d", []appstore.File{
+	if _, err := f.svc.apps.Register(context.Background(), "api", "docker compose up -d", nil, []appstore.File{
 		{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")},
 	}); err != nil {
 		t.Fatal(err)
@@ -830,7 +878,7 @@ func TestStageFolderListsItsFilesInTheManifest(t *testing.T) {
 
 func TestAppNameComposeCannotTakeIsRefused(t *testing.T) {
 	f := newFixture(t, false)
-	if _, err := f.svc.apps.Register(context.Background(), "my.web", "true", nil); !errors.Is(err, model.ErrValidation) {
+	if _, err := f.svc.apps.Register(context.Background(), "my.web", "true", nil, nil); !errors.Is(err, model.ErrValidation) {
 		t.Errorf("upload of an app name with a dot = %v, want a validation error", err)
 	}
 	req := appReq("vm1")

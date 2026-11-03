@@ -14,7 +14,7 @@ const defaultSSHPort = 22
 
 // Node is one node of an Infra, with the fields a deployment needs to reach it.
 //
-// The fields follow model.NodeInfo of the CB-Tumblebug 0.13 OpenAPI document,
+// The fields follow model.NodeInfo of the CB-Tumblebug 0.13.8 OpenAPI document,
 // returned by GET /ns/{nsId}/infra/{infraId}/node/{nodeId}.
 type Node struct {
 	ID           string `json:"id"`
@@ -32,6 +32,8 @@ type Node struct {
 	// Region is the region and zone as the node itself records them. It is
 	// the fallback when the connection config carries no assigned region.
 	Region NodeRegion `json:"region"`
+	// SecurityGroupIDs are the security groups of the node, in its namespace.
+	SecurityGroupIDs []string `json:"securityGroupIds"`
 }
 
 // NodeConnConfig is the part of model.ConnConfig that says where a node runs.

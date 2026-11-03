@@ -12,6 +12,9 @@ const MaxAppScriptBytes = 64 << 10
 // MaxAppFiles bounds how many files one application version holds.
 const MaxAppFiles = 256
 
+// MaxAppPorts bounds how many ports one application version opens.
+const MaxAppPorts = 16
+
 // appFileNamePattern is what an uploaded file name may look like. Files are
 // kept flat in one folder on the store and on the node, and the script refers
 // to them by name, so a name is one path element without separators,
@@ -43,6 +46,10 @@ type AppVersion struct {
 	// Files are the uploaded files, in upload order. They are copied flat into
 	// the folder the script runs in.
 	Files []AppFile `json:"files"`
+	// Ports are the TCP ports the application serves on the node. A
+	// deployment opens them inbound in the node's CB-Tumblebug security
+	// groups. Empty opens nothing.
+	Ports []int `json:"ports,omitempty" example:"3000,8080"`
 	// CreatedAt is when the version was registered.
 	CreatedAt time.Time `json:"createdAt" example:"2026-10-29T12:00:00Z"`
 }
@@ -113,6 +120,25 @@ func ValidateAppFileNames(names []string) error {
 	return nil
 }
 
+// ValidateAppPorts reports why ports cannot be the ports of an application:
+// each from 1 to 65535, each once, at most MaxAppPorts.
+func ValidateAppPorts(field string, ports []int) error {
+	if len(ports) > MaxAppPorts {
+		return errInvalid(field, fmt.Sprintf("must hold at most %d ports", MaxAppPorts))
+	}
+	seen := make(map[int]bool, len(ports))
+	for _, port := range ports {
+		switch {
+		case port < 1 || port > 65535:
+			return errInvalid(field, fmt.Sprintf("port %d must be from 1 to 65535", port))
+		case seen[port]:
+			return errInvalid(field, fmt.Sprintf("port %d is given more than once", port))
+		}
+		seen[port] = true
+	}
+	return nil
+}
+
 // Validate reports why a stored version is not one this service could have
 // written.
 func (v *AppVersion) Validate() error {
@@ -120,6 +146,9 @@ func (v *AppVersion) Validate() error {
 		return errInvalid("version", "must be at least 1")
 	}
 	if err := ValidateAppScript(v.Script); err != nil {
+		return err
+	}
+	if err := ValidateAppPorts("ports", v.Ports); err != nil {
 		return err
 	}
 	names := make([]string, len(v.Files))

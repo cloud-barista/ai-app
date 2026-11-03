@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -30,8 +31,9 @@ const multipartOverhead = 1 << 20
 // @Param name formData string true "Application name: lower case letters, digits, underscore and hyphen, starting with a letter or digit, at most 63 characters. No dot: the name becomes part of a docker compose project name on the node" default(open-webui)
 // @Param script formData string true "Deployment script. Send it as this text field or as a file part named script (with a filename), exactly once"
 // @Param files formData file false "Files the script uses, such as docker-compose.yml. Repeat the part for each file"
+// @Param ports formData string false "TCP ports the application serves on the node, comma separated or one per repeated field, each from 1 to 65535, at most 16. A deployment opens them inbound from 0.0.0.0/0 in every CB-Tumblebug security group of the node; empty opens nothing" default(3000)
 // @Success 200 {object} model.AppVersion "The version registered, with the size and SHA-256 of every file"
-// @Failure 400 {object} model.SimpleMsg "Not multipart, name or script missing, script given twice, or a file name not allowed"
+// @Failure 400 {object} model.SimpleMsg "Not multipart, name or script missing, script given twice, a file name not allowed, or a port not a number from 1 to 65535"
 // @Failure 413 {object} model.SimpleMsg "The script and files exceed the upload bound"
 // @Failure 500 {object} model.SimpleMsg "The upload could not be written to the store"
 // @Security BearerAuth
@@ -72,6 +74,11 @@ func (h *Handler) RestPostAppBundle(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: err.Error()})
 	}
 
+	ports, err := formPorts(form.Value["ports"])
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: err.Error()})
+	}
+
 	headers := form.File["files"]
 	files := make([]appstore.File, 0, len(headers))
 	for _, fh := range headers {
@@ -90,7 +97,7 @@ func (h *Handler) RestPostAppBundle(c echo.Context) error {
 		files = append(files, appstore.File{Name: fileName, Content: f})
 	}
 
-	registered, err := h.apps.Register(ctx, name, script, files)
+	registered, err := h.apps.Register(ctx, name, script, ports, files)
 	if err != nil {
 		log.Warn().Err(err).Str("app", name).Msg("Failed to register AI application")
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "AI application upload failed")})
@@ -125,6 +132,26 @@ func formScript(form *multipart.Form) (string, error) {
 	return string(raw), nil
 }
 
+// formPorts reads the ports fields: each holds one port or a comma separated
+// list. Empty entries are skipped; the ports are checked by the store.
+func formPorts(values []string) ([]int, error) {
+	var ports []int
+	for _, value := range values {
+		for _, entry := range strings.Split(value, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			port, err := strconv.Atoi(entry)
+			if err != nil {
+				return nil, fmt.Errorf("ports: %q is not a port number", entry)
+			}
+			ports = append(ports, port)
+		}
+	}
+	return ports, nil
+}
+
 // rawFileName is the filename a file part was sent with. FileHeader.Filename
 // is not used: it is reduced to its last path element, which would turn
 // ../x into x instead of refusing it.
@@ -139,7 +166,7 @@ func rawFileName(fh *multipart.FileHeader) (string, error) {
 // RestGetAllAppBundles godoc
 // @ID GetAllApps
 // @Summary List AI applications
-// @Description List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256) and upload time. Versions are listed oldest first.
+// @Description List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first.
 // @Tags [App] AI Applications
 // @Produce json
 // @Success 200 {object} model.AppListResp "AI application list"
@@ -176,7 +203,7 @@ func (h *Handler) RestGetAppBundle(c echo.Context) error {
 // RestGetAppBundleVersion godoc
 // @ID GetAppVersion
 // @Summary Get one version of an AI application
-// @Description Read one version of an AI application: its script and the name, size and SHA-256 of every file
+// @Description Read one version of an AI application: its script, the name, size and SHA-256 of every file, and the ports it serves
 // @Tags [App] AI Applications
 // @Produce json
 // @Param name path string true "Application name" default(open-webui)

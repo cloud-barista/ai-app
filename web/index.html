@@ -505,6 +505,10 @@
         <label>이름 (name) · 소문자, 숫자, _, -</label>
         <input type="text" id="ap-name" value="open-webui">
       </div>
+      <div class="field">
+        <label>포트 (ports) · 쉼표로 구분, 1-65535, 최대 16개. 배포 때 노드 보안 그룹에 엽니다</label>
+        <input type="text" id="ap-ports" placeholder="3000,8080">
+      </div>
     </div>
     <div class="field">
       <label>스크립트 (script) · 파일을 고르면 이 칸 대신 파일을 보냅니다</label>
@@ -1583,6 +1587,9 @@ async function showAppVersion(name, version) {
         <td class="mono">${esc(f.sizeBytes)}</td>
         <td class="mono" style="font-size:11px;word-break:break-all">${esc(f.sha256)}</td>
       </tr>`).join('')}</table>` : '<div class="empty">파일 없이 스크립트만 있습니다.</div>'}
+    <div style="font-size:12px;margin-top:8px">포트 (ports) ${(v.ports || []).length
+      ? (v.ports || []).map((p) => `<span class="mono">${esc(p)}</span>`).join(', ')
+      : '<span class="b b-mut">없음</span> · 배포해도 보안 그룹에 여는 포트가 없습니다'}</div>
     <div style="font-size:11px;color:var(--ink-3);margin:10px 0 4px">스크립트 (노드에서 파일이 있는 폴더에서 실행)</div>
     <pre class="json">${esc(v.script || '')}</pre>
     <div class="row" style="margin-top:10px"><div></div>
@@ -1616,6 +1623,8 @@ async function uploadApp() {
 
   const fd = new FormData();
   fd.append('name', name);
+  const ports = $('ap-ports').value.trim();
+  if (ports) fd.append('ports', ports);
   if (scriptFile) fd.append('script', scriptFile, scriptFile.name);
   else fd.append('script', $('ap-script').value);
   for (const f of files) fd.append('files', f, f.name);
@@ -1906,6 +1915,19 @@ function renderDeploymentDetail(d, r) {
   pollDeployment(d);
 }
 
+/* openedPortsCell lists, per security group, the ports open after the
+   deployment: added by it, or already let in by a rule of the group. */
+function openedPortsCell(n) {
+  const opened = n.openedPorts || [];
+  const err = n.portsError ? `<div class="err" style="margin-top:4px">${esc(n.portsError)}</div>` : '';
+  if (!opened.length) return (err || '-');
+  const bySG = {};
+  for (const o of opened) (bySG[o.securityGroupId] = bySG[o.securityGroupId] || []).push(o);
+  return Object.entries(bySG).map(([sg, list]) => `<div><span class="mono" style="font-size:11.5px">${esc(sg)}</span> ·
+    ${list.map((o) => `<span class="mono">${esc(o.protocol)}/${esc(o.port)}</span>${o.result === 'existing'
+      ? ' <span class="b b-mut">이미 열림</span>' : ''}`).join(', ')}</div>`).join('') + err;
+}
+
 function renderNodeResult(n, d) {
   const node = n.node;
   const rows = [
@@ -1917,6 +1939,8 @@ function renderNodeResult(n, d) {
     ['노드 폴더 (nodeDir)', n.nodeDir ? `<span class="mono">${esc(n.nodeDir)}</span>` : '-'],
     ['공유 저장소 (stageDir)', n.stageDir ? `<span class="mono" style="font-size:11.5px">${esc(n.stageDir)}</span>` : '-'],
     ['서비스 주소', n.serviceUrl ? `<span class="mono">${esc(n.serviceUrl)}</span>` : '-'],
+    ['서비스 포트 (ports)', (n.ports || []).length ? (n.ports || []).map((p) => `<span class="mono">${esc(p)}</span>`).join(', ') : '-'],
+    ['연 포트 (openedPorts)', openedPortsCell(n)],
     ['시작 · 끝', `${esc(n.startedAt ? fmtTime(n.startedAt) : '-')} · ${esc(n.finishedAt ? fmtTime(n.finishedAt) : '-')}`]
   ];
   if (n.removedAt) rows.push(['내린 시각', esc(fmtTime(n.removedAt))]);

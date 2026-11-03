@@ -63,6 +63,9 @@ const (
 // finished record. Otherwise the record is returned removing and the nodes are
 // taken down in the background. A deployment still pending, running or
 // removing is refused with ErrBusy; one already removed is returned as it is.
+//
+// The ports the deployment opened in the security groups of its nodes are
+// left open: other workloads may share the groups.
 func (s *Service) Remove(ctx context.Context, id string) (*model.NodeDeployment, error) {
 	d, ok := s.store.Get(id)
 	if !ok {

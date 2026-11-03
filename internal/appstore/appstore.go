@@ -6,7 +6,7 @@
 //
 //	<root>/<name>/<version>/files/<file>    uploaded files
 //	<root>/<name>/<version>/script.sh       deployment script
-//	<root>/<name>/<version>/meta.json       version, file digests, creation time
+//	<root>/<name>/<version>/meta.json       version, file digests, ports, creation time
 //
 // A version is written in a staging directory under the root and renamed into
 // place, so a crash mid-upload never leaves a half written version behind.
@@ -87,6 +87,7 @@ type Store struct {
 type metaBody struct {
 	Version   int             `json:"version"`
 	Files     []model.AppFile `json:"files"`
+	Ports     []int           `json:"ports,omitempty"`
 	CreatedAt time.Time       `json:"createdAt"`
 }
 
@@ -187,7 +188,8 @@ func readVersion(dir string) (*model.AppVersion, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ai application script %q: %w", dir, err)
 	}
-	v := model.AppVersion{Version: meta.Version, Script: string(script), Files: meta.Files, CreatedAt: meta.CreatedAt}
+	v := model.AppVersion{Version: meta.Version, Script: string(script), Files: meta.Files, Ports: meta.Ports,
+		CreatedAt: meta.CreatedAt}
 	if v.Files == nil {
 		v.Files = []model.AppFile{}
 	}
@@ -211,15 +213,18 @@ func (s *Store) MaxUploadBytes() int64 {
 	return s.maxUpload
 }
 
-// Register stores script and files as the next version of the application
-// name: version 1 for a new name, one above its highest version otherwise.
-// Files keep their order. The script and files together may not exceed
-// MaxUploadBytes.
-func (s *Store) Register(ctx context.Context, name, script string, files []File) (*model.AppVersion, error) {
+// Register stores script, the ports the application serves and files as the
+// next version of the application name: version 1 for a new name, one above
+// its highest version otherwise. Files keep their order. The script and files
+// together may not exceed MaxUploadBytes.
+func (s *Store) Register(ctx context.Context, name, script string, ports []int, files []File) (*model.AppVersion, error) {
 	if err := model.ValidateAppName(name); err != nil {
 		return nil, err
 	}
 	if err := model.ValidateAppScript(script); err != nil {
+		return nil, err
+	}
+	if err := model.ValidateAppPorts("ports", ports); err != nil {
 		return nil, err
 	}
 	names := make([]string, len(files))
@@ -272,7 +277,8 @@ func (s *Store) Register(ctx context.Context, name, script string, files []File)
 		return nil, fmt.Errorf("failed to stage ai application %q: %w", name, err)
 	}
 
-	v := model.AppVersion{Script: script, Files: stored, CreatedAt: time.Now().UTC().Truncate(time.Second)}
+	v := model.AppVersion{Script: script, Files: stored, Ports: slices.Clone(ports),
+		CreatedAt: time.Now().UTC().Truncate(time.Second)}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -281,7 +287,7 @@ func (s *Store) Register(ctx context.Context, name, script string, files []File)
 	if len(existing) > 0 {
 		v.Version = existing[len(existing)-1].Version + 1
 	}
-	meta, err := json.MarshalIndent(metaBody{Version: v.Version, Files: v.Files, CreatedAt: v.CreatedAt}, "", "  ")
+	meta, err := json.MarshalIndent(metaBody{Version: v.Version, Files: v.Files, Ports: v.Ports, CreatedAt: v.CreatedAt}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode ai application %q meta: %w", name, err)
 	}
@@ -424,6 +430,7 @@ func cloneApp(name string, versions []model.AppVersion) model.App {
 
 func cloneVersion(v model.AppVersion) model.AppVersion {
 	v.Files = slices.Clone(v.Files)
+	v.Ports = slices.Clone(v.Ports)
 	if v.Files == nil {
 		v.Files = []model.AppFile{}
 	}

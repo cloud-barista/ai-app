@@ -186,6 +186,11 @@ type NodeDeployConfig struct {
 	// each change and read from at startup. Empty keeps the records in memory,
 	// so they are lost on restart.
 	StoreFile string
+	// OpenPorts opens the ports a deployment serves inbound from 0.0.0.0/0
+	// in every CB-Tumblebug security group of the node, once its playbooks
+	// succeed (AIAPP_DEPLOYMENT_OPEN_PORTS, true by default). Off, the ports
+	// are recorded and left for an operator to open.
+	OpenPorts bool
 }
 
 // RecommenderConfig names the implementations of internal/recommend that
@@ -253,6 +258,7 @@ func Load() (*Config, error) {
 	v.SetDefault("semaphore.poll_interval", 5*time.Second)
 	v.SetDefault("semaphore.timeout", 30*time.Minute)
 	v.SetDefault("stage.root", "/var/lib/aiapp/stage")
+	v.SetDefault("deployment.open_ports", true)
 
 	// AutomaticEnv only resolves keys that viper already knows about.
 	for _, key := range []string{
@@ -292,6 +298,7 @@ func Load() (*Config, error) {
 		"semaphore.timeout",
 		"stage.root",
 		"deployment.store_file",
+		"deployment.open_ports",
 		"recommender.model",
 		"recommender.app",
 	} {
@@ -367,6 +374,7 @@ func Load() (*Config, error) {
 		},
 		NodeDeploy: NodeDeployConfig{
 			StoreFile: strings.TrimSpace(v.GetString("deployment.store_file")),
+			OpenPorts: v.GetBool("deployment.open_ports"),
 		},
 		Recommender: RecommenderConfig{
 			Model: strings.TrimSpace(v.GetString("recommender.model")),

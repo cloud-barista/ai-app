@@ -95,6 +95,26 @@ func TestDeploymentStoreFile(t *testing.T) {
 	}
 }
 
+func TestDeploymentOpenPorts(t *testing.T) {
+	t.Setenv("AIAPP_DEPLOYMENT_OPEN_PORTS", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.NodeDeploy.OpenPorts {
+		t.Error("open ports = false, want true by default")
+	}
+
+	t.Setenv("AIAPP_DEPLOYMENT_OPEN_PORTS", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.OpenPorts {
+		t.Error("open ports = true, want false when AIAPP_DEPLOYMENT_OPEN_PORTS=false")
+	}
+}
+
 func TestAppStoreDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("AIAPP_APP_STORE_DIR", "")
 	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "")

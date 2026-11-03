@@ -127,6 +127,11 @@ type NodeAppReq struct {
 	// hold no line break and no single quote. Addresses of other nodes go
 	// here.
 	Env map[string]string `json:"env,omitempty"`
+	// Ports replace, for this deployment, the ports the application version
+	// was uploaded with: the TCP ports opened inbound in the node's
+	// CB-Tumblebug security groups, each from 1 to 65535, at most 16.
+	// Omitted takes the version's ports.
+	Ports []int `json:"ports,omitempty" example:"3000"`
 }
 
 // NodeDeploymentReq deploys an inference service or an application onto
@@ -178,6 +183,9 @@ func (r *NodeDeploymentReq) Validate() error {
 			return errInvalid("app.version", "must be 0 (latest) or a version number")
 		}
 		if err := ValidateDeployEnv("app.env", r.App.Env); err != nil {
+			return err
+		}
+		if err := ValidateAppPorts("app.ports", r.App.Ports); err != nil {
 			return err
 		}
 	case "":
@@ -307,6 +315,20 @@ type NodeDeployResult struct {
 	// private IP the node was reached at, the runtime port and its API base
 	// path. Inference services only.
 	ServiceURL string `json:"serviceUrl,omitempty" example:"http://203.0.113.10:8000/v1"`
+	// Ports are the TCP ports the deployment serves on the node: the runtime
+	// port of an inference service, the ports of an application. They are
+	// opened inbound from 0.0.0.0/0 in every security group of the node once
+	// the playbooks succeed. A dry run and a failed node open none; with
+	// port opening turned off (AIAPP_DEPLOYMENT_OPEN_PORTS=false) none are
+	// opened and notes says so.
+	Ports []int `json:"ports,omitempty" example:"8000"`
+	// OpenedPorts are, per security group and port, the inbound rules found
+	// or added in CB-Tumblebug. Taking the deployment down closes none of
+	// them, since other workloads may share the group.
+	OpenedPorts []NodeOpenedPort `json:"openedPorts,omitempty"`
+	// PortsError is why some ports could not be opened. The node still
+	// succeeds; the ports can be opened in CB-Tumblebug by hand.
+	PortsError string `json:"portsError,omitempty"`
 	// Steps are the playbooks run on the node, in order. A step that failed
 	// ends the node.
 	Steps []NodeDeployStep `json:"steps,omitempty"`
@@ -335,6 +357,28 @@ type NodeDeployNode struct {
 	User string `json:"user" example:"cb-user"`
 	// SpecID is the node spec in CB-Tumblebug.
 	SpecID string `json:"specId,omitempty" example:"aws+ap-northeast-2+g4dn.xlarge"`
+}
+
+// Results of opening a port in a security group.
+const (
+	// PortAdded is a rule this deployment added.
+	PortAdded = "added"
+	// PortExisting is a port an inbound rule of the group already opened.
+	PortExisting = "existing"
+)
+
+// NodeOpenedPort is one port open in one security group of a node.
+type NodeOpenedPort struct {
+	// SecurityGroupID is the CB-Tumblebug security group, in the namespace
+	// of the target.
+	SecurityGroupID string `json:"securityGroupId" example:"etri-shared-aws-ap-northeast-2"`
+	// Port is the TCP port.
+	Port int `json:"port" example:"8000"`
+	// Protocol is TCP.
+	Protocol string `json:"protocol" example:"TCP"`
+	// Result is added when this deployment added the rule, existing when an
+	// inbound rule of the group already opened the port to 0.0.0.0/0.
+	Result string `json:"result" enums:"added,existing" example:"added"`
 }
 
 // NodeDeployStep is one playbook run through Semaphore.

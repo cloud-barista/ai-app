@@ -10,11 +10,17 @@
 // work key (see placement), not of its deployment ID, so that deploying the
 // same inference runtime or application again replaces the previous one.
 //
-// A deployment is taken down from its nodes with compose-down (see Remove),
-// which keeps the node folders and the named volumes.
+// Once the playbooks of a node succeed, the ports the deployment serves are
+// opened inbound in every CB-Tumblebug security group of the node (see
+// openPorts), unless Options.OpenPorts is off. A port that cannot be opened is
+// noted on the node and does not fail it.
 //
-// With dry run on, only the look-up and the file placement are done, and
-// nothing is registered in Semaphore.
+// A deployment is taken down from its nodes with compose-down (see Remove),
+// which keeps the node folders and the named volumes, and leaves the ports
+// open.
+//
+// With dry run on, only the look-up and the file placement are done, nothing
+// is registered in Semaphore, and no port is opened.
 package nodedeploy
 
 import (
@@ -80,6 +86,8 @@ type Tumblebug interface {
 	GetSSHKey(ctx context.Context, nsID, sshKeyID string) (*tumblebug.SSHKey, error)
 	GetSpec(ctx context.Context, nsID, specID string) (*tumblebug.SpecInfo, error)
 	ControlNode(ctx context.Context, nsID, infraID, nodeID, action string) (string, error)
+	GetSecurityGroup(ctx context.Context, nsID, sgID string) (*tumblebug.SecurityGroupInfo, error)
+	AddFirewallRules(ctx context.Context, nsID, sgID string, rules []tumblebug.FirewallRuleReq) (*tumblebug.SecurityGroupUpdateResp, error)
 }
 
 // Runner runs one playbook against one node. *semaphore.Client implements it.
@@ -99,6 +107,10 @@ type Options struct {
 	// MaxParallel bounds the nodes of one deployment run at once. Zero or less
 	// takes DefaultMaxParallel.
 	MaxParallel int
+	// OpenPorts opens the ports a deployment serves in the security groups
+	// of each node whose playbooks succeeded. Off, the ports are only
+	// recorded.
+	OpenPorts bool
 }
 
 // Service deploys onto nodes and keeps the records.
@@ -143,6 +155,8 @@ type plan struct {
 	runtime  *model.RuntimeProfile
 	// appDir is the application version folder in the application store.
 	appDir string
+	// appPorts are the ports the application version was uploaded with.
+	appPorts []int
 	// place is where the deployment lands on every node.
 	place placement
 }
@@ -207,7 +221,8 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 			}
 			version = app.Versions[len(app.Versions)-1].Version
 		}
-		if _, err := s.apps.GetVersion(ctx, req.App.Name, version); err != nil {
+		v, err := s.apps.GetVersion(ctx, req.App.Name, version)
+		if err != nil {
 			return nil, err
 		}
 		dir, err := s.apps.Path(req.App.Name, version)
@@ -221,7 +236,7 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 		if err != nil {
 			return nil, err
 		}
-		return &plan{appDir: dir, place: place}, nil
+		return &plan{appDir: dir, appPorts: v.Ports, place: place}, nil
 	}
 
 	inf := *req.Inference
@@ -377,7 +392,9 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	}
 
 	gpu, source, note := s.decideGPU(ctx, req, node)
+	ports := servedPorts(req, p)
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
+		n.Ports = ports
 		n.Node = &model.NodeDeployNode{
 			CSP: access.CSP, Region: access.Region, Zone: access.Zone,
 			Host: access.Host, Port: access.Port, User: access.User, SpecID: node.SpecID,
@@ -444,8 +461,42 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 			return
 		}
 	}
+	s.openNodePorts(ctx, id, idx, target.NsID, node, ports)
 	s.finishNode(id, idx, model.NodeDeploySucceeded, "")
 	logger.Info().Msg("Node deployment succeeded")
+}
+
+// openNodePorts opens ports in the security groups of node and records the
+// outcome on the node. Nothing that goes wrong here fails the node: its
+// service runs, and the ports can be opened in CB-Tumblebug by hand.
+func (s *Service) openNodePorts(ctx context.Context, id string, idx int, nsID string, node *tumblebug.Node, ports []int) {
+	if len(ports) == 0 {
+		return
+	}
+	list := joinPorts(ports)
+	if !s.opts.OpenPorts {
+		s.addNote(id, idx, fmt.Sprintf("port opening is off (AIAPP_DEPLOYMENT_OPEN_PORTS): ports %s were not opened", list))
+		return
+	}
+	sgIDs := uniqueIDs(node.SecurityGroupIDs)
+	if len(sgIDs) == 0 {
+		s.addNote(id, idx, fmt.Sprintf("the node lists no security group: ports %s were not opened", list))
+		return
+	}
+	opened, failures := s.openPorts(ctx, nsID, sgIDs, ports)
+	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
+		n.OpenedPorts = opened
+		if len(failures) > 0 {
+			n.PortsError = strings.Join(failures, "; ")
+			n.Notes = append(n.Notes, "some ports could not be opened; see portsError")
+		}
+	})
+	log.Info().Str("deploymentId", id).Str("nodeId", node.ID).Strs("securityGroupIds", sgIDs).
+		Str("ports", list).Int("failed", len(failures)).Msg("Opened serving ports")
+}
+
+func (s *Service) addNote(id string, idx int, note string) {
+	s.updateNode(id, idx, func(n *model.NodeDeployResult) { n.Notes = append(n.Notes, note) })
 }
 
 // runStep runs one playbook, records it, and returns why the node cannot go on.
@@ -722,13 +773,16 @@ func (s *Service) archiveDeployment(d *model.NodeDeployment) {
 		return
 	}
 	type nodeOutcome struct {
-		Target model.NodeDeployTarget `json:"target"`
-		Status string                 `json:"status"`
-		Error  string                 `json:"error,omitempty"`
+		Target      model.NodeDeployTarget `json:"target"`
+		Status      string                 `json:"status"`
+		Error       string                 `json:"error,omitempty"`
+		OpenedPorts []model.NodeOpenedPort `json:"openedPorts,omitempty"`
+		PortsError  string                 `json:"portsError,omitempty"`
 	}
 	outcomes := make([]nodeOutcome, len(d.Nodes))
 	for i, n := range d.Nodes {
-		outcomes[i] = nodeOutcome{Target: n.Target, Status: n.Status, Error: n.Error}
+		outcomes[i] = nodeOutcome{Target: n.Target, Status: n.Status, Error: n.Error,
+			OpenedPorts: n.OpenedPorts, PortsError: n.PortsError}
 	}
 	ended := time.Now().UTC()
 	if d.FinishedAt != nil {

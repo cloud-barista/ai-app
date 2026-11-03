@@ -91,7 +91,7 @@ func newRecommendServer(t *testing.T, modelName, appName string) *Server {
 	if err != nil {
 		t.Fatalf("Open apps: %v", err)
 	}
-	if _, err := apps.Register(ctx, "open-webui", "docker compose up -d",
+	if _, err := apps.Register(ctx, "open-webui", "docker compose up -d", nil,
 		[]appstore.File{{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")}}); err != nil {
 		t.Fatalf("Register app: %v", err)
 	}

@@ -20,7 +20,7 @@ func newAppRegistry(t *testing.T) *Registry {
 	ctx := context.Background()
 	for _, script := range []string{"echo one\n", "echo two\n"} {
 		files := []appstore.File{{Name: "docker-compose.yml", Content: strings.NewReader("services: {}\n")}}
-		if _, err := store.Register(ctx, "open-webui", script, files); err != nil {
+		if _, err := store.Register(ctx, "open-webui", script, nil, files); err != nil {
 			t.Fatalf("Register: %v", err)
 		}
 	}

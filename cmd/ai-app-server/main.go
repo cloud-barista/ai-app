@@ -106,6 +106,7 @@ func main() {
 			StageRoot:     cfg.Stage.Root,
 			SpecNamespace: cfg.Tumblebug.SpecNamespace,
 			DryRun:        cfg.Tumblebug.DryRun,
+			OpenPorts:     cfg.NodeDeploy.OpenPorts,
 		})
 	if cfg.Semaphore.URL == "" {
 		log.Warn().Msg("AIAPP_SEMAPHORE_URL is not set: deployments onto nodes fail when they reach Semaphore, unless dry run is on")

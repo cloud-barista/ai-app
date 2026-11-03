@@ -21,7 +21,7 @@ func listAppBundlesTool(apps *appstore.Store) Tool {
 		Name:  "list_apps",
 		Grade: GradeRead,
 		Description: "List the uploaded AI applications, ordered by name, with every version: its number, the " +
-			"deployment script, the files it ships (name, size and SHA-256) and when it was uploaded. A node " +
+			"deployment script, the files it ships (name, size and SHA-256), the ports it serves and when it was uploaded. A node " +
 			"receiving a version gets the files in one folder and runs the script there.",
 		InputSchema: object(map[string]any{}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
