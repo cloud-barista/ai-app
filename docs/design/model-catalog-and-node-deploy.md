@@ -48,7 +48,7 @@
 
 ## 3. 데이터 모델
 
-![카탈로그에 담기는 것](../figures/06-catalog-model.svg)
+![카탈로그와 응용 저장소에 담기는 것](../figures/06-catalog-model.svg)
 
 ### 3.1 Model 과 Artifact
 

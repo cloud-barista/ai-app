@@ -229,7 +229,7 @@ save(f, "05-design-context")
 
 
 # --------------------------------------------------------- 06 catalog data model
-f = Fig(1600, 1270, title="카탈로그에 담기는 것",
+f = Fig(1600, 1270, title="카탈로그와 응용 저장소에 담기는 것",
         subtitle="필드를 위에서 아래로 적었다. 파란 줄은 배열이고, 화살표가 그 배열에 담기는 항목을 가리킨다")
 
 ROW = 32
@@ -327,7 +327,7 @@ f.lines(40, 600, ["배포는 아티팩트 하나를 골라서 한다.",
         15, "#334155", 400, "start", 26)
 
 f.rect(40, 790, 1520, 2, "ghost", rx=0, sw=0)
-label(f, 40, 840, "응용 카탈로그   POST·GET /aiapp/apps", "#1e3a8a", 18, 700, "start")
+label(f, 40, 840, "응용 저장소   POST·GET /aiapp/apps   (모델 카탈로그와 따로, 처음에는 비어 있고 업로드한 것만 있음)", "#1e3a8a", 18, 700, "start")
 _, ap = entity(40, 860, 350, "App", [
     ("name", "string", "open-webui", None),
     ("versions", "AppVersion[]", "올릴 때마다 추가", "list")], "응용 하나")
@@ -547,8 +547,8 @@ apps = [
      "OLLAMA_BASE_URL", "env 만으로 연결됨", ["기동할 때 그 Ollama 를 붙인다.", "모델 목록이 바로 보인다", "(/v1 없이 :11434 까지만)"],
      ["첫 계정이 관리자", "모델 고르고 대화", "이미지도 올릴 수 있음 (VL 모델)"]),
     ("Langflow", "7860", "노드를 이어 흐름을 만드는 빌더",
-     ["langflow (1개)", "SQLite · 흐름은 볼륨에"],
-     "MODEL_BASE_URL", "전역 변수로 들어감", ["모델 컴포넌트의 Base URL 칸에서", "MODEL_BASE_URL 을 고른다.", "관리자 비밀번호도 env 로 받음"],
+     ["langflow (1개)", "SQLite DB 는 볼륨에 (흐름 보존)"],
+     "MODEL_BASE_URL", "deploy.sh 가 Generic 전역 변수로 만듦", ["OpenAI 컴포넌트의 OpenAI API Base 칸에서", "MODEL_BASE_URL 을 고른다.", "그 호스트는 http 허용 목록에 들어감"],
      ["관리자로 로그인", "흐름에 모델 컴포넌트 연결", "Playground 에서 실행 · API 로 공개"]),
 ]
 for i, (name, port, what, conts, env, how, howsub, user) in enumerate(apps):

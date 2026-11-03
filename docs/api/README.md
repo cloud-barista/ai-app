@@ -425,6 +425,19 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 
 ## 12. 예시 응용 셋은 어떻게 동작하나
 
+**응용은 모델 카탈로그에 없습니다.** AI-App 이 담고 있는 것은 셋이고 정해지는 곳이 다릅니다.
+
+| 무엇 | 어디에 정해져 있나 | 어떻게 늘리나 | 조회 |
+|---|---|---|---|
+| 런타임 (`vllm`, `ollama`) | AI-App 코드에 들어 있음 (이미지 태그 고정) | 코드 변경 | `GET /aiapp/runtimes` |
+| 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 등록한 것은 카탈로그 파일에 저장 | `POST /aiapp/models` | `GET /aiapp/models` |
+| 응용 (Dify, Open WebUI, Langflow, 그 밖의 것) | **응용 저장소.** 처음에는 비어 있고, 업로드한 파일 묶음과 스크립트가 버전마다 AI-App 의 저장 폴더(`AIAPP_APP_STORE_DIR`)에 남음 | `POST /aiapp/apps` (multipart: `name`, `script`, `files`, `ports`) | `GET /aiapp/apps` |
+
+`examples/apps/` 는 이 repo 에 들어 있는 업로드용 예시 묶음일 뿐이고, AI-App 이 저절로 읽지 않습니다. 쓰려면 누군가 한 번 업로드합니다
+([etri.md](etri.md) 3절의 curl, `docs/api/examples/02-upload-app.sh`). 배포 요청은 `app.name`(과 `version`)으로 업로드한 것을 가리키고, AI-App 은
+그 버전의 파일을 노드의 `/opt/aiapp/app-<name>/` 에 복사해 스크립트를 실행합니다. 응용 안에서 쓸 모델은 카탈로그가 아니라
+배포 요청의 `app.env` 로 이어 줍니다.
+
 `examples/apps/` 의 세 응용은 업로드(`POST /aiapp/apps`)해서 바로 배포할 수 있는 예시입니다. 셋 다 노드에서 `deploy.sh` 가
 `docker compose up -d` 로 컨테이너를 띄우는 같은 방식이고, 다른 것은 **모델 주소를 어떻게 받느냐** 입니다.
 배포 요청의 `app.env` 가 노드의 `.env` 가 되고, 응용은 그 값으로 추론 서비스를 부릅니다.
@@ -438,8 +451,8 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 | 컨테이너 | 16개 (nginx, web, api, worker, postgres, redis, weaviate, sandbox, plugin_daemon 등) | 1개 | 1개 (내장 SQLite) |
 | 포트 | `80` | `3000` | `7860` |
 | 모델 주소 env | `VLLM_BASE_URL` (안내용) | `OLLAMA_BASE_URL` (필수) | `MODEL_BASE_URL` |
-| 모델에 붙는 방법 | Dify 는 모델 공급자를 화면이나 콘솔 API 로 등록합니다. 스크립트는 넣을 주소를 출력만 합니다 | 기동할 때 그 Ollama 를 붙입니다. 모델 목록이 바로 보입니다. 주소는 `/v1` 없이 `:11434` 까지입니다 | 전역 변수 `MODEL_BASE_URL` 로 들어갑니다. 모델 컴포넌트의 Base URL 칸에서 그 변수를 고릅니다 |
-| 그 밖의 env | `DIFY_PORT`, `DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN` (없으면 노드에서 만들어 둠) | `OPEN_WEBUI_PORT` | `LANGFLOW_SUPERUSER_PASSWORD` (필수), `LANGFLOW_SUPERUSER`, `LANGFLOW_PORT` |
+| 모델에 붙는 방법 | Dify 는 모델 공급자를 화면이나 콘솔 API 로 등록합니다. 스크립트는 넣을 주소를 출력만 합니다 | 기동할 때 그 Ollama 를 붙입니다. 모델 목록이 바로 보입니다. 주소는 `/v1` 없이 `:11434` 까지입니다 | `deploy.sh` 가 Langflow 가 뜬 뒤 그 API 로 Generic 전역 변수 `MODEL_BASE_URL` 을 만들고, 그 호스트를 `LANGFLOW_SSRF_ALLOWED_HOSTS` 에 넣습니다. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 그 변수를 고릅니다 |
+| 그 밖의 env | `DIFY_PORT`, `DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN` (없으면 노드에서 만들어 둠) | `OPEN_WEBUI_PORT` | `LANGFLOW_SUPERUSER_PASSWORD` (필수), `LANGFLOW_SUPERUSER`, `LANGFLOW_PORT`, `LANGFLOW_SSRF_ALLOWED_HOSTS` (없으면 `MODEL_BASE_URL` 의 호스트) |
 | 첫 화면에서 할 일 | `/install` 에서 관리자 계정 만들기 | 처음 가입한 계정이 관리자 | env 로 준 관리자로 로그인 |
 
 env 값은 배포 기록과 노드의 `.env` 에 평문으로 남습니다(10절). 비밀번호를 넣을 때는 이 점을 알고 넣습니다.
@@ -493,15 +506,31 @@ vLLM 을 같은 방법으로 LLM 공급자로 등록합니다.
 
 ### 12-3. Langflow (aws vm3, vLLM + Ministral 3 8B)
 
-`MODEL_BASE_URL=http://<vm3>:8000/v1` 로 배포했고(배포 `succeeded`), 관리자로 로그인해 흐름
-`Chat Input → Prompt → OpenAI 컴포넌트(모델 mistralai/Ministral-3-8B-Instruct-2512) → Chat Output` 을 만들었습니다.
-같은 노드의 vLLM 은 `succeeded` 이고 `gpuCheck` 가 `nvidia-smi: 3344, VLLM::EngineCore, 20614 MiB` 입니다.
-**그러나 2026-11-03 시험에서 Langflow 1.13.0 이 그 vLLM 을 부르지 못했습니다.** 흐름 실행(`POST /api/v1/run/<flow id>`)에서 두 가지로 막혔습니다.
+`MODEL_BASE_URL=http://<vm3>:8000/v1` 로 배포했습니다(응용 버전 5). 배포 출력에 `created the Langflow global variable MODEL_BASE_URL` 이
+찍히고, Langflow 의 전역 변수 목록에 `MODEL_BASE_URL`(Generic)이 생깁니다. 관리자로 로그인해 흐름
+`Chat Input → Prompt → OpenAI(모델 mistralai/Ministral-3-8B-Instruct-2512, OpenAI API Base = 변수 MODEL_BASE_URL) → Chat Output` 을
+만들고 Playground 에서 여행 일정을 물으면 같은 노드의 vLLM 이 답합니다.
 
-| # | 막힌 곳 | Langflow 의 오류 (줄임) | 고칠 방법 (아직 안 함) |
+- Langflow 1.13 의 기본 모델 컴포넌트(Language Model)에는 OpenAI 호환 주소를 넣는 칸이 없습니다. **OpenAI 컴포넌트**를 쓰고, API Key 칸에는
+  아무 값이나 넣습니다(vLLM 은 키를 보지 않습니다).
+- 만든 흐름은 API 로도 부를 수 있습니다: `POST http://<vm3>:7860/api/v1/run/<flow id>` (헤더 `x-api-key`, Langflow 화면에서 만든 키).
+
+예시를 고치기 전(버전 2)에는 세 가지 때문에 Langflow 가 모델을 부르지 못하거나 흐름을 잃었습니다. 2026-11-03 에 확인하고 고쳤습니다.
+
+| # | 증상 | 원인 (Langflow 1.13.0) | 고친 것 |
 |---|---|---|---|
-| 1 | env 로 넣은 전역 변수 `MODEL_BASE_URL` 이 Credential 형식으로 만들어져, Base URL 칸에 쓸 수 없음 | `Cannot use a Credential-typed global variable in 'openai_api_base'` | 화면에서 변수 형식을 Generic 으로 바꾸거나, Base URL 칸에 주소를 직접 넣음 |
-| 2 | 주소를 직접 넣어도 `http` 주소는 거절함 | `Provider endpoint 'http://<vm3>:8000/v1' must use https ... allowlist the host via LANGFLOW_SSRF_ALLOWED_HOSTS` | 예시 compose 에 `LANGFLOW_SSRF_ALLOWED_HOSTS` 를 env 로 받게 고침 |
+| 1 | `Cannot use a Credential-typed global variable in 'openai_api_base'` | env 로 받은 전역 변수(`LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT`)는 항상 Credential 형식으로 만들어지고, Credential 은 주소 칸에 못 씀 | env 로 넘기지 않고 `deploy.sh` 가 API 로 Generic 변수를 만듦 |
+| 2 | `Provider endpoint 'http://<vm3>:8000/v1' must use https ... LANGFLOW_SSRF_ALLOWED_HOSTS` | `http` 모델 주소는 운영자가 허용한 호스트만 받음 | `LANGFLOW_SSRF_ALLOWED_HOSTS` 를 받고, 없으면 `MODEL_BASE_URL` 의 호스트를 넣음 |
+| 3 | 다시 배포하면 흐름과 API 키가 사라짐 | DB(`langflow.db`)가 볼륨이 아니라 이미지 안(`site-packages/langflow/`)에 생김 | `LANGFLOW_SAVE_DB_IN_CONFIG_DIR=true` 로 DB 를 볼륨(`/app/langflow`)에 둠 |
 
-Langflow 1.13 의 기본 모델 컴포넌트(Language Model)에는 OpenAI 호환 주소를 넣는 칸이 없습니다. 그래서 OpenAI 컴포넌트의
-`OpenAI API Base` 칸을 씁니다. 위 2번을 고치기 전까지 Langflow 예시는 "화면이 열리고 로그인되는 것" 까지 확인된 상태입니다.
+고친 뒤 같은 노드에 두 번 더 배포해 흐름이 남고, 두 번째부터는 변수를 새로 만들지 않고 값만 바꾸는 것(`updated the Langflow global variable MODEL_BASE_URL`)을 확인했습니다.
+
+![Langflow 흐름: Chat Input → Prompt → OpenAI(vLLM) → Chat Output](../figures/shots/langflow-flow.png)
+
+OpenAI 컴포넌트의 `OpenAI API Base` 칸에 전역 변수 `MODEL_BASE_URL` 이 들어가 있습니다. 모델 이름은 vLLM 이 띄운
+`mistralai/Ministral-3-8B-Instruct-2512` 입니다.
+
+![Langflow Playground 의 답](../figures/shots/langflow-playground.png)
+
+Playground 에서 일정을 물으면 4.6초 만에 답이 옵니다. 답의 내용(9시에 떠나 11시 30분에 도착한다면서 11시 경복궁이 무리 없다고 함)은
+모델의 몫이고 AI-App 이 고치지 않습니다.
