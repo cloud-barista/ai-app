@@ -73,6 +73,9 @@ type RunSpec struct {
 type RunResult struct {
 	// TaskID is zero when the task never started.
 	TaskID int `json:"taskId"`
+	// TaskURL is the task page in the Semaphore web UI. Empty when the task
+	// never started or no UI URL is configured.
+	TaskURL string `json:"taskUrl,omitempty"`
 	// Status is the final Semaphore task status, or the last one seen when the
 	// run timed out or was cancelled. Empty when the task never started.
 	Status string `json:"status"`
@@ -153,6 +156,7 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 		return result, err
 	}
 	result.TaskID = task.ID
+	result.TaskURL = c.TaskURL(projectID, task.ID)
 	result.Status = task.Status
 	log.Info().Str("run", name).Int("task", task.ID).Str("playbook", spec.Playbook).Msg("Started Semaphore task")
 
@@ -180,6 +184,19 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 		return result, outErr
 	}
 	return result, nil
+}
+
+// TaskURL is the page of a task in the Semaphore web UI, or empty when no UI
+// URL is configured.
+//
+// The v2.12.17 web UI routes in history mode, and its root component opens the
+// log of task t over whatever project page is shown when the query holds t, so
+// the history page of the project with ?t=<task> shows the task.
+func (c *Client) TaskURL(projectID, taskID int) string {
+	if c.uiURL == "" || projectID <= 0 || taskID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s/project/%d/history?t=%d", c.uiURL, projectID, taskID)
 }
 
 // TemplateName is the name of the template that runs playbook: "aiapp-" and

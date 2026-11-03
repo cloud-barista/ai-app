@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -169,6 +170,12 @@ type SemaphoreConfig struct {
 	PollInterval time.Duration
 	// Timeout bounds one task, from start to a final status.
 	Timeout time.Duration
+	// UIURL is the Semaphore web UI as a browser reaches it, for example
+	// http://203.0.113.5:3000. URL is where this service reaches the API,
+	// which inside compose is a container name no browser resolves. Every
+	// recorded playbook run links to its task page under UIURL; empty leaves
+	// the links out.
+	UIURL string
 }
 
 // StageConfig holds the shared folder of deployment files.
@@ -296,6 +303,7 @@ func Load() (*Config, error) {
 		"semaphore.playbook_dir",
 		"semaphore.poll_interval",
 		"semaphore.timeout",
+		"semaphore.ui_url",
 		"stage.root",
 		"deployment.store_file",
 		"deployment.open_ports",
@@ -368,6 +376,7 @@ func Load() (*Config, error) {
 			PlaybookDir:  strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.playbook_dir")), "/"),
 			PollInterval: v.GetDuration("semaphore.poll_interval"),
 			Timeout:      v.GetDuration("semaphore.timeout"),
+			UIURL:        strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.ui_url")), "/"),
 		},
 		Stage: StageConfig{
 			Root: filepath.Clean(strings.TrimSpace(v.GetString("stage.root"))),
@@ -470,6 +479,17 @@ func (s SemaphoreConfig) validate() error {
 	}
 	if s.Timeout <= 0 {
 		return fmt.Errorf("invalid semaphore timeout: %s", s.Timeout)
+	}
+	if s.UIURL != "" {
+		u, err := url.Parse(s.UIURL)
+		if err != nil {
+			return fmt.Errorf("%s_SEMAPHORE_UI_URL is not a URL", envPrefix)
+		}
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("%s_SEMAPHORE_UI_URL must be an http or https URL with a host and no credentials, "+
+				"query or fragment, got %q", envPrefix, u.Redacted())
+		}
 	}
 	return nil
 }

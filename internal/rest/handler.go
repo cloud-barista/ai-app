@@ -31,6 +31,8 @@ type Handler struct {
 	nodeDeploy *nodedeploy.Service
 	// recommend answers model and application recommendation requests.
 	recommend *recommend.Service
+	// status checks what deployment depends on.
+	status *StatusChecker
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder

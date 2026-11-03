@@ -101,7 +101,8 @@ func main() {
 	if cfg.NodeDeploy.StoreFile == "" {
 		log.Warn().Msg("AIAPP_DEPLOYMENT_STORE_FILE is not set: node deployment records are kept in memory and lost on restart")
 	}
-	nodeDeployService := nodedeploy.NewService(tumblebugClient, semaphore.NewClient(cfg.Semaphore),
+	semaphoreClient := semaphore.NewClient(cfg.Semaphore)
+	nodeDeployService := nodedeploy.NewService(tumblebugClient, semaphoreClient,
 		modelCatalog, appStore, deploymentStore, archiveStore, nodedeploy.Options{
 			StageRoot:     cfg.Stage.Root,
 			SpecNamespace: cfg.Tumblebug.SpecNamespace,
@@ -110,6 +111,9 @@ func main() {
 		})
 	if cfg.Semaphore.URL == "" {
 		log.Warn().Msg("AIAPP_SEMAPHORE_URL is not set: deployments onto nodes fail when they reach Semaphore, unless dry run is on")
+	}
+	if cfg.Semaphore.UIURL == "" {
+		log.Info().Msg("AIAPP_SEMAPHORE_UI_URL is not set: deployment records carry no links to their Semaphore tasks")
 	}
 
 	recommender, err := recommend.Open(cfg.Recommender.Model, cfg.Recommender.App,
@@ -153,6 +157,7 @@ func main() {
 
 		NodeDeploy: nodeDeployService,
 		Recommend:  recommender,
+		Status:     rest.NewStatusChecker(cfg, semaphoreClient, tumblebugClient),
 	})
 	rest.MarkReady()
 

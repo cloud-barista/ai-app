@@ -388,6 +388,10 @@ type NodeDeployStep struct {
 	Playbook string `json:"playbook" example:"compose-up.yml"`
 	// TaskID is the Semaphore task, kept in Semaphore with its log.
 	TaskID int `json:"taskId,omitempty" example:"2147483645"`
+	// TaskURL is the page of the task in the Semaphore web UI, with its log.
+	// Absent when the task never started or AIAPP_SEMAPHORE_UI_URL was not
+	// set when it ran.
+	TaskURL string `json:"taskUrl,omitempty" example:"http://203.0.113.5:3001/project/1/history?t=42"`
 	// Status is the final Semaphore task status: success, error, stopped or
 	// rejected, or empty when the task never started.
 	Status string `json:"status" example:"success"`

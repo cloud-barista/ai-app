@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -192,7 +194,7 @@ func clearSemaphoreEnv(t *testing.T) {
 	for _, name := range []string{
 		"AIAPP_SEMAPHORE_URL", "AIAPP_SEMAPHORE_TOKEN", "AIAPP_SEMAPHORE_USERNAME", "AIAPP_SEMAPHORE_PASSWORD",
 		"AIAPP_SEMAPHORE_PROJECT", "AIAPP_SEMAPHORE_PLAYBOOK_DIR", "AIAPP_SEMAPHORE_POLL_INTERVAL",
-		"AIAPP_SEMAPHORE_TIMEOUT", "AIAPP_STAGE_ROOT",
+		"AIAPP_SEMAPHORE_TIMEOUT", "AIAPP_SEMAPHORE_UI_URL", "AIAPP_STAGE_ROOT",
 	} {
 		t.Setenv(name, "")
 	}
@@ -222,6 +224,7 @@ func TestSemaphoreAndStageOverrides(t *testing.T) {
 	t.Setenv("AIAPP_SEMAPHORE_PLAYBOOK_DIR", "/playbooks/")
 	t.Setenv("AIAPP_SEMAPHORE_POLL_INTERVAL", "2s")
 	t.Setenv("AIAPP_SEMAPHORE_TIMEOUT", "1h")
+	t.Setenv("AIAPP_SEMAPHORE_UI_URL", " http://203.0.113.5:3000/ ")
 	t.Setenv("AIAPP_STAGE_ROOT", "/srv/stage/")
 	cfg, err := Load()
 	if err != nil {
@@ -230,6 +233,7 @@ func TestSemaphoreAndStageOverrides(t *testing.T) {
 	want := SemaphoreConfig{
 		URL: "http://semaphore:3000", Username: "admin", Password: "pw", Project: "etri",
 		PlaybookDir: "/playbooks", PollInterval: 2 * time.Second, Timeout: time.Hour,
+		UIURL: "http://203.0.113.5:3000",
 	}
 	if cfg.Semaphore != want {
 		t.Errorf("semaphore = %+v, want %+v", cfg.Semaphore, want)
@@ -258,6 +262,9 @@ func TestSemaphoreAndStageInvalid(t *testing.T) {
 		"zero timeout":          {map[string]string{"AIAPP_SEMAPHORE_TIMEOUT": "0s"}, "semaphore timeout"},
 		"relative playbook dir": {map[string]string{"AIAPP_SEMAPHORE_PLAYBOOK_DIR": "ansible"}, "AIAPP_SEMAPHORE_PLAYBOOK_DIR"},
 		"relative stage root":   {map[string]string{"AIAPP_STAGE_ROOT": "data/stage"}, "AIAPP_STAGE_ROOT"},
+		"ui url without scheme": {map[string]string{"AIAPP_SEMAPHORE_UI_URL": "203.0.113.5:3000"}, "AIAPP_SEMAPHORE_UI_URL"},
+		"ui url not http":       {map[string]string{"AIAPP_SEMAPHORE_UI_URL": "javascript:alert(1)"}, "AIAPP_SEMAPHORE_UI_URL"},
+		"ui url with user":      {map[string]string{"AIAPP_SEMAPHORE_UI_URL": (&url.URL{Scheme: "http", User: url.UserPassword("admin", uiURLSecret), Host: "203.0.113.5"}).String()}, "AIAPP_SEMAPHORE_UI_URL"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -265,8 +272,12 @@ func TestSemaphoreAndStageInvalid(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			if _, err := Load(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Load error = %v, want one containing %q", err, tc.want)
+			}
+			if err != nil && strings.Contains(err.Error(), uiURLSecret) {
+				t.Errorf("Load error %q repeats the password of the URL", err)
 			}
 		})
 	}
@@ -298,3 +309,7 @@ func TestRecommenderNames(t *testing.T) {
 		t.Errorf("Load error = %v, want one naming AIAPP_RECOMMENDER_APP", err)
 	}
 }
+
+// uiURLSecret is a made-up password for the UI URL test, so no literal looks
+// like a secret.
+var uiURLSecret = "u-" + rand.Text()

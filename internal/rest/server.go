@@ -20,7 +20,9 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 	"github.com/ish-hcc/ai-agent-proto/internal/recommend"
+	"github.com/ish-hcc/ai-agent-proto/internal/semaphore"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
 
 // BasePath is the mount point for every route of this service.
@@ -45,6 +47,9 @@ type AppDependencies struct {
 	// Recommend answers model and application recommendation requests. Nil
 	// leaves both unconfigured, so a valid request is answered with 501.
 	Recommend *recommend.Service
+	// Status checks Semaphore, CB-Tumblebug and the stage folder. Nil builds
+	// one from the configuration with clients of its own.
+	Status *StatusChecker
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -55,6 +60,10 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	if recommender == nil {
 		recommender, _ = recommend.Open("", "", recommend.NewCatalog(deps.Models, deps.Apps))
 	}
+	status := deps.Status
+	if status == nil {
+		status = NewStatusChecker(cfg, semaphore.NewClient(cfg.Semaphore), tumblebug.NewClient(cfg.Tumblebug))
+	}
 	handler := &Handler{
 		archive: deps.Archive,
 		tools:   deps.Tools,
@@ -63,6 +72,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 
 		nodeDeploy: deps.NodeDeploy,
 		recommend:  recommender,
+		status:     status,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -71,6 +81,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	e := newEcho(cfg.Auth.Token, partnerNLPrefix+"/readyz", enginePrefix+"/readyz")
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
+	g.GET("/status", handler.RestGetStatus)
 	g.GET("/api/*", echoSwagger.WrapHandler)
 
 	// The operator console, served from this origin so that it can call the

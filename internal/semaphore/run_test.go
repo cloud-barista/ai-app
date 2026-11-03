@@ -97,6 +97,12 @@ func (f *fakeSemaphore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(raw, &body)
 
+	// v2.12.17 answers ping without a session, in plain text.
+	if r.URL.Path == "/api/ping" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, "pong")
+		return
+	}
 	if r.URL.Path == "/api/auth/login" {
 		if body["auth"] != "admin" || body["password"] != "pw" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -128,6 +134,10 @@ func (f *fakeSemaphore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if r.URL.Path == "/api/info" {
+		writeJSON(w, http.StatusOK, map[string]any{"version": "v2.12.17-5767d93-1741607759", "ansible": "ansible [core 2.16]"})
+		return
+	}
 	if r.URL.Path == "/api/projects" {
 		switch r.Method {
 		case http.MethodGet:

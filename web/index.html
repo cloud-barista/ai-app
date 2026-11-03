@@ -371,6 +371,13 @@
   </div>
 
   <div class="panel">
+    <h3>배포 의존 서비스 (GET /status)</h3>
+    <p class="lede" style="margin:0 0 10px">부를 때마다 Semaphore, CB-Tumblebug, 공유 저장소를 읽기만 해서 확인합니다. 아무것도 만들지 않습니다.</p>
+    <div id="ov-deps"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="ov-deps-wire"></details>
+  </div>
+
+  <div class="panel">
     <h3>이 프로토타입이 하는 일</h3>
     <div class="note">
       이노그리드 담당 영역은 <b>AI-App 서비스</b>(모델 카탈로그, 응용 업로드·버전, 노드 배포와 제어)와
@@ -1135,13 +1142,15 @@ async function loadOverview() {
   ['ov-st-nl', 'ov-st-engine', 'ov-st-app', 'ov-st-tb', 'ov-st-sem'].forEach((id) =>
     $(id).innerHTML = '<span class="spin">부르는 중...</span>');
 
-  const [ready, tools, engReady, engCard, nlReady, nlCard, models, apps, deps] = await Promise.all([
+  $('ov-deps').innerHTML = '<div class="spin">부르는 중...</div>';
+  const [ready, tools, engReady, engCard, nlReady, nlCard, models, apps, deps, status] = await Promise.all([
     api('GET', '/readyz'), api('GET', '/tools'),
     api('GET', '/engine/readyz'), api('GET', '/engine/card'),
     api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card'),
-    api('GET', '/models'), api('GET', '/apps'), api('GET', '/deployments')]);
+    api('GET', '/models'), api('GET', '/apps'), api('GET', '/deployments'), api('GET', '/status')]);
   wire($('ov-wire'), engCard,
-    'GET /readyz, /tools, /engine/readyz, /engine/card, /partner/nl/readyz, /partner/nl/card, /models, /apps, /deployments 를 불렀습니다 (아래는 engine/card)');
+    'GET /readyz, /tools, /engine/readyz, /engine/card, /partner/nl/readyz, /partner/nl/card, /models, /apps, /deployments, /status 를 불렀습니다 (아래는 engine/card)');
+  wire($('ov-deps-wire'), status);
 
   const t = tools.data || {};
   const list = t.tools || [];
@@ -1165,8 +1174,11 @@ async function loadOverview() {
     · 워크플로 ${esc((ec.workflows || []).length)} · AI-App MCP ${engineMCPBadge(ec)}` : ''}`;
   $('ov-st-nl').innerHTML = `${upBadge(nlReady)}${nc ? ` · 엔진 MCP ${
     ((nc.mcpServers || [])[0] || {}).connected ? '<span class="b b-off">연결됨</span>' : SESSION_NONE}` : ''}`;
-  $('ov-st-tb').innerHTML = tumblebugSeen(deps, dl);
-  $('ov-st-sem').innerHTML = semaphoreSeen(deps, dl);
+  const st = status.ok && status.data && typeof status.data === 'object' ? status.data : null;
+  $('ov-st-tb').innerHTML = st ? depReach(st.tumblebug) : upBadge(status);
+  $('ov-st-sem').innerHTML = st ? `${depReach(st.semaphore)}${st.semaphore.reachable
+    ? ` · 인증 ${st.semaphore.authenticated ? '<span class="b b-off">됨</span>' : '<span class="b b-on">안 됨</span>'}` : ''}` : upBadge(status);
+  $('ov-deps').innerHTML = st ? renderDepStatus(st) : failNote(status);
 
   const unit = (s) => `<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> ${s}</span>`;
   const notRead = (r) => `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
@@ -1218,45 +1230,47 @@ async function loadOverview() {
   $('ov-notes').innerHTML = notes;
 }
 
-/* AI-App has no route that asks CB-Tumblebug or Semaphore whether they are up;
-   it reaches them only while deploying. So the overview reports what the
-   newest deployment that reached them recorded, and says that is where the
-   answer comes from. */
-function tumblebugSeen(r, dl) {
-  if (!dl) return `<span class="b b-mut">배포 기록을 못 읽음 · HTTP ${esc(r.status)}</span>`;
-  for (const d of dl) {
-    for (const n of d.nodes || []) {
-      if (n.node) {
-        return `<span class="b b-off">노드 조회됨</span>
-          <div style="font-size:11.5px;color:var(--ink-3)">최근 배포 기록 기준 · ${esc(fmtTime(d.createdAt))}</div>`;
-      }
-      if (n.error) {
-        return `<span class="b b-on">노드 조회 못 함</span>
-          <div style="font-size:11.5px;color:var(--ink-3)">최근 배포 기록 기준 · ${esc(n.error)}</div>`;
-      }
-    }
-  }
-  return '<span class="b b-mut">배포가 없어 아직 부르지 않음</span>';
+/* depReach is the badge of one dependency of GET /status: whether it
+   answered, and how fast. */
+function depReach(x) {
+  x = x || {};
+  if (x.configured === false) return '<span class="b b-mut">설정 안 됨</span>';
+  return x.reachable
+    ? `<span class="b b-off">응답함</span>${x.latencyMs != null ? ` <span class="mono" style="font-size:11.5px">${esc(x.latencyMs)}ms</span>` : ''}`
+    : '<span class="b b-on">응답 없음</span>';
 }
 
-function semaphoreSeen(r, dl) {
-  if (!dl) return `<span class="b b-mut">배포 기록을 못 읽음 · HTTP ${esc(r.status)}</span>`;
-  for (const d of dl) {
-    for (const n of d.nodes || []) {
-      for (const s of n.steps || []) {
-        if (s.taskId) {
-          return `<span class="b b-off">태스크 실행됨</span>
-            <div style="font-size:11.5px;color:var(--ink-3)">최근 배포 기록 기준 · ${esc(s.playbook)} #${esc(s.taskId)}</div>`;
-        }
-        if (s.error) {
-          return `<span class="b b-on">태스크 시작 못 함</span>
-            <div style="font-size:11.5px;color:var(--ink-3)">최근 배포 기록 기준 · ${esc(s.error)}</div>`;
-        }
-      }
-    }
-  }
-  return dl.length ? '<span class="b b-mut">Semaphore 까지 간 배포 없음</span>'
-    : '<span class="b b-mut">배포가 없어 아직 부르지 않음</span>';
+/* renderDepStatus lays out GET /status: one row per dependency with what it
+   answered, then the Semaphore templates and the two settings that change
+   what a deployment does. */
+function renderDepStatus(st) {
+  const sm = st.semaphore || {}, tb = st.tumblebug || {}, sg = st.stage || {};
+  const yes = (v, on, off) => v ? `<span class="b b-off">${on}</span>` : `<span class="b b-on">${off}</span>`;
+  const rows = [
+    ['Semaphore', depReach(sm), sm.url || '-', sm.version || '-', sm.message || ''],
+    ['CB-Tumblebug', depReach(tb), tb.url || '-', tb.version || '-', tb.message || ''],
+    ['공유 저장소 (stage)', yes(sg.writable, '쓸 수 있음', '쓸 수 없음'), sg.path || '-', '-', sg.message || '']
+  ];
+  const tpls = sm.templates || [];
+  return `<table>
+      <tr><th style="width:150px">대상</th><th style="width:130px">상태</th><th>주소 · 경로</th><th style="width:220px">버전</th><th>메시지</th></tr>
+      ${rows.map(([k, b, u, v, m]) => `<tr><td>${esc(k)}</td><td>${b}</td>
+        <td class="mono" style="font-size:12px">${esc(u)}</td><td class="mono" style="font-size:12px">${esc(v)}</td>
+        <td style="font-size:12px">${esc(m)}</td></tr>`).join('')}
+    </table>
+    <table class="kv" style="margin-top:8px">
+      <tr><td>Semaphore 인증</td><td>${sm.reachable ? yes(sm.authenticated, '됨', '안 됨') : '-'}</td></tr>
+      <tr><td>Semaphore 프로젝트</td><td><span class="mono">${esc(sm.project || '-')}</span>${sm.projectId
+        ? ` · #${esc(sm.projectId)}` : ' · <span class="b b-mut">아직 없음 · 첫 배포가 만듦</span>'}</td></tr>
+      <tr><td>플레이북 템플릿</td><td>${tpls.length ? tpls.map((t) => `<span class="mono">${esc(t.name)}</span> ${t.exists
+        ? '<span class="b b-off">있음</span>' : '<span class="b b-mut">아직 없음</span>'}`).join(' · ') : '-'}</td></tr>
+      <tr><td>Semaphore 화면 주소 (uiUrl)</td><td>${/^https?:\/\//i.test(sm.uiUrl || '')
+        ? `<a class="link" href="${esc(sm.uiUrl)}" target="_blank" rel="noopener">${esc(sm.uiUrl)}</a>`
+        : '<span class="b b-mut">설정 안 됨 · 배포 기록에 태스크 링크가 없음</span>'}</td></tr>
+      <tr><td>dry-run</td><td>${st.dryRun ? '<span class="b b-off">켜짐 · Semaphore 를 부르지 않음</span>' : '<span class="b b-on">꺼짐 · 실제 실행</span>'}</td></tr>
+      <tr><td>포트 열기 (AIAPP_DEPLOYMENT_OPEN_PORTS)</td><td>${st.openPorts ? '<span class="b b-off">켜짐</span>' : '<span class="b b-mut">꺼짐 · 기록만 함</span>'}</td></tr>
+      <tr><td>확인 시각</td><td>${esc(fmtTime(st.checkedAt))}</td></tr>
+    </table>`;
 }
 
 /* statusCounts reads "succeeded 2 · dry-run 1" off a deployment listing. */
@@ -1970,6 +1984,16 @@ function openedPortsCell(n) {
       ? ' <span class="b b-mut">이미 열림</span>' : ''}`).join(', ')}</div>`).join('') + err;
 }
 
+/* taskCell shows the Semaphore task of a step, linked to its page in the
+   Semaphore UI when the record carries one (AIAPP_SEMAPHORE_UI_URL). */
+function taskCell(s) {
+  if (!s.taskId) return '-';
+  const label = '#' + esc(s.taskId);
+  return /^https?:\/\//i.test(s.taskUrl || '')
+    ? `<a class="link" href="${esc(s.taskUrl)}" target="_blank" rel="noopener" title="Semaphore 에서 태스크와 로그 보기">${label}</a>`
+    : label;
+}
+
 function renderNodeResult(n, d) {
   const node = n.node;
   const rows = [
@@ -1998,7 +2022,7 @@ function renderNodeResult(n, d) {
       ${steps.map((s, i) => `<tr>
         <td>${i + 1}</td>
         <td class="mono" style="font-size:12px">${esc(s.playbook)}</td>
-        <td class="mono" style="font-size:12px">${s.taskId ? '#' + esc(s.taskId) : '-'}</td>
+        <td class="mono" style="font-size:12px">${taskCell(s)}</td>
         <td>${taskBadge(s.status)}</td>
         <td style="font-size:12px">${esc(s.error || '')}${(s.cleanupErrors || []).length
           ? `<div class="err" style="font-size:12px">지우지 못한 Semaphore 자원: ${esc(s.cleanupErrors.join(', '))}</div>` : ''}</td>
@@ -2046,7 +2070,7 @@ async function showDeploymentLogs() {
       <h4><span class="mono">${esc(targetKey(n.target || {}))}</span> ${depBadge(n.status)}</h4>
       ${(n.steps || []).length ? n.steps.map((s) => `
         <div style="margin-top:8px;font-size:12px"><span class="mono">${esc(s.playbook)}</span>
-          ${s.taskId ? '#' + esc(s.taskId) : ''} ${taskBadge(s.status)}</div>
+          ${s.taskId ? taskCell(s) : ''} ${taskBadge(s.status)}</div>
         <pre class="log">${esc((s.output || []).join('\n') || '(로그 없음)')}</pre>`).join('')
         : '<div style="font-size:12px;color:var(--ink-3)">기록된 태스크가 없습니다. dry-run 이면 Semaphore 를 부르지 않습니다.</div>'}
     </div>`).join('')}`;

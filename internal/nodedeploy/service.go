@@ -518,6 +518,7 @@ func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphor
 		st.FinishedAt = &finished
 		if result != nil {
 			st.TaskID = result.TaskID
+			st.TaskURL = result.TaskURL
 			st.Status = result.Status
 			st.Output = result.Output
 			st.CleanupErrors = result.CleanupErrors

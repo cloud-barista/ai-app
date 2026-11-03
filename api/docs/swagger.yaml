@@ -375,6 +375,31 @@ definitions:
     - runtimes
     - source
     type: object
+  model.DependencyStatus:
+    properties:
+      latencyMs:
+        description: |-
+          LatencyMs is how long the reachability call took, in milliseconds.
+          Absent when it did not answer.
+        example: 3
+        type: integer
+      message:
+        description: Message says what was found, or why a check failed.
+        example: CB-Tumblebug is ready
+        type: string
+      reachable:
+        description: Reachable is whether it answered.
+        example: true
+        type: boolean
+      url:
+        description: URL is where it is called, without credentials.
+        example: http://cb-tumblebug:1323/tumblebug
+        type: string
+      version:
+        description: Version is the version it reports, when it reports one.
+        example: v2.12.17-5767d93-1741607759
+        type: string
+    type: object
   model.Endpoint:
     properties:
       artifactId:
@@ -891,6 +916,13 @@ definitions:
         description: TaskID is the Semaphore task, kept in Semaphore with its log.
         example: 2147483645
         type: integer
+      taskUrl:
+        description: |-
+          TaskURL is the page of the task in the Semaphore web UI, with its log.
+          Absent when the task never started or AIAPP_SEMAPHORE_UI_URL was not
+          set when it ran.
+        example: http://203.0.113.5:3001/project/1/history?t=42
+        type: string
     type: object
   model.NodeDeployTarget:
     properties:
@@ -1169,11 +1201,137 @@ definitions:
           $ref: '#/definitions/model.RuntimeProfile'
         type: array
     type: object
+  model.SemaphoreStatus:
+    properties:
+      authenticated:
+        description: |-
+          Authenticated is whether the configured token, or user name and
+          password, were accepted.
+        example: true
+        type: boolean
+      configured:
+        description: Configured is false when AIAPP_SEMAPHORE_URL is not set.
+        example: true
+        type: boolean
+      latencyMs:
+        description: |-
+          LatencyMs is how long the reachability call took, in milliseconds.
+          Absent when it did not answer.
+        example: 3
+        type: integer
+      message:
+        description: Message says what was found, or why a check failed.
+        example: CB-Tumblebug is ready
+        type: string
+      project:
+        description: |-
+          Project is the Semaphore project deployments are registered in
+          (AIAPP_SEMAPHORE_PROJECT).
+        example: aiapp
+        type: string
+      projectId:
+        description: |-
+          ProjectID is the project's ID. Absent when it does not exist yet or
+          could not be read.
+        example: 1
+        type: integer
+      reachable:
+        description: Reachable is whether it answered.
+        example: true
+        type: boolean
+      templates:
+        description: |-
+          Templates are the templates of the deployment playbooks, each with
+          whether it exists. Every one reads as missing when the project could
+          not be read.
+        items:
+          $ref: '#/definitions/model.SemaphoreTemplateStatus'
+        type: array
+      uiUrl:
+        description: |-
+          UIURL is the web UI the task links of deployment records point at
+          (AIAPP_SEMAPHORE_UI_URL). Absent when it is not set, and then the
+          records carry no task links.
+        example: http://203.0.113.5:3001
+        type: string
+      url:
+        description: URL is where it is called, without credentials.
+        example: http://cb-tumblebug:1323/tumblebug
+        type: string
+      version:
+        description: Version is the version it reports, when it reports one.
+        example: v2.12.17-5767d93-1741607759
+        type: string
+    type: object
+  model.SemaphoreTemplateStatus:
+    properties:
+      exists:
+        description: Exists is false until the first deployment that runs the playbook.
+        example: true
+        type: boolean
+      id:
+        description: ID is the template's ID. Absent when it does not exist.
+        example: 3
+        type: integer
+      name:
+        example: aiapp-compose-up
+        type: string
+      playbook:
+        example: compose-up.yml
+        type: string
+    type: object
+  model.ServiceStatus:
+    properties:
+      checkedAt:
+        description: CheckedAt is when the checks ran.
+        example: "2026-11-03T12:00:00Z"
+        type: string
+      dryRun:
+        description: |-
+          DryRun is true when deployments stop after placing their files and
+          node control is blocked (AIAPP_TUMBLEBUG_DRY_RUN). Semaphore is not
+          called then.
+        example: false
+        type: boolean
+      openPorts:
+        description: |-
+          OpenPorts is true when a deployment opens the ports it serves in the
+          node's CB-Tumblebug security groups (AIAPP_DEPLOYMENT_OPEN_PORTS).
+        example: true
+        type: boolean
+      semaphore:
+        allOf:
+        - $ref: '#/definitions/model.SemaphoreStatus'
+        description: Semaphore runs the deployment playbooks.
+      stage:
+        allOf:
+        - $ref: '#/definitions/model.StageStatus'
+        description: Stage is the folder deployment files are placed in for Semaphore.
+      tumblebug:
+        allOf:
+        - $ref: '#/definitions/model.DependencyStatus'
+        description: Tumblebug is the CB-Tumblebug the nodes are read from.
+    type: object
   model.SimpleMsg:
     properties:
       message:
         example: AI application not found
         type: string
+    type: object
+  model.StageStatus:
+    properties:
+      message:
+        description: Message says what was found.
+        example: writable
+        type: string
+      path:
+        description: Path is AIAPP_STAGE_ROOT.
+        example: /var/lib/aiapp/stage
+        type: string
+      writable:
+        description: Writable is whether a file could be created in it.
+        example: true
+        type: boolean
     type: object
   model.TokenUsage:
     properties:
@@ -2513,6 +2671,27 @@ paths:
       summary: Get an inference runtime profile
       tags:
       - '[Model] Inference Runtime Profiles'
+  /status:
+    get:
+      description: |-
+        Check, at the time of the call, what deploying onto nodes depends on, and answer 200 with what was found whether or not each dependency is up. Nothing is created or changed in any of them.
+
+        semaphore: whether GET /api/ping answers (reachable, latencyMs), whether the configured token or user name and password are accepted (authenticated), the version from /api/info, whether the project (AIAPP_SEMAPHORE_PROJECT) exists and whether the template of each deployment playbook (aiapp-install-docker, aiapp-compose-up, aiapp-copy-and-run, aiapp-compose-down) exists. A project or template that does not exist yet is not a fault: the first deployment that needs it creates it. uiUrl is AIAPP_SEMAPHORE_UI_URL, the web UI that the taskUrl of each recorded playbook run points at; without it records carry no task links. tumblebug: whether CB-Tumblebug GET /readyz answers. stage: whether a file can be created in AIAPP_STAGE_ROOT. dryRun and openPorts are AIAPP_TUMBLEBUG_DRY_RUN and AIAPP_DEPLOYMENT_OPEN_PORTS. Each check gives up after 5 seconds. URLs are shown without credentials and no credential is part of the response.
+
+        GET /readyz stays the liveness probe: it says only whether this service started, and calls nothing.
+      operationId: GetStatus
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: What each dependency answered
+          schema:
+            $ref: '#/definitions/model.ServiceStatus'
+      security:
+      - BearerAuth: []
+      summary: Check the dependencies of deployment
+      tags:
+      - '[Health] Service Health'
   /tools:
     get:
       description: List every tool the agent may call, with its risk grade and whether

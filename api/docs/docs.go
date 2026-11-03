@@ -1427,6 +1427,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Check, at the time of the call, what deploying onto nodes depends on, and answer 200 with what was found whether or not each dependency is up. Nothing is created or changed in any of them.\n\nsemaphore: whether GET /api/ping answers (reachable, latencyMs), whether the configured token or user name and password are accepted (authenticated), the version from /api/info, whether the project (AIAPP_SEMAPHORE_PROJECT) exists and whether the template of each deployment playbook (aiapp-install-docker, aiapp-compose-up, aiapp-copy-and-run, aiapp-compose-down) exists. A project or template that does not exist yet is not a fault: the first deployment that needs it creates it. uiUrl is AIAPP_SEMAPHORE_UI_URL, the web UI that the taskUrl of each recorded playbook run points at; without it records carry no task links. tumblebug: whether CB-Tumblebug GET /readyz answers. stage: whether a file can be created in AIAPP_STAGE_ROOT. dryRun and openPorts are AIAPP_TUMBLEBUG_DRY_RUN and AIAPP_DEPLOYMENT_OPEN_PORTS. Each check gives up after 5 seconds. URLs are shown without credentials and no credential is part of the response.\n\nGET /readyz stays the liveness probe: it says only whether this service started, and calls nothing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Health] Service Health"
+                ],
+                "summary": "Check the dependencies of deployment",
+                "operationId": "GetStatus",
+                "responses": {
+                    "200": {
+                        "description": "What each dependency answered",
+                        "schema": {
+                            "$ref": "#/definitions/model.ServiceStatus"
+                        }
+                    }
+                }
+            }
+        },
         "/tools": {
             "get": {
                 "security": [
@@ -1952,6 +1978,36 @@ const docTemplate = `{
                     "description": "Source is where the artifact is downloaded from, such as huggingface,\nkaggle, ollama or docker-model-runner. Filter with ?source=.",
                     "type": "string",
                     "example": "huggingface"
+                }
+            }
+        },
+        "model.DependencyStatus": {
+            "type": "object",
+            "properties": {
+                "latencyMs": {
+                    "description": "LatencyMs is how long the reachability call took, in milliseconds.\nAbsent when it did not answer.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "message": {
+                    "description": "Message says what was found, or why a check failed.",
+                    "type": "string",
+                    "example": "CB-Tumblebug is ready"
+                },
+                "reachable": {
+                    "description": "Reachable is whether it answered.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "url": {
+                    "description": "URL is where it is called, without credentials.",
+                    "type": "string",
+                    "example": "http://cb-tumblebug:1323/tumblebug"
+                },
+                "version": {
+                    "description": "Version is the version it reports, when it reports one.",
+                    "type": "string",
+                    "example": "v2.12.17-5767d93-1741607759"
                 }
             }
         },
@@ -2531,6 +2587,11 @@ const docTemplate = `{
                     "description": "TaskID is the Semaphore task, kept in Semaphore with its log.",
                     "type": "integer",
                     "example": 2147483645
+                },
+                "taskUrl": {
+                    "description": "TaskURL is the page of the task in the Semaphore web UI, with its log.\nAbsent when the task never started or AIAPP_SEMAPHORE_UI_URL was not\nset when it ran.",
+                    "type": "string",
+                    "example": "http://203.0.113.5:3001/project/1/history?t=42"
                 }
             }
         },
@@ -2865,12 +2926,161 @@ const docTemplate = `{
                 }
             }
         },
+        "model.SemaphoreStatus": {
+            "type": "object",
+            "properties": {
+                "authenticated": {
+                    "description": "Authenticated is whether the configured token, or user name and\npassword, were accepted.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "configured": {
+                    "description": "Configured is false when AIAPP_SEMAPHORE_URL is not set.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "latencyMs": {
+                    "description": "LatencyMs is how long the reachability call took, in milliseconds.\nAbsent when it did not answer.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "message": {
+                    "description": "Message says what was found, or why a check failed.",
+                    "type": "string",
+                    "example": "CB-Tumblebug is ready"
+                },
+                "project": {
+                    "description": "Project is the Semaphore project deployments are registered in\n(AIAPP_SEMAPHORE_PROJECT).",
+                    "type": "string",
+                    "example": "aiapp"
+                },
+                "projectId": {
+                    "description": "ProjectID is the project's ID. Absent when it does not exist yet or\ncould not be read.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "reachable": {
+                    "description": "Reachable is whether it answered.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "templates": {
+                    "description": "Templates are the templates of the deployment playbooks, each with\nwhether it exists. Every one reads as missing when the project could\nnot be read.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SemaphoreTemplateStatus"
+                    }
+                },
+                "uiUrl": {
+                    "description": "UIURL is the web UI the task links of deployment records point at\n(AIAPP_SEMAPHORE_UI_URL). Absent when it is not set, and then the\nrecords carry no task links.",
+                    "type": "string",
+                    "example": "http://203.0.113.5:3001"
+                },
+                "url": {
+                    "description": "URL is where it is called, without credentials.",
+                    "type": "string",
+                    "example": "http://cb-tumblebug:1323/tumblebug"
+                },
+                "version": {
+                    "description": "Version is the version it reports, when it reports one.",
+                    "type": "string",
+                    "example": "v2.12.17-5767d93-1741607759"
+                }
+            }
+        },
+        "model.SemaphoreTemplateStatus": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "description": "Exists is false until the first deployment that runs the playbook.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "ID is the template's ID. Absent when it does not exist.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "name": {
+                    "type": "string",
+                    "example": "aiapp-compose-up"
+                },
+                "playbook": {
+                    "type": "string",
+                    "example": "compose-up.yml"
+                }
+            }
+        },
+        "model.ServiceStatus": {
+            "type": "object",
+            "properties": {
+                "checkedAt": {
+                    "description": "CheckedAt is when the checks ran.",
+                    "type": "string",
+                    "example": "2026-11-03T12:00:00Z"
+                },
+                "dryRun": {
+                    "description": "DryRun is true when deployments stop after placing their files and\nnode control is blocked (AIAPP_TUMBLEBUG_DRY_RUN). Semaphore is not\ncalled then.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "openPorts": {
+                    "description": "OpenPorts is true when a deployment opens the ports it serves in the\nnode's CB-Tumblebug security groups (AIAPP_DEPLOYMENT_OPEN_PORTS).",
+                    "type": "boolean",
+                    "example": true
+                },
+                "semaphore": {
+                    "description": "Semaphore runs the deployment playbooks.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.SemaphoreStatus"
+                        }
+                    ]
+                },
+                "stage": {
+                    "description": "Stage is the folder deployment files are placed in for Semaphore.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.StageStatus"
+                        }
+                    ]
+                },
+                "tumblebug": {
+                    "description": "Tumblebug is the CB-Tumblebug the nodes are read from.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DependencyStatus"
+                        }
+                    ]
+                }
+            }
+        },
         "model.SimpleMsg": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string",
                     "example": "AI application not found"
+                }
+            }
+        },
+        "model.StageStatus": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Message says what was found.",
+                    "type": "string",
+                    "example": "writable"
+                },
+                "path": {
+                    "description": "Path is AIAPP_STAGE_ROOT.",
+                    "type": "string",
+                    "example": "/var/lib/aiapp/stage"
+                },
+                "writable": {
+                    "description": "Writable is whether a file could be created in it.",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

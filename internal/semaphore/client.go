@@ -39,6 +39,7 @@ const (
 // logs in with the user name and password and keeps the session cookie.
 type Client struct {
 	baseURL      string
+	uiURL        string
 	token        string
 	username     string
 	password     string
@@ -62,6 +63,7 @@ func NewClient(cfg config.SemaphoreConfig) *Client {
 	jar, _ := cookiejar.New(nil)
 	return &Client{
 		baseURL:      strings.TrimRight(cfg.URL, "/"),
+		uiURL:        strings.TrimRight(cfg.UIURL, "/"),
 		token:        cfg.Token,
 		username:     cfg.Username,
 		password:     cfg.Password,
