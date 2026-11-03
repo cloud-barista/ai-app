@@ -160,7 +160,7 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 
   | playbook | 하는 일 |
   |---|---|
-  | `install-docker.yml` | Ubuntu 노드에 docker 와 compose 플러그인을 깔고, GPU 노드면 NVIDIA Container Toolkit 도 깜. 이미 있으면 그대로 둠 |
+  | `install-docker.yml` | 노드에 docker 와 compose 플러그인을 깔고 docker 서비스를 켬. GPU 노드면 NVIDIA Container Toolkit 도 깜. 이미 있으면 그대로 둠. `/etc/os-release` 를 보고 Ubuntu·Debian 은 apt, RHEL 계열·Fedora·Amazon Linux 2023 은 dnf 로 깖 |
   | `compose-up.yml` | 추론 서비스. stage 의 compose 파일을 노드로 복사하고 `docker compose up`, 노드 안에서 런타임 헬스 경로가 응답할 때까지 기다림. GPU 를 쓰면 런타임이 GPU 위에 있는지도 봄 |
   | `copy-and-run.yml` | 응용. 업로드 파일을 노드로 복사하고 이전 컨테이너를 내린 뒤 `deploy.sh` 를 실행. 이어서 응용 포트가 응답하고 컨테이너가 재시작 없이 도는지 확인 |
   | `compose-down.yml` | 내리기. `docker compose down` (named volume 과 노드 폴더는 남김) |
@@ -425,7 +425,9 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 
 ## 11. 알아 둘 것
 
-- 노드는 **Ubuntu** 여야 합니다(`install-docker` 가 Ubuntu 만 다룸). docker 는 있는데 compose 플러그인이 없으면 실패합니다.
+- 노드의 배포판은 Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023 중 하나여야 합니다(`/etc/os-release` 의 `ID`, 파생 배포판은 `ID_LIKE`). 그 밖이면 노드가 `failed` 가 되고 로그에 `install-docker supports only ...` 가 남습니다. 배포판마다 어떻게 까는지는 [etri.md 2절](etri.md#2-vm-이-갖춰야-할-것) 에 있습니다.
+- docker 는 있는데 compose 플러그인이 없으면 노드의 저장소에서 `docker-compose-plugin` 이나 `moby-compose` 를 깝니다. 둘 다 없을 때 apt 를 쓰는 노드는 실패하고, dnf 를 쓰는 노드는 compose 플러그인을 GitHub 에서 직접 받아 깝니다.
+- `install-docker` 는 docker 와 compose 플러그인만 깝니다. 예시 응용이 노드에서 쓰는 도구는 이미지에 있어야 합니다. Dify 는 `git`(`openssl` 은 없으면 `/dev/urandom` 으로 대신함), Langflow 는 `MODEL_BASE_URL` 을 줄 때 `python3` 입니다.
 - 주소(`url`, `urls`)는 노드의 공인 IP 로 만듭니다. 공인 IP 가 없으면 사설 IP 입니다.
 - 한 런타임(Ollama 포함)에 모델은 하나입니다. 같은 노드에 같은 런타임으로 다른 모델을 배포하면 앞의 모델을 바꿉니다.
 - 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 의 named volume

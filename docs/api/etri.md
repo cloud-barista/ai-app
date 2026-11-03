@@ -21,16 +21,24 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 
 | 항목 | 조건 | 안 맞으면 |
 |---|---|---|
-| OS | **Ubuntu**. `install-docker` 가 `/etc/os-release` 를 보고 Ubuntu 가 아니면 멈춤 | 노드 `failed`, 로그에 `install-docker supports Ubuntu only` |
-| docker | 없으면 AI-App 이 Docker 저장소에서 깖. 이미 있는데 compose 플러그인(`docker compose`)이 없으면 노드의 apt 저장소에 있는 `docker-compose-plugin` 이나 `moby-compose`(Azure 이미지)를 깖 | 둘 다 없으면 `failed`, 로그에 `no apt source offers docker-compose-plugin or moby-compose` |
+| OS | 아래 "지원하는 배포판" 표의 배포판. `install-docker` 가 `/etc/os-release` 의 `ID` 와 `ID_LIKE` 를 보고 설치 방법을 고름 | 그 밖의 배포판(Amazon Linux 2 포함)이면 노드 `failed`, 로그에 `install-docker supports only ubuntu, debian, rhel, rocky, almalinux, centos, ol, fedora, amzn (Amazon Linux 2023), found <ID> <VERSION_ID>` |
+| docker | 없으면 AI-App 이 아래 표대로 깔고 docker 서비스를 켬. 이미 있는데 compose 플러그인(`docker compose`)이 없으면 노드의 저장소에 있는 `docker-compose-plugin` 이나 `moby-compose`(Azure 이미지)를 깖. dnf 를 쓰는 노드는 둘 다 없으면 compose 플러그인을 GitHub 에서 직접 받아 깖 | apt 를 쓰는 노드에서 둘 다 없으면 `failed`, 로그에 `no apt source offers docker-compose-plugin or moby-compose` |
 | SSH 키 | 노드의 `sshKeyId` 가 가리키는 CB-Tumblebug SSH 키에 **개인키(`privateKey`)가 들어 있어야** 함. CB-Tumblebug 이 키를 만들게 하면 들어 있음. PEM 개인키 블록이어야 함 | 노드 `failed` (키를 읽거나 검사하는 단계에서) |
 | SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎 | playbook 실패 |
 | SSH 접속 | Semaphore 가 돌고 있는 호스트에서 노드의 공인 IP(없으면 사설 IP)와 SSH 포트로 닿아야 함 | 태스크 `error` (unreachable) |
 | 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 AI-App 이 서빙 포트를 엶. 없으면 포트를 열지 않고 `notes` 에 남김 | 배포는 `succeeded`, 밖에서 안 닿음 |
 | GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 런타임이 CPU 로 돌고, GPU 를 쓰기로 한 배포는 그 노드가 **`failed`** 가 됨(아래 3-2절) |
-| 바깥 통신 | 노드에서 Docker Hub, `ghcr.io`, Hugging Face, `registry.ollama.ai`, GitHub(Dify), `nvidia.github.io` 로 나갈 수 있어야 함 | 이미지·모델 받기 실패 |
+| 바깥 통신 | 노드에서 Docker Hub, `ghcr.io`, Hugging Face, `registry.ollama.ai`, `download.docker.com`, GitHub(Dify, 직접 받는 compose 플러그인), `nvidia.github.io` 로 나갈 수 있어야 함 | docker 설치, 이미지·모델 받기 실패 |
 | 디스크 | 런타임 이미지와 모델 가중치가 들어갈 만큼. 모델 크기는 `GET /aiapp/models` 의 `sizeGiB` (모르면 비어 있음) | 받는 중 실패 |
-| git | Dify 를 올리는 노드(vm1)는 `git` 이 있어야 함. Dify 공식 compose 를 노드에서 받아 띄움 | Dify 배포 실패 |
+| 응용이 쓰는 도구 | `install-docker` 는 docker 와 compose 플러그인만 깖. 예시 응용의 `deploy.sh` 가 쓰는 도구는 이미지에 있어야 함. Dify(vm1)는 `git` 이 꼭 있어야 함(Dify 공식 compose 를 노드에서 받아 띄움). `openssl` 은 있으면 비밀값을 만드는 데 쓰고 없으면 `/dev/urandom` 으로 대신함. Langflow 는 `MODEL_BASE_URL` 을 줄 때 `python3` 이 있어야 함(그 값을 Langflow 에 넣는 API 호출). Open WebUI 는 더 필요한 것이 없음 | `git` 이 없으면 Dify 배포 실패(`git is not installed on this node`). `python3` 이 없으면 Langflow 는 뜨지만 배포 실패(`python3 is not installed on this node`) |
+
+지원하는 배포판과 `install-docker` 가 까는 방법입니다. `ID_LIKE` 가 이 중 하나를 가리키는 파생 배포판도 같은 방법으로 다룹니다.
+
+| 배포판 (`ID`) | docker 와 compose 플러그인 | NVIDIA Container Toolkit (GPU 노드) |
+|---|---|---|
+| Ubuntu (`ubuntu`), Debian (`debian`) | Docker 의 apt 저장소(`download.docker.com/linux/ubuntu` 또는 `/linux/debian`, 배포판 코드명) | NVIDIA 의 apt 저장소 |
+| RHEL (`rhel`), Rocky (`rocky`), AlmaLinux (`almalinux`), CentOS Stream (`centos`), Oracle Linux (`ol`), Fedora (`fedora`) | Docker 의 rpm 저장소(RHEL 은 `/linux/rhel`, Fedora 는 `/linux/fedora`, 나머지는 `/linux/centos`). docker 와 부딪히는 패키지(podman, runc)가 있으면 Docker 설치 안내대로 dnf 가 지우고 docker 쪽 패키지로 바꿈 | NVIDIA 의 rpm 저장소 |
+| Amazon Linux 2023 (`amzn`) | 배포판 저장소의 `docker`. 이 저장소에는 compose 플러그인이 없어 Docker 문서의 수동 설치대로 GitHub 의 compose 릴리스 바이너리(playbook 에 고정한 버전, 노드 아키텍처 x86_64 또는 aarch64)를 받아 릴리스의 sha256 과 맞춰 본 뒤 `/usr/local/lib/docker/cli-plugins/docker-compose` 에 둠 | NVIDIA 의 rpm 저장소 |
 
 GPU 사용을 직접 정하려면 배포 요청에 `"gpu": true` 를 넣습니다. 그러면 스펙을 보지 않습니다.
 
