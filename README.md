@@ -949,7 +949,6 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 실제 클라우드 노드에는 배포하지 않았습니다. 로컬의 실 Semaphore `v2.12.17` + docker-in-docker 컨테이너(노드 대신) + 가짜 CB-Tumblebug 으로
 app 배포, Ollama 추론 서비스(당시 이름 `model-service`) 배포, 같은 노드 재배포 교체, dry-run 시 Semaphore 변화 없음, 실행 뒤 남은 key·inventory 0 을 확인했습니다.
 vLLM GPU 기동, `install-docker` 의 실제 설치 분기, MCP 를 거친 `create_deployment` 끝까지의 배포는 확인하지 못했습니다.
-작업별 커밋과 확인한 것·못 한 것은 `docs/design/model-catalog-and-node-deploy.md` 11절에 있습니다.
 
 아래 10-1 ~ 10-8 은 **2026-10-29 개편 전 기록**입니다. 2026-09 에 한 프로세스 시절 코드로 잰 것이고, 그때의 VM 생성 경로·서빙 포트 개방·
 가속기 프로브·규칙 매처는 지금 코드에 없습니다. 본문의 절 번호(6-4, 6-5 등)는 그때 README 의 번호입니다.
