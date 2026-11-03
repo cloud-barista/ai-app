@@ -185,10 +185,19 @@ func (f *fakeRunner) Run(ctx context.Context, spec semaphore.RunSpec) (*semaphor
 	if status == "" {
 		status = semaphore.StatusSuccess
 	}
-	return &semaphore.RunResult{
-		TaskID: taskID, Status: status,
-		Output: []string{"TASK [" + spec.Playbook + "]", "ok: [node] " + spec.Host},
-	}, nil
+	output := []string{"TASK [" + spec.Playbook + "]", "ok: [node] " + spec.Host}
+	if method, _ := spec.ExtraVars["gpu_check"].(string); method != "" && status == semaphore.StatusSuccess {
+		output = append(output, "TASK [Show the line that puts the runtime on the GPU] ***",
+			"ok: [node] => {", `    "msg": "aiapp-gpu-check: `+method+`: `+fakeGPUEvidence[method]+`"`, "}")
+	}
+	return &semaphore.RunResult{TaskID: taskID, Status: status, Output: output}, nil
+}
+
+// fakeGPUEvidence is what the GPU check of compose-up prints per method, as
+// it appears JSON escaped in the debug task output.
+var fakeGPUEvidence = map[string]string{
+	"nvidia-smi": "3499, VLLM::EngineCore, 13524 MiB",
+	"log":        `time=2026-11-03T08:00:00.000Z level=INFO source=types.go:50 msg=\"inference compute\" id=0 library=CUDA compute=7.5 description=\"Tesla T4\" total=\"15.6 GiB\"`,
 }
 
 func (f *fakeRunner) count() int {
@@ -495,6 +504,72 @@ func TestDeploymentFailsAndPartiallyFails(t *testing.T) {
 	records, _ := f.archive.List(context.Background(), 0)
 	if len(records) != 2 || records[0].Error == "" {
 		t.Errorf("archive = %+v", records)
+	}
+}
+
+func TestGPUCheckRunsForGPUInferenceOnly(t *testing.T) {
+	f := newFixture(t, false)
+	if _, err := f.svc.models.Register(context.Background(), model.Model{
+		ID: "tiny-hf", Name: "Tiny HF", Tasks: []string{"embedding"},
+		Artifacts: []model.Artifact{{
+			ID: "hf", Source: "huggingface", Ref: "org/tiny", Format: model.FormatHF,
+			Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vllm := modelReq("vm1")
+	vllm.Inference = &model.NodeInferenceReq{ModelID: "tiny-hf", ArtifactID: "hf"}
+	noGPU := modelReq("vm1")
+	off := false
+	noGPU.Inference.GPU = &off
+
+	cases := []struct {
+		name     string
+		req      model.NodeDeploymentReq
+		playbook string
+		vars     map[string]any
+		evidence string
+	}{
+		{"vllm on a GPU node", vllm, PlaybookComposeUp,
+			map[string]any{"gpu_check": "nvidia-smi"},
+			"nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB"},
+		{"ollama on a GPU node", modelReq("vm1"), PlaybookComposeUp,
+			map[string]any{"gpu_check": "log", "gpu_log_service": "engine",
+				"gpu_log_pattern": `msg="inference compute".*library=(CUDA|cuda|ROCm|rocm)`, "gpu_log_evidence": `msg="inference compute"`},
+			`log: time=2026-11-03T08:00:00.000Z level=INFO source=types.go:50 msg="inference compute" id=0 library=CUDA compute=7.5 description="Tesla T4" total="15.6 GiB"`},
+		{"ollama with gpu false", noGPU, PlaybookComposeUp, nil, ""},
+		{"ollama on a CPU node", modelReq("vm2"), PlaybookComposeUp, nil, ""},
+		{"app on a GPU node", appReq("vm1"), PlaybookCopyAndRun, nil, ""},
+	}
+	gpuVars := []string{"gpu_check", "gpu_log_service", "gpu_log_pattern", "gpu_log_evidence"}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			created, err := f.svc.Create(context.Background(), c.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := waitFinished(t, f.svc, created.ID)
+			if d.Status != model.NodeDeploySucceeded {
+				t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
+			}
+			f.runner.mu.Lock()
+			last := f.runner.runs[len(f.runner.runs)-1]
+			f.runner.mu.Unlock()
+			if last.Playbook != c.playbook {
+				t.Fatalf("last run = %s, want %s", last.Playbook, c.playbook)
+			}
+			for _, k := range gpuVars {
+				want, wanted := c.vars[k]
+				got, present := last.ExtraVars[k]
+				if wanted != present || got != want {
+					t.Errorf("%s = %v (set %v), want %v (set %v)", k, got, present, want, wanted)
+				}
+			}
+			if d.Nodes[0].GPUCheck != c.evidence {
+				t.Errorf("gpuCheck = %q, want %q", d.Nodes[0].GPUCheck, c.evidence)
+			}
+		})
 	}
 }
 

@@ -51,6 +51,53 @@ func CompletionServices(engineID string) []string {
 	return nil
 }
 
+// engineService is the service of every template that runs the engine.
+const engineService = "engine"
+
+// Ways a deployment checks on the node that the engine uses the GPU.
+const (
+	// GPUCheckNvidiaSMI looks for a compute process of the compose project
+	// in `nvidia-smi --query-compute-apps`.
+	GPUCheckNvidiaSMI = "nvidia-smi"
+	// GPUCheckLog looks for a line of the engine service log.
+	GPUCheckLog = "log"
+)
+
+// GPUCheck is how to tell on the node that an engine runs on the GPU.
+type GPUCheck struct {
+	// Method is GPUCheckNvidiaSMI or GPUCheckLog.
+	Method string
+	// Service, Pattern and Evidence are for GPUCheckLog: the compose
+	// service whose log is read, the extended regular expression a line of
+	// it must match, and the one that picks the lines to show when none
+	// does.
+	Service  string
+	Pattern  string
+	Evidence string
+}
+
+// GPUCheckFor gives the GPU check of an engine, or nil when it has none.
+//
+// vLLM holds GPU memory from the moment /health answers, so its engine
+// process shows up in nvidia-smi. The ollama server holds none until a model
+// is loaded, but logs at start what it will compute on; with a CUDA device it
+// logs `msg="inference compute" id=0 ... library=CUDA ...`, without one
+// `msg="inference compute" id=cpu library=cpu compute="" name=cpu ...`.
+func GPUCheckFor(engineID string) *GPUCheck {
+	switch engineID {
+	case model.RuntimeVLLM:
+		return &GPUCheck{Method: GPUCheckNvidiaSMI}
+	case model.RuntimeOllama:
+		return &GPUCheck{
+			Method:   GPUCheckLog,
+			Service:  engineService,
+			Pattern:  `msg="inference compute".*library=(CUDA|cuda|ROCm|rocm)`,
+			Evidence: `msg="inference compute"`,
+		}
+	}
+	return nil
+}
+
 // Options are the per-deployment choices of a render.
 type Options struct {
 	// GPU reserves every NVIDIA GPU of the node for the engine container.

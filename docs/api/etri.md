@@ -25,7 +25,7 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 | SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎 | playbook 실패 |
 | SSH 접속 | Semaphore 가 돌고 있는 호스트에서 노드의 공인 IP(없으면 사설 IP)와 SSH 포트로 닿아야 함 | 태스크 `error` (unreachable) |
 | 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 AI-App 이 서빙 포트를 엶. 없으면 포트를 열지 않고 `notes` 에 남김 | 배포는 `succeeded`, 밖에서 안 닿음 |
-| GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 **배포는 `succeeded` 인데 CPU 로 돎**(아래 3절 확인 방법) |
+| GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 런타임이 CPU 로 돌고, GPU 를 쓰기로 한 배포는 그 노드가 **`failed`** 가 됨(아래 3-2절) |
 | 바깥 통신 | 노드에서 Docker Hub, `ghcr.io`, Hugging Face, `registry.ollama.ai`, GitHub(Dify), `nvidia.github.io` 로 나갈 수 있어야 함 | 이미지·모델 받기 실패 |
 | 디스크 | 런타임 이미지와 모델 가중치가 들어갈 만큼. 모델 크기는 `GET /aiapp/models` 의 `sizeGiB` (모르면 비어 있음) | 받는 중 실패 |
 | git | Dify 를 올리는 노드(vm1)는 `git` 이 있어야 함. Dify 공식 compose 를 노드에서 받아 띄움 | Dify 배포 실패 |
@@ -111,6 +111,17 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 - 접근 승인이 필요한 Hugging Face 모델이면 `"env": {"HF_TOKEN": "<토큰>"}` 을 `inference` 안에 넣습니다. 이 값은 배포 기록과
   노드의 `.env` 에 평문으로 남습니다.
 - vm3 처럼 `"gpu": true` 를 주면 노드 스펙을 보지 않고 GPU 를 씁니다. 빼면 스펙의 `acceleratorType` 으로 정합니다(2절).
+- GPU 를 쓰기로 한 노드는 `compose-up` 이 헬스 응답 뒤에 런타임이 정말 GPU 위에 있는지 봅니다. 아니면 노드가 `failed` 이고
+  `error` 와 로그에 "The GPU was requested but the runtime is not running on it" 과 근거 줄이 남습니다. 성공하면 근거 줄이
+  `nodes[].gpuCheck` 에 남습니다.
+
+  | 런타임 | 보는 것 | GPU 위일 때 근거 줄 예 |
+  |---|---|---|
+  | vLLM | 호스트의 `nvidia-smi --query-compute-apps=pid,process_name,used_memory` 에 그 compose 프로젝트 컨테이너의 프로세스가 있는지 | `nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB` |
+  | Ollama | `engine` 서비스 로그의 `msg="inference compute"` 줄이 `library=CUDA`(또는 `cuda`·`ROCm`·`rocm`) 인지. Ollama 는 모델을 올리기 전에는 GPU 프로세스가 없어 `nvidia-smi` 로는 못 봄 | `log: ... msg="inference compute" id=0 library=CUDA compute=7.5 ... description="Tesla T4" total="15.6 GiB"` |
+
+  Ollama 가 GPU 를 못 찾으면 로그가 `msg="inference compute" id=cpu library=cpu compute="" name=cpu description=cpu ...` 이고
+  실패 메시지에 이 줄이 찍힙니다. 엔진이 헬스 응답보다 조금 늦게 GPU 를 잡을 수 있어 5초 간격으로 6번까지 봅니다.
 - vm3 의 Ministral 은 `args` 를 주지 않아도 카탈로그 아티팩트의 `runtimes[].args`(`--max-model-len 32768` 과 mistral 형식 플래그)가
   `vllm serve` 뒤에 붙습니다. aws g6.xlarge(L4 24GB)에서 이 인자 없이 띄웠더니 기본 최대 길이 262144 에 KV 캐시 34.0 GiB 가 필요한데 9.31 GiB 뿐이라는
   오류(`estimated maximum model length is 71760`)로 vLLM 이 뜨지 않았습니다. 다른 값을 쓰려면 `"args": ["--max-model-len", "16384"]` 처럼

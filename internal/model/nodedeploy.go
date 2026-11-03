@@ -352,6 +352,12 @@ type NodeDeployResult struct {
 	// GPUSource says where GPU came from: request, spec, or default when the
 	// spec could not be read.
 	GPUSource string `json:"gpuSource,omitempty" enums:"request,spec,default" example:"spec"`
+	// GPUCheck is, for an inference service given the GPU, what compose-up
+	// found on the node showing that the runtime runs on it: the method
+	// (nvidia-smi or log) and the nvidia-smi compute process or the log line.
+	// When the runtime is not on the GPU the node fails instead. Absent
+	// without GPU, for an app and for a dry run.
+	GPUCheck string `json:"gpuCheck,omitempty" example:"nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB"`
 	// Notes record decisions made for this node, such as why the spec could
 	// not be read.
 	Notes []string `json:"notes,omitempty"`

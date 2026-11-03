@@ -26,6 +26,7 @@ package nodedeploy
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -478,6 +479,9 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		if services := compose.CompletionServices(p.runtime.ID); len(services) > 0 {
 			vars["wait_services"] = services
 		}
+		if gpu {
+			addGPUCheckVars(vars, compose.GPUCheckFor(p.runtime.ID))
+		}
 		steps = append(steps, withPlaybook(base, PlaybookComposeUp, vars))
 	} else {
 		vars := copyVars(common)
@@ -497,6 +501,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 			return
 		}
 	}
+	s.updateNode(id, idx, func(n *model.NodeDeployResult) { n.GPUCheck = gpuCheckEvidence(n.Steps) })
 	s.openNodePorts(ctx, id, idx, target.NsID, node, ports)
 	s.finishNode(id, idx, model.NodeDeploySucceeded, "")
 	logger.Info().Msg("Node deployment succeeded")
@@ -633,6 +638,50 @@ func healthURL(runtime *model.RuntimeProfile) string {
 		path = "/"
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d%s", runtime.Port, path)
+}
+
+// addGPUCheckVars sets the compose-up vars that make the playbook check that
+// the runtime runs on the GPU.
+func addGPUCheckVars(vars map[string]any, check *compose.GPUCheck) {
+	if check == nil {
+		return
+	}
+	vars["gpu_check"] = check.Method
+	if check.Method == compose.GPUCheckLog {
+		vars["gpu_log_service"] = check.Service
+		vars["gpu_log_pattern"] = check.Pattern
+		vars["gpu_log_evidence"] = check.Evidence
+	}
+}
+
+// gpuCheckMarker starts the message compose-up prints once the GPU check
+// passed: "aiapp-gpu-check: <method>: <evidence line>".
+const gpuCheckMarker = "aiapp-gpu-check: "
+
+// gpuCheckEvidence finds what the compose-up GPU check printed in the task
+// output of steps, as "<method>: <evidence line>". The debug task prints it
+// as `"msg": "aiapp-gpu-check: ..."`, a JSON string. Empty when no step
+// printed it.
+func gpuCheckEvidence(steps []model.NodeDeployStep) string {
+	for i := len(steps) - 1; i >= 0; i-- {
+		if steps[i].Playbook != PlaybookComposeUp {
+			continue
+		}
+		for _, line := range steps[i].Output {
+			_, quoted, ok := strings.Cut(line, `"msg": `)
+			if !ok || !strings.Contains(quoted, gpuCheckMarker) {
+				continue
+			}
+			var msg string
+			if err := json.Unmarshal([]byte(strings.TrimSpace(quoted)), &msg); err != nil {
+				continue
+			}
+			if evidence, ok := strings.CutPrefix(msg, gpuCheckMarker); ok {
+				return evidence
+			}
+		}
+	}
+	return ""
 }
 
 func withPlaybook(base semaphore.RunSpec, playbook string, vars map[string]any) semaphore.RunSpec {

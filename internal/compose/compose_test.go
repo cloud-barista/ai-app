@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -167,6 +168,35 @@ func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
 	}
 	if got := CompletionServices(model.RuntimeVLLM); len(got) != 0 {
 		t.Errorf("vllm completion services = %v, want none", got)
+	}
+}
+
+func TestGPUCheckOfEachRuntime(t *testing.T) {
+	if got := GPUCheckFor(model.RuntimeVLLM); got == nil || got.Method != GPUCheckNvidiaSMI {
+		t.Errorf("vllm gpu check = %+v, want nvidia-smi", got)
+	}
+	check := GPUCheckFor(model.RuntimeOllama)
+	if check == nil || check.Method != GPUCheckLog {
+		t.Fatalf("ollama gpu check = %+v, want log", check)
+	}
+	m, a := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeOllama), Options{GPU: true})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(rendered, "\n  "+check.Service+":\n    image: ") {
+		t.Errorf("service %q is not the ollama server of the rendered file", check.Service)
+	}
+	pattern, evidence := regexp.MustCompile(check.Pattern), regexp.MustCompile(check.Evidence)
+	// The first line is from a Tesla T4 node, the second from
+	// ollama/ollama:0.40.13 on a host whose docker has no NVIDIA runtime.
+	gpuLine := `time=2026-11-03T08:00:00.000Z level=INFO source=types.go:50 msg="inference compute" id=0 library=CUDA compute=7.5 description="Tesla T4" total="15.6 GiB"`
+	cpuLine := `time=2026-11-03T08:49:00.128Z level=INFO source=types.go:50 msg="inference compute" id=cpu library=cpu compute="" name=cpu description=cpu libdirs=ollama driver="" pci_id="" type="" total="53.6 GiB" available="53.5 GiB"`
+	if !pattern.MatchString(gpuLine) || pattern.MatchString(cpuLine) {
+		t.Errorf("pattern %q must match the CUDA line only", check.Pattern)
+	}
+	if !evidence.MatchString(cpuLine) {
+		t.Errorf("evidence %q must pick the CPU line to show", check.Evidence)
 	}
 }
 

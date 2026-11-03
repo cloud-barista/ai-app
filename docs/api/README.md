@@ -172,7 +172,7 @@ flowchart TB
   | playbook | 하는 일 |
   |---|---|
   | `install-docker.yml` | Ubuntu 노드에 docker 와 compose 플러그인을 깔고, GPU 노드면 NVIDIA Container Toolkit 도 깜. 이미 있으면 그대로 둠 |
-  | `compose-up.yml` | 추론 서비스. stage 의 compose 파일을 노드로 복사하고 `docker compose up`, 노드 안에서 런타임 헬스 경로가 응답할 때까지 기다림 |
+  | `compose-up.yml` | 추론 서비스. stage 의 compose 파일을 노드로 복사하고 `docker compose up`, 노드 안에서 런타임 헬스 경로가 응답할 때까지 기다림. GPU 를 쓰면 런타임이 GPU 위에 있는지도 봄 |
   | `copy-and-run.yml` | 응용. 업로드 파일을 노드로 복사하고 이전 컨테이너를 내린 뒤 `deploy.sh` 를 실행 |
   | `compose-down.yml` | 내리기. `docker compose down` (named volume 과 노드 폴더는 남김) |
 
@@ -316,7 +316,11 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 | `remove-failed` | 일부 노드에서 내리기 실패 | `nodes[].error` 를 보고 `DELETE` 를 다시 부르면 남은 노드만 다시 시도 |
 
 헬스: 추론 서비스는 `compose-up` 이 노드 안에서 런타임 헬스 경로(vLLM `/health`, Ollama `/`)가 응답할 때까지 기다려야 노드가
-`succeeded` 가 됩니다. 응용은 `deploy.sh` 의 종료 코드만 봅니다. 응용이 실제로 응답하는지는 확인하지 않습니다.
+`succeeded` 가 됩니다. GPU 를 쓰는 추론 서비스(`nodes[].gpu` 가 `true`)는 그다음 런타임이 GPU 위에 있는지 봅니다. vLLM 은
+호스트 `nvidia-smi` 의 compute 프로세스 중 그 compose 프로젝트 컨테이너의 것이 있는지, Ollama 는 `engine` 로그의
+`msg="inference compute"` 줄이 `library=CUDA` 인지 봅니다. 아니면 노드는 `failed` 이고 `error` 에 근거 줄이 남습니다(드라이버가 오래돼
+CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습니다(예 `nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB`).
+응용은 `deploy.sh` 의 종료 코드만 봅니다. 응용이 실제로 응답하는지는 확인하지 않습니다.
 
 ## 8. 서빙 포트 열기
 
@@ -421,7 +425,7 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 |---|---|
 | `targets[]` | `kind: node` 와 `nsId`·`infraId`·`nodeId`. 32개까지, 같은 노드는 한 번만. 클라우드·리전·IP·SSH 키는 CB-Tumblebug 노드 정보에서 읽음 |
 | `inference.runtimeId` | 빼면 아티팩트의 첫 런타임 |
-| `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유 |
+| `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유. `true` 로 정해지면 런타임이 GPU 위에 있는지 확인하고, 아니면 노드가 `failed`(7절 헬스) |
 | `inference.args` | 런타임 명령 뒤에 붙는 인자. vLLM 이면 서비스가 넣는 `--model`·`--port` 와 카탈로그 아티팩트의 `runtimes[].args` 가 먼저 오고 그 뒤에 붙음. 같은 플래그가 되풀이되면 vLLM 은 마지막 값을 써서 요청이 카탈로그 인자를 덮어씀. 예 `["--max-model-len", "16384"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, `--model`·`--port`·`--host` 는 `400`. Ollama 는 받지 않아 `400` |
 | `app.version` | 빼거나 `0` 이면 최신 버전 |
 | `app.ports` | 이 배포에서만 업로드 때의 `ports` 를 바꿈 |
