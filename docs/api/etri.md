@@ -236,6 +236,6 @@ curl -sS -H "$AUTH" -X DELETE "$AIAPP_URL/deployments/$id"
 | vm1 에 글을 생성하는 LLM 이 없습니다 | Qwen3-Embedding 은 검색용 벡터만 만듭니다. Dify 로 답을 생성하려면 생성 모델이 있어야 합니다. vm1 에 생성 모델을 더 올리려면 런타임이 달라야 합니다(같은 노드에 `vllm` 은 하나) |
 | 같은 노드 안에서 응용이 추론 서비스를 공인 IP 로 부릅니다 | `endpoints` 의 주소는 공인 IP 입니다. aws·azure 에서 응용 배포는 됐지만, 응용 안에서 그 주소로 모델을 실제로 불러 보지는 않았습니다. 안 되면 노드의 사설 IP 를 env 에 넣습니다 |
 | 서빙 포트를 `0.0.0.0/0` 에 엽니다 | 시험 환경 기준입니다. 출처 제한은 정하지 않았습니다 |
-| 실제 클라우드 VM 에서의 배포 | 2026-11-03 aws(도쿄 T4)·azure(koreacentral T4) 에서 확인: vLLM 임베딩, Ollama 대화, Dify·Open WebUI 화면이 밖에서 응답, 보안 그룹 포트 열림, 주소 조회, 내리기. gcp 는 자격증명 권한(`compute.machineTypes.list` 403) 때문에 못 함. docker 를 처음부터 까는 분기(이미지에 docker 가 없는 경우)는 아직 실제로 돌지 않았습니다 |
+| 실제 클라우드 VM 에서의 배포 | 자세한 결과는 [live-test-2026-11-03.md](live-test-2026-11-03.md). 2026-11-03 aws(도쿄 T4·L4)·azure(koreacentral T4) 에서 확인: vLLM 임베딩, Ollama 대화, Dify·Open WebUI 화면이 밖에서 응답, 보안 그룹 포트 열림, 주소 조회, 내리기. gcp 는 자격증명 권한(`compute.machineTypes.list` 403) 때문에 못 함. docker 를 처음부터 까는 분기(이미지에 docker 가 없는 경우)는 아직 실제로 돌지 않았습니다 |
 | Qwen3-VL-8B 의 생각(thinking) 단계 | Ollama 의 `qwen3-vl:8b` 는 답 전에 생각을 길게 씁니다. `"think": false` 를 줘도 생각이 `message.thinking` 으로 나왔고, 1,500 토큰에서도 답(`content`)이 비어 있었습니다. 포털이 짧은 답을 바라면 시간 제한과 토큰 수를 넉넉히 두거나 모델을 바꿔야 합니다 |
 | 응용 배포의 성공 시점 | 응용은 script 가 끝나면 `succeeded` 입니다. 서비스가 실제로 응답할 때까지는 기다리지 않아서, Open WebUI 는 성공 직후 잠깐 응답하지 않았습니다(약 20초 뒤 200) |
