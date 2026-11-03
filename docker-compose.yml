@@ -83,12 +83,29 @@ services:
       AIAPP_SEMAPHORE_TIMEOUT: "${AIAPP_SEMAPHORE_TIMEOUT:-30m}"
       # Where the semaphore service mounts deploy/ansible.
       AIAPP_SEMAPHORE_PLAYBOOK_DIR: "/ansible"
+      # The Semaphore web UI as a browser reaches it. Every playbook run in a
+      # deployment record links to its task page there (taskUrl). The default
+      # is the port the semaphore service publishes, so the links open on this
+      # host only; set the host address to open them elsewhere, or set it
+      # empty to leave the links out.
+      AIAPP_SEMAPHORE_UI_URL: "${AIAPP_SEMAPHORE_UI_URL-http://127.0.0.1:${AIAPP_SEMAPHORE_PORT:-3001}}"
 
       # Deployment files are placed here and read by Semaphore at the same
       # path, so this must match the stage mount of both services.
       AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
       # Records of deployments onto nodes, kept on the archive volume.
       AIAPP_DEPLOYMENT_STORE_FILE: "/app/data/archive/node-deployments.json"
+      # Once its playbooks succeed, a deployment opens the ports it serves over
+      # TCP inbound from 0.0.0.0/0 in the CB-Tumblebug security groups of the
+      # node. false records the ports and leaves them for an operator to open.
+      AIAPP_DEPLOYMENT_OPEN_PORTS: "${AIAPP_DEPLOYMENT_OPEN_PORTS:-true}"
+
+      # Model and application recommenders registered in internal/recommend,
+      # by name. None is built in: empty leaves /aiapp/recommendations/models
+      # and /apps answering 501, and a name nothing registered stops the
+      # service at startup.
+      AIAPP_RECOMMENDER_MODEL: "${AIAPP_RECOMMENDER_MODEL:-}"
+      AIAPP_RECOMMENDER_APP: "${AIAPP_RECOMMENDER_APP:-}"
       # Registered models and uploaded applications, kept on the catalog volume
       # so that recreating the container does not lose them.
       AIAPP_MODEL_STORE_FILE: "/app/data/catalog/models.json"

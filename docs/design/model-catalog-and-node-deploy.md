@@ -2,6 +2,12 @@
 
 > 작성 2026-10-29. 2차 개편([app-agent-split.md](app-agent-split.md))의 프로세스 구성(AI-App 서비스 + 자동화 엔진 +
 > 협력 기관 모의)은 그대로 두고, 그 안의 **데이터 모델과 배포 실행 경로**를 다시 짠다.
+>
+> **4차 개편(2026-11-03)에서 이름이 바뀌었다.** 엔진(`/aiapp/engines`, `engines[].engine`, `engine`)은 런타임(`/aiapp/runtimes`,
+> `runtimes[].runtimeId`, `runtimeId`)으로, 배포 `type: model-service`·`modelService` 는 `type: inference`·`inference` 로 바뀌었고, 이 문서의
+> 2~6절은 새 이름으로 고쳤다. 같은 개편에서 내리기(`DELETE /aiapp/deployments/{id}`), 주소 조회(`GET /aiapp/endpoints`), 서빙 포트 열기,
+> 연결 상태(`GET /aiapp/status`), 추천 자리(`/aiapp/recommendations/*`)가 들어왔다. 지금의 API 계약과 부르는 순서는
+> [docs/api/](../api/README.md) 에 있다. 11절은 3차 개편 당시의 기록이라 옛 이름 그대로 둔다.
 
 ## 1. 왜 다시 짜나
 
@@ -25,7 +31,7 @@ flowchart LR
 
     subgraph aiapp["AI-App (이 repo)"]
         direction TB
-        cat["모델 카탈로그<br/>/aiapp/models · /aiapp/engines"]
+        cat["모델 카탈로그<br/>/aiapp/models · /aiapp/runtimes"]
         apps["응용 저장소<br/>/aiapp/apps (name · files · script)"]
         dep["노드 배포<br/>/aiapp/deployments"]
         stage[("공유 저장소<br/>&lt;uuid&gt;/&lt;csp&gt;-&lt;nodeId&gt;/")]
@@ -82,11 +88,11 @@ classDiagram
         precision : 원래 값: BF16, FP8, Q4_K_M
         sizeGiB
     }
-    class EngineCompat {
-        engine
+    class RuntimeCompat {
+        runtimeId
         minVersion
     }
-    class EngineProfile {
+    class RuntimeProfile {
         id : vllm, ollama
         image
         formats[]
@@ -98,6 +104,7 @@ classDiagram
     class AppVersion {
         version
         script
+        ports[]
         createdAt
     }
     class AppFile {
@@ -106,8 +113,8 @@ classDiagram
         sha256
     }
     Model "1" *-- "1..*" Artifact : artifacts
-    Artifact "1" *-- "1..*" EngineCompat : engines
-    EngineCompat ..> EngineProfile : engine = id
+    Artifact "1" *-- "1..*" RuntimeCompat : runtimes
+    RuntimeCompat ..> RuntimeProfile : runtimeId = id
     App "1" *-- "1..*" AppVersion : versions
     AppVersion "1" *-- "*" AppFile : files
 ```
@@ -137,12 +144,12 @@ classDiagram
 | `format` | 파일 형식 | `hf`(safetensors), `gguf` |
 | `precision` | 정밀도·양자화, **원래 값 그대로** | `BF16`, `FP8`, `Q4_K_M` |
 | `sizeGiB` | 받을 크기 (모르면 0) | `6.2` |
-| `engines[]` | 호환 엔진과 최소 버전 | `{engine: vllm, minVersion: 0.11.0}` |
+| `runtimes[]` | 호환 런타임과 최소 버전 | `{runtimeId: vllm, minVersion: 0.11.0}` |
 
-- 호환 엔진은 포맷만으로 정하지 않고 명시한다. 같은 safetensors 라도 아키텍처 지원 여부가 엔진 버전마다 다르다.
+- 호환 런타임은 포맷만으로 정하지 않고 명시한다. 같은 safetensors 라도 아키텍처 지원 여부가 런타임 버전마다 다르다.
 - 정밀도로 VRAM 을 계산하는 등의 추천 로직은 넣지 않는다(경희대 몫).
 
-### 3.2 Engine 프로필
+### 3.2 Runtime 프로필
 
 | 필드 | 예 (vllm) | 예 (ollama) |
 |------|-----------|-------------|
@@ -152,7 +159,7 @@ classDiagram
 | `port`, `healthPath`, `apiBasePath` | `8000`, `/health`, `/v1` | `11434`, `/`, `/v1` |
 | compose 틀 | `--model <ref>` 로 기동, GPU 예약 | 기동 후 `ollama pull <ref>` |
 
-모델 서비스 배포 요청이 오면 아티팩트의 `format`·`engines` 와 엔진 프로필이 맞는지 보고, 맞으면 compose 파일을 만든다.
+추론 서비스 배포 요청이 오면 아티팩트의 `format`·`runtimes` 와 런타임 프로필이 맞는지 보고, 맞으면 compose 파일을 만든다.
 
 ### 3.3 App
 
@@ -161,6 +168,7 @@ classDiagram
 | `name` | 응용 이름. 소문자·숫자·`_`·`-` 만 쓴다(4.5). 같은 이름으로 다시 올리면 새 `version` |
 | `files[]` | 업로드한 파일들 (compose, 설정, 데이터) |
 | `script` | 노드에서 실행할 스크립트. 파일들이 있는 폴더에서 실행된다 |
+| `ports[]` | 응용이 노드에서 여는 TCP 포트 (4차). 배포가 끝나면 노드 보안 그룹에 열린다 |
 
 등록은 multipart 하나로 받는다. 대상 노드와 다른 노드의 주소(env)는 등록이 아니라 **배포 요청**에서 받는다.
 
@@ -182,16 +190,16 @@ CB-Tumblebug 구조 그대로 받는다.
 
 ```json
 {
-  "type": "model-service",
+  "type": "inference",
   "targets": [{ "kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1" }],
-  "modelService": { "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16", "engine": "vllm" }
+  "inference": { "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16", "runtimeId": "vllm" }
 }
 ```
 ```json
 {
   "type": "app",
   "targets": [{ "kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1" }],
-  "app": { "name": "dify", "version": 1, "env": { "VLLM_BASE_URL": "http://10.0.0.5:8000/v1" } }
+  "app": { "name": "dify", "version": 1, "env": { "VLLM_BASE_URL": "http://203.0.113.10:8000/v1" } }
 }
 ```
 
@@ -201,7 +209,7 @@ CB-Tumblebug 구조 그대로 받는다.
 
 ```
 <AIAPP_STAGE_ROOT>/<배포 uuid>/<csp>-<nodeId>/
-    docker-compose.yml        (모델 서비스) 또는 업로드 파일 + script (응용)
+    docker-compose.yml        (추론 서비스) 또는 업로드 파일 + script (응용)
     .env                      (배포 요청의 env)
 ```
 
@@ -224,7 +232,7 @@ sequenceDiagram
     Note over A: 노드마다 아래를 따로 진행
     A->>T: GET 노드 정보 (CSP, IP, 포트, 사용자, sshKeyId)
     A->>T: GET SSH 키 (privateKey)
-    A->>S: 파일 배치 <uuid>/<csp>-<nodeId>/<br/>(모델 서비스: compose 생성 / 응용: 파일 + script)
+    A->>S: 파일 배치 <uuid>/<csp>-<nodeId>/<br/>(추론 서비스: compose 생성 / 응용: 파일 + script)
     alt dry-run
         Note over A: 여기서 멈춤. Semaphore 에 아무것도 등록하지 않음
     else 실제 배포
@@ -245,9 +253,9 @@ sequenceDiagram
 | # | 단계 | 비고 |
 |---|------|------|
 | 1 | Tumblebug 에서 노드 정보와 SSH 키(`GET /ns/{nsId}/resources/sshKey/{sshKeyId}` 의 `privateKey`) 조회 | 공인 IP 가 없으면 사설 IP |
-| 2 | 공유 저장소에 파일 배치 | 모델 서비스는 compose 를 만들어 넣는다 |
+| 2 | 공유 저장소에 파일 배치 | 추론 서비스는 compose 를 만들어 넣는다 |
 | 3 | Semaphore 에 그 노드의 key(ssh)와 inventory 등록 | 배포마다 만들고 끝나면 지운다. template 은 playbook 마다 하나씩 고정으로 둔다 |
-| 4 | 태스크 실행: `install-docker` → `compose-up`(모델 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드면 nvidia-container-toolkit 도 설치 |
+| 4 | 태스크 실행: `install-docker` → `compose-up`(추론 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드면 nvidia-container-toolkit 도 설치 |
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
 | 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
@@ -265,13 +273,13 @@ Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 �
 
 | 종류 | 작업 키 | 노드 폴더 | compose 프로젝트 |
 |------|---------|-----------|------------------|
-| 모델 서비스 | `ms-<engine>` (예 `ms-vllm`, `ms-ollama`) | `/opt/aiapp/<작업 키>` | `aiapp-<작업 키>` |
+| 추론 서비스 | `ms-<runtimeId>` (예 `ms-vllm`, `ms-ollama`) | `/opt/aiapp/<작업 키>` | `aiapp-<작업 키>` |
 | 응용 | `app-<name>` | `/opt/aiapp/<작업 키>` | `aiapp-<작업 키>` |
 
-- 노드 하나에 모델 서비스는 엔진당 하나, 응용은 이름당 하나다. 엔진이 다른 모델 서비스와 다른 응용은 서로 건드리지 않는다.
+- 노드 하나에 추론 서비스는 런타임당 하나, 응용은 이름당 하나다. 런타임이 다른 추론 서비스와 다른 응용은 서로 건드리지 않는다.
 - 같은 작업 키로 다시 배포하면 폴더 안의 파일을 새 것으로 바꾼다. 이전 배포가 남긴 파일 목록(`.aiapp-files`)에 있고
   새 목록에 없는 파일은 지운다. 목록에 없는 파일(컨테이너가 bind mount 로 쓴 데이터)과 docker named volume 은 그대로 둔다.
-- 모델 서비스는 `docker compose -p aiapp-<작업 키> up -d --remove-orphans --force-recreate` 로 컨테이너를 바꾼다. named volume 이
+- 추론 서비스는 `docker compose -p aiapp-<작업 키> up -d --remove-orphans --force-recreate` 로 컨테이너를 바꾼다. named volume 이
   프로젝트 이름에 묶여 있어 받아 둔 모델 가중치도 다음 배포가 다시 쓴다.
 - `--force-recreate` 는 heal 때문에 넣었다. heal 은 같은 설정으로 다시 배포하는데, 설정이 같으면 compose 가 unhealthy 컨테이너를
   그대로 두기 때문이다.
@@ -287,7 +295,7 @@ Semaphore 화면에서 대상이 `127.0.0.1` 로만 보이고 병렬 실행을 �
   단계에서도 다시 거절한다.
 
 **이렇게 정한 이유.** 처음에는 배포마다 `/opt/aiapp/<배포 ID>` 폴더와 별개 compose 프로젝트를 만들었다. 그러면 같은 노드에
-같은 엔진을 다시 배포하거나(heal 이 그렇게 한다) 같은 응용을 다시 배포할 때 옛 컨테이너가 포트를 쥔 채로 남아 새 컨테이너가
+같은 런타임을 다시 배포하거나(heal 이 그렇게 한다) 같은 응용을 다시 배포할 때 옛 컨테이너가 포트를 쥔 채로 남아 새 컨테이너가
 포트 바인드에 실패한다. 작업 키로 폴더와 프로젝트를 고정하면 다시 배포가 옛 것을 바꾸는 동작이 된다.
 
 ### 4.6 dry-run
@@ -299,11 +307,14 @@ dry-run 이면 1·2 까지만 한다(조회와 파일 배치). Semaphore 에 아
 
 | 리소스 | 경로 | 비고 |
 |--------|------|------|
-| 모델 | `GET/POST /aiapp/models`, `GET/DELETE /aiapp/models/{modelId}` | 필터 `task`, `modality`, `format`, `engine`, `source` |
-| 엔진 | `GET /aiapp/engines`, `GET /aiapp/engines/{engineId}` | 조회만 |
+| 모델 | `GET/POST /aiapp/models`, `GET/DELETE /aiapp/models/{modelId}` | 필터 `task`, `modality`, `format`, `runtimeId`, `source` |
+| 런타임 | `GET /aiapp/runtimes`, `GET /aiapp/runtimes/{runtimeId}` | 조회만 |
 | 응용 | `POST /aiapp/apps` (multipart: name, files, script), `GET /aiapp/apps`, `GET /aiapp/apps/{name}`, `DELETE /aiapp/apps/{name}` | 버전 목록 포함 |
 | 배포 | `POST /aiapp/deployments`, `GET /aiapp/deployments`, `GET /aiapp/deployments/{id}`, `GET /aiapp/deployments/{id}/logs` | |
 | 노드 제어 | `POST /aiapp/deployments/{id}/control` | Tumblebug 노드 제어 |
+
+4차 개편에서 더해진 경로(`DELETE /aiapp/deployments/{id}`, `GET /aiapp/endpoints`, `GET /aiapp/status`, `POST /aiapp/recommendations/*`)를
+포함한 전체 목록은 [docs/api/README.md](../api/README.md) 9절에 있다.
 
 요청·응답 필드는 Swagger 에 설명을 다 적는다. 다른 모듈(경희대 Agent, 인프라 추천 Agent, 포털)이 이 문서만 보고 붙을 수 있어야 한다.
 
@@ -323,7 +334,7 @@ MCP 도구도 같은 리소스 단위로 다시 묶는다. 등급(read·review·
 설계 때와 달라진 것.
 
 - **헬스는 엔진 단계가 아니다.** 처음 설계는 `deploy` 끝에 "헬스", `heal` 앞에 "헬스 확인" 을 두었지만, 헬스는 노드 안에서만
-  확인할 수 있고(서빙 포트를 열지 않으므로 밖에서는 닿는다는 보장이 없다) 그 일은 `compose-up` 이 한다. `compose-up` 이
+  확인할 수 있고(3차 당시에는 서빙 포트를 열지 않아 밖에서 닿는다는 보장이 없었다) 그 일은 `compose-up` 이 한다. `compose-up` 이
   `health_url`(`http://127.0.0.1:<port><healthPath>`)을 기다려 응답해야 노드가 `succeeded` 가 되므로, 엔진의 대기 단계가
   읽는 노드 상태가 곧 헬스 결과다. Ollama 는 `model-pull` 이 끝나기를 먼저 기다린다. 응용은 script 종료 코드만 본다.
 - **`status` 는 기록과 로그만 본다.** 처음 설계의 "노드 상태 + 헬스" 에서 CB-Tumblebug 노드 상태 조회와 헬스는 빠졌다.
@@ -332,14 +343,14 @@ MCP 도구도 같은 리소스 단위로 다시 묶는다. 등급(read·review·
 - dry-run 이면 `create_deployment` 단계가 `blocked`, 대기 단계가 `waiting` 이다.
 - 대기 단계는 `AIAPP_HEALTH_INTERVAL`(20초) 간격으로 `AIAPP_HEALTH_TIMEOUT`(15분)까지 묻는다. 넘으면 단계가 실패하고 배포는
   AI-App 에서 계속 돈다(8절).
-- `list_applications` 는 모델(아티팩트·엔진 포함)과 업로드한 응용의 요약을 돌려준다. 옛 규칙 매처의 `query` 는 없어졌다.
+- `list_applications` 는 모델(아티팩트·런타임 포함)과 업로드한 응용의 요약을 돌려준다. 옛 규칙 매처의 `query` 는 없어졌다.
 
 ## 7. ETRI 시나리오 (시드)
 
 ETRI 가 제시한 여행 계획 통합 포털 시나리오. 포털은 별도 노드에 ETRI 환경에만 있으므로 시드에 넣지 않는다.
 포털은 아래 세 노드를 부르는 "여러 노드에 걸친 AI 응용" 의 예다.
 
-| 노드 | 역할 | 모델 | 아티팩트 | 엔진 | 응용 |
+| 노드 | 역할 | 모델 | 아티팩트 | 런타임 | 응용 |
 |------|------|------|----------|------|------|
 | aws vm1 | 관광 문서 분석 (RAG) | Qwen3-Embedding-0.6B | HF `Qwen/Qwen3-Embedding-0.6B`, BF16 | vLLM | Dify |
 | azure vm2 | 이미지 분석·여행 계획 생성 | Qwen3-VL-8B | Ollama `qwen3-vl:8b` (GGUF, 6.2GB) | Ollama | Open WebUI |
@@ -396,7 +407,7 @@ flowchart TB
 | vm1 에 글을 생성하는 LLM 이 없다 | 임베딩 모델은 검색용 벡터만 만든다. "관광지·맛집 정보 추출" 은 생성 LLM 이 필요하다. vm1 에 생성 모델을 더 두거나 vm2 를 불러야 한다 |
 | vm2 의 이미지 생성 | Qwen3-VL 은 이미지를 읽고 글을 쓰는 모델이라 이미지를 만들지 못한다. 이미지 생성 모델(예: Stable Diffusion·FLUX + ComfyUI)이 따로 필요하다 |
 | vm3 모델의 입력 | ETRI 는 "LLM" 으로 소개했지만 HF 아키텍처가 `Mistral3ForConditionalGeneration` 이라 이미지 입력도 받는 것으로 보인다. 시드에는 `text`, `image` 로 넣고 확인이 필요하다고 남긴다 |
-| 서빙 포트를 열지 않는다. 누가 여나 | VM 생성 경로와 함께 보안 그룹 규칙 추가도 지웠다. 노드 배포는 포트를 건드리지 않고, 헬스는 노드 안에서 확인하므로 제한적인 보안 그룹 템플릿으로 만든 Infra 면 배포가 `succeeded` 인데 밖에서 닿지 않는다. Infra 를 만든 쪽(인프라 추천 또는 운영자)이 여는 것으로 README 에 적었지만 합의된 것은 아니다 |
+| 서빙 포트를 열지 않는다. 누가 여나 | (4차 개편에서 풀림) 3차에서는 VM 생성 경로와 함께 보안 그룹 규칙 추가도 지워, 제한적인 보안 그룹 템플릿으로 만든 Infra 면 배포가 `succeeded` 인데 밖에서 닿지 않았다. 2026-11-03 사용자 결정으로 AI-App 이 배포 때 노드 보안 그룹에 서빙 포트를 연다(`0.0.0.0/0`, 내릴 때 닫지 않음). 출처 제한은 남은 문제다 |
 | Semaphore 는 깨진 키에 panic 한다 | Semaphore v2.12.17 은 형식이 깨진 SSH 키를 등록할 때 거절하지 않고, 그 키를 쓰는 태스크에서 프로세스 전체가 panic("close of nil channel", `pkg/ssh/agent.go`)으로 죽는다. 우리는 PEM 개인키 블록인지 먼저 검사해 막는다(`internal/semaphore/run.go` `CheckPrivateKey`). PEM 블록 안의 키 내용까지는 검사하지 않는다 |
 | 큰 모델은 시간 상한에 걸릴 수 있다 | 태스크 하나의 상한이 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분이고, Ollama 모델 pull 대기 `wait_timeout` 기본 1800초도 30분이다. vLLM 은 `/health` 가 가중치를 다 받은 뒤 응답하는데 `compose-up` 의 헬스 대기는 10초 간격 60번(약 10분)이다. 큰 모델을 처음 받는 노드는 이 상한들에 걸릴 수 있다 |
 | compose env 가 평문으로 남는다 | 배포 요청의 `env`(예 `HF_TOKEN`)가 배포 기록(`AIAPP_DEPLOYMENT_STORE_FILE`), 배포·제어 아카이브, 공유 저장소의 `.env`, 노드의 `.env` 에 평문으로 남는다. 비밀값을 가리거나 따로 넘기는 경로가 없다 |
@@ -424,7 +435,7 @@ flowchart TB
 
 ## 11. 구현 결과 (2026-10-29)
 
-작업별 검증 근거는 계획 진행 기록(`.claude/plan-progress.md`, 저장소에 커밋하지 않는 작업 문서)에서 옮겼다. "구현자" 는 그 작업을
+이 절은 3차 개편 당시의 기록이라 경로·필드 이름이 옛 것(`/engines`, `model-service`)이다. 작업별 검증 근거는 계획 진행 기록(`.claude/plan-progress.md`, 저장소에 커밋하지 않는 작업 문서)에서 옮겼다. "구현자" 는 그 작업을
 구현한 쪽이 돌려서 보고한 것이고, 팀장이 다시 돌린 것은 따로 적었다.
 
 ### 11.1 작업과 커밋
