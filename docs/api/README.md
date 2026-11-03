@@ -5,6 +5,24 @@
 > 실제 클라우드 시험 결과: [live-test-2026-11-03.md](live-test-2026-11-03.md) (aws·azure GPU VM 3대).
 > 실행해 볼 수 있는 curl 예제: [examples/](examples/).
 
+## 한 장 요약
+
+![AI-App 전체 구조](../figures/01-overview.svg)
+
+| 질문 | 답 |
+|---|---|
+| AI-App 은 무엇을 하나 | CB-Tumblebug 이 이미 만든 VM(노드)에 **추론 서비스(런타임 + 모델)와 AI 응용을 올리고 내리는 API** 입니다. VM 은 만들지 않습니다 (1절) |
+| 기관마다 무엇을 하나 | ETRI 는 Tumblebug API 로 GPU VM 을 만듭니다([etri.md](etri.md)). BESP AI-Web 은 카탈로그를 읽고 배포를 요청하고 주소를 읽습니다([besp.md](besp.md)). 경희대는 모델·응용 추천을 이 repo 안에 구현합니다. 지금은 자리만 있고 `501` 입니다([khu.md](khu.md)) |
+| 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다. 응용은 올린 파일 묶음과 `deploy.sh` 이고, Dify, Open WebUI, Langflow 예시가 있습니다 (9절) |
+| 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
+| 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절) |
+| 언제 `succeeded` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
+| 주소는 어디서 얻나 | `GET /aiapp/endpoints` 입니다. 서빙 포트는 배포가 성공하면 노드 보안 그룹에 자동으로 열립니다 (8절) |
+| 내리기는 | `DELETE /aiapp/deployments/{id}` 입니다. 노드에서 `docker compose down` 을 하고 named volume 은 남깁니다 (7절) |
+| 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](live-test-2026-11-03.md)) |
+
+---
+
 ## 1. AI-App 이 하는 일
 
 AI-App 은 **CB-Tumblebug 이 이미 만든 VM 에 추론 서비스와 AI 응용을 올리고 내리는 API** 입니다. VM 을 만들지는 않습니다.
@@ -33,50 +51,7 @@ AI-App 은 **CB-Tumblebug 이 이미 만든 VM 에 추론 서비스와 AI 응용
 
 ## 2. 전체 흐름
 
-```mermaid
-flowchart LR
-    subgraph partner["협력 기관"]
-        etri["ETRI<br/>GPU VM 생성"]
-        web["BESP AI-Web<br/>화면"]
-        khu["경희대<br/>모델·응용 추천 (나중)"]
-    end
-
-    tb["CB-Tumblebug<br/>VM · SSH 키 · 보안 그룹"]
-
-    subgraph aiapp["AI-App (이 repo)"]
-        direction TB
-        cat["카탈로그<br/>/aiapp/runtimes · /aiapp/models · /aiapp/apps"]
-        dep["배포<br/>/aiapp/deployments"]
-        ep["주소<br/>/aiapp/endpoints"]
-        rec["추천 자리<br/>/aiapp/recommendations/* (501)"]
-        stage[("공유 저장소 stage<br/>&lt;배포 ID&gt;/&lt;csp&gt;-&lt;nodeId&gt;/")]
-        cat --> dep
-        dep -- "파일 배치" --> stage
-        dep --> ep
-        cat -.-> rec
-    end
-
-    sem["Semaphore<br/>(Ansible 실행기)"]
-
-    subgraph infra["Tumblebug Infra (노드)"]
-        direction TB
-        n1["vm1<br/>vLLM + Dify"]
-        n2["vm2<br/>Ollama + Open WebUI"]
-        n3["vm3<br/>vLLM + Langflow"]
-    end
-
-    etri -- "① VM 생성" --> tb
-    tb -. "VM" .-> infra
-    web -- "② 카탈로그 조회 · 배포 요청" --> cat
-    web --> dep
-    khu -. "카탈로그 읽기" .-> cat
-    dep -- "③ 노드 정보 · SSH 키 조회" --> tb
-    dep -- "④ key · inventory 등록, 태스크 실행" --> sem
-    stage -. "같은 볼륨" .- sem
-    sem -- "⑤ SSH: docker 설치 → compose up / 파일 복사 → script" --> infra
-    dep -- "⑥ 서빙 포트 규칙 추가" --> tb
-    web -- "⑦ 주소 조회" --> ep
-```
+전체 구조는 맨 위 한 장 요약의 그림입니다. 번호는 부르는 순서입니다.
 
 - AI-App 은 VM 을 만들지 않습니다. 노드 제어(정지·재개·재부팅·종료)는 AI-App 이 CB-Tumblebug 으로 부릅니다.
 - 노드에 실제로 명령을 돌리는 것은 Semaphore 입니다. AI-App 은 Semaphore 에 그 노드의 SSH 키와 주소를 잠깐 등록하고
@@ -84,38 +59,7 @@ flowchart LR
 
 노드 하나에서 일어나는 일은 아래 순서입니다.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as 호출자<br/>(AI-Web · 스크립트)
-    participant A as AI-App
-    participant T as CB-Tumblebug
-    participant S as 공유 저장소
-    participant M as Semaphore
-    participant N as 노드
-
-    C->>A: POST /aiapp/deployments
-    A-->>C: 202 배포 기록 (status pending)
-    Note over A: 노드마다 따로 진행
-    A->>T: 노드 정보 (IP, 사용자, sshKeyId, specId, securityGroupIds)
-    A->>T: SSH 키 (privateKey)
-    A->>S: 파일 배치 (추론: compose 생성 / 응용: 업로드 파일 + script)
-    alt dry-run
-        Note over A: 여기서 멈춤 (status dry-run). Semaphore·보안 그룹은 건드리지 않음
-    else 실제 배포
-        loop install-docker, 그다음 compose-up 또는 copy-and-run
-            A->>M: SSH 키 · inventory 등록
-            A->>M: 태스크 실행 (고정 template + 이번 inventory)
-            M->>S: 배치된 파일 읽기
-            M->>N: SSH 로 playbook 실행
-            A->>M: 끝날 때까지 상태 확인, 로그 받아 기록
-            A->>M: inventory · SSH 키 삭제
-        end
-        A->>T: 보안 그룹에 서빙 포트 규칙 추가 (없는 포트만)
-    end
-    C->>A: GET /aiapp/deployments/{id} (끝날 때까지)
-    C->>A: GET /aiapp/endpoints
-```
+![배포 하나가 진행되는 순서](../figures/02-deploy-sequence.svg)
 
 ## 3. Semaphore 구조
 
@@ -124,44 +68,7 @@ Semaphore 에 관리자 계정이 있고(docker compose 의 `deploy` 프로필�
 AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사용자·비밀번호 또는 `AIAPP_SEMAPHORE_TOKEN`), 나머지는 AI-App 이
 첫 배포 때 스스로 만듭니다. Semaphore 화면에서 미리 만들 것은 없습니다. 이것은 AI-App 운영자(이노그리드)가 맞추는 부분입니다.
 
-```mermaid
-flowchart TB
-    aiapp["AI-App"]
-    stage[("공유 볼륨 stage<br/>/var/lib/aiapp/stage<br/>AI-App 은 쓰고 Semaphore 는 읽음")]
-
-    subgraph sem["Semaphore 프로젝트 aiapp (AIAPP_SEMAPHORE_PROJECT)"]
-        direction TB
-        repo["repository aiapp-playbooks<br/>/ansible (deploy/ansible 마운트)"]
-        env["environment aiapp-empty"]
-        ph["inventory aiapp-no-hosts<br/>(template 에 묶어 두는 빈 자리)"]
-        subgraph tpl["template, 고정"]
-            t1["aiapp-install-docker"]
-            t2["aiapp-compose-up"]
-            t3["aiapp-copy-and-run"]
-            t4["aiapp-compose-down"]
-        end
-        subgraph run["실행마다 등록 · 삭제"]
-            key["SSH 키 aiapp-&lt;배포&gt;-&lt;csp&gt;-&lt;node&gt;-&lt;난수&gt;"]
-            inv["inventory (노드 주소 하나)"]
-        end
-        task["태스크 (이력 · 로그는 남음)"]
-        repo --> tpl
-        env --> tpl
-        ph --> tpl
-        tpl --> task
-        inv --> task
-        key --> inv
-    end
-
-    node["노드 /opt/aiapp/&lt;작업 키&gt;<br/>compose 프로젝트 aiapp-&lt;작업 키&gt;"]
-    ui["Semaphore 화면<br/>AIAPP_SEMAPHORE_UI_URL/project/&lt;p&gt;/history?t=&lt;태스크&gt;"]
-
-    aiapp -- "파일 배치" --> stage
-    stage -. "읽기" .-> task
-    aiapp -- "API: 등록 · 실행 · 로그 · 삭제" --> sem
-    task -- "SSH" --> node
-    task -. "배포 기록의 taskUrl" .-> ui
-```
+![Semaphore 안에 무엇이 있나](../figures/03-semaphore.svg)
 
 - **template 은 playbook 마다 하나로 고정**하고 지우지 않습니다. Semaphore 는 template 을 지우면 그 태스크 이력과 로그도
   같이 지우기 때문입니다.
@@ -188,33 +95,7 @@ flowchart TB
 
 ## 4. 부르는 순서
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as 호출자
-    participant A as AI-App
-
-    C->>A: GET /aiapp/runtimes, /aiapp/models, /aiapp/apps
-    Note over C: modelId · artifactId · runtimeId, 응용 이름을 고름
-    opt 응용이 아직 없으면
-        C->>A: POST /aiapp/apps (multipart, ports 포함)
-    end
-    C->>A: POST /aiapp/deployments (type inference)
-    A-->>C: 202 {id, status: pending}
-    loop status 가 pending · running 인 동안
-        C->>A: GET /aiapp/deployments/{id}
-    end
-    C->>A: GET /aiapp/endpoints?nsId=&infraId=&nodeId=
-    A-->>C: 추론 서비스 url (http://노드:8000/v1)
-    C->>A: POST /aiapp/deployments (type app, env 에 추론 url)
-    loop status 가 pending · running 인 동안
-        C->>A: GET /aiapp/deployments/{id}
-    end
-    C->>A: GET /aiapp/endpoints
-    A-->>C: 응용 urls (http://노드:포트)
-    C->>A: GET /aiapp/deployments/{id}/logs (실패했거나 궁금할 때)
-    C->>A: DELETE /aiapp/deployments/{id} (내릴 때)
-```
+![부르는 순서](../figures/04-call-order.svg)
 
 1. 카탈로그를 읽어 무엇을 올릴지 고릅니다. 모델은 `modelId` + `artifactId`, 런타임은 아티팩트의 `runtimes[].runtimeId` 중 하나입니다
    (빼면 첫 번째). 응용은 `GET /aiapp/apps` 의 `name` 입니다.
