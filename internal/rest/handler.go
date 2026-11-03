@@ -55,8 +55,10 @@ func statusCodeFor(err error) int {
 		return http.StatusRequestEntityTooLarge
 	case errors.Is(err, compose.ErrIncompatible), errors.Is(err, model.ErrUnsupportedTarget):
 		return http.StatusUnprocessableEntity
-	case errors.Is(err, nodedeploy.ErrNotFound):
+	case errors.Is(err, nodedeploy.ErrNotFound), errors.Is(err, nodedeploy.ErrNodeNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, nodedeploy.ErrTumblebug):
+		return http.StatusBadGateway
 	case errors.Is(err, nodedeploy.ErrBusy):
 		return http.StatusConflict
 	case errors.Is(err, compose.ErrInvalidOption):
@@ -88,13 +90,14 @@ func messageFor(err error, fallback string) string {
 	if message := model.ValidationMessage(err); message != "" {
 		return message
 	}
-	// The model catalog, compose and application store errors name only
-	// identifiers the caller sent, the reason a pairing does not fit and the
-	// upload bound.
+	// The model catalog, compose, application store and node deployment
+	// errors name only identifiers the caller sent, the reason a pairing does
+	// not fit, the upload bound and the upstream status.
 	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrRuntimeNotFound,
 		compose.ErrIncompatible, compose.ErrInvalidOption,
 		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge,
-		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound, nodedeploy.ErrBusy, recommend.ErrNotConfigured} {
+		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound, nodedeploy.ErrNodeNotFound, nodedeploy.ErrTumblebug,
+		nodedeploy.ErrBusy, recommend.ErrNotConfigured} {
 		if errors.Is(err, own) {
 			return err.Error()
 		}

@@ -35,8 +35,9 @@ const (
 // fakeTumblebug answers the node, ssh key, spec, node control and security
 // group routes for nodes vm1 (aws, GPU spec), vm2 (azure, CPU spec, two
 // security groups) and vm3 (gcp, spec that cannot be read), all in namespace
-// etri, infra travel. Node gone answers 404. Security group sg-azure-b
-// already lets in TCP 8000-9000 from anywhere.
+// etri, infra travel. Node gone answers 404, node down answers 503, and any
+// other node answers 500 "no Node found" as CB-Tumblebug 0.13.8 does.
+// Security group sg-azure-b already lets in TCP 8000-9000 from anywhere.
 type fakeTumblebug struct {
 	mu       sync.Mutex
 	controls []string
@@ -80,11 +81,17 @@ func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "node gone does not exist"})
 		return
 	}
+	if path == "/ns/etri/infra/travel/node/down" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"message": "spider is not ready"})
+		return
+	}
 	if m := regexp.MustCompile(`^/ns/etri/infra/travel/node/([^/]+)$`).FindStringSubmatch(path); m != nil {
 		if node, ok := nodes[m[1]]; ok {
 			writeJSON(w, http.StatusOK, node)
 			return
 		}
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "no Node found (ID: " + path + ")"})
+		return
 	}
 	if m := regexp.MustCompile(`^/ns/etri/control/infra/travel/node/([^/]+)$`).FindStringSubmatch(path); m != nil {
 		f.mu.Lock()
@@ -522,15 +529,26 @@ func TestRequestedGPUOverridesTheSpec(t *testing.T) {
 	}
 }
 
-func TestMissingNodeFailsOnlyThatNode(t *testing.T) {
-	f := newFixture(t, false)
-	created, err := f.svc.Create(context.Background(), appReq("vm1", "vm9"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := waitFinished(t, f.svc, created.ID)
-	if d.Status != model.NodeDeployPartial || d.Nodes[1].Status != model.NodeDeployFailed || d.Nodes[1].Node != nil {
-		t.Errorf("status = %q, vm9 = %+v", d.Status, d.Nodes[1])
+func TestMissingNodeIsRefusedBeforeAnythingRuns(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		f := newFixture(t, dryRun)
+		for _, node := range []string{"vm9", "gone"} {
+			_, err := f.svc.Create(context.Background(), appReq("vm1", node))
+			if !errors.Is(err, ErrNodeNotFound) || !strings.Contains(err.Error(), "etri/travel/"+node) {
+				t.Errorf("dry run %v, %s: err = %v, want ErrNodeNotFound naming the target", dryRun, node, err)
+			}
+		}
+		_, err := f.svc.Create(context.Background(), appReq("vm1", "down"))
+		if !errors.Is(err, ErrTumblebug) || errors.Is(err, ErrNodeNotFound) || !strings.Contains(err.Error(), "etri/travel/down") ||
+			!strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "spider") {
+			t.Errorf("dry run %v, down: err = %v, want ErrTumblebug naming the target and the status only", dryRun, err)
+		}
+		if f.runner.count() != 0 || len(f.svc.List(context.Background(), ListFilter{})) != 0 {
+			t.Errorf("dry run %v: a refused request left a run or a record", dryRun)
+		}
+		if entries, _ := os.ReadDir(f.stage); len(entries) != 0 {
+			t.Errorf("dry run %v: a refused request staged %d folders", dryRun, len(entries))
+		}
 	}
 }
 

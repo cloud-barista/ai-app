@@ -276,19 +276,21 @@ Swagger UI: `http://<AI-App 호스트>:8090/aiapp/api/index.html`. 모든 필드
 | `202` | 배포·내리기를 받았고 뒤에서 진행 중. 본문은 그 시점의 기록 (`pending` 또는 `removing`) |
 | `400` | 요청 형식이 틀림 (필드 누락, 이름 규칙 위반, env 이름·값 규칙 위반, 숫자가 아닌 포트) |
 | `401` | 토큰 없음·틀림 |
-| `404` | 없는 모델·아티팩트·런타임·응용·배포 |
+| `404` | 없는 모델·아티팩트·런타임·응용·배포, `POST /deployments` 의 대상 노드가 CB-Tumblebug 에 없음 (메시지에 `nsId/infraId/nodeId`) |
 | `409` | 아직 진행 중(`pending`·`running`)이거나 내리는 중(`removing`)인 배포를 `DELETE` |
 | `413` | 응용 업로드가 상한(`AIAPP_APP_UPLOAD_MAX_BYTES`, 기본 256 MiB)을 넘음 |
 | `422` | `kind: k8s` 대상(자리만 있음), 그 런타임이 못 읽는 아티팩트 |
 | `500` | 기록·파일 저장 실패, 추천 구현이 카탈로그에 없는 후보를 돌려줌 |
 | `501` | 추천 구현이 설정되지 않음 (`/aiapp/recommendations/*`, 지금은 항상) |
-| `502` | `/aiapp/engine/*` 을 넘길 자동화 엔진이 응답하지 않음 |
+| `502` | `/aiapp/engine/*` 을 넘길 자동화 엔진이 응답하지 않음, `POST /deployments` 가 대상 노드를 읽는데 CB-Tumblebug 이 실패하거나 응답하지 않음 |
 
-노드 하나가 실패해도 배포 요청 자체는 `202` 입니다. 노드의 실패는 배포 기록의 `nodes[].status`·`nodes[].error` 로 봅니다.
+`POST /deployments` 는 받기 전에 대상 노드를 모두 CB-Tumblebug 에서 읽습니다. 하나라도 없거나 읽지 못하면 기록을 만들지 않고 `404`·`502` 로 거절합니다.
+CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라 `500` (`no Node found`)을 주므로, AI-App 이 이것을 없는 노드로 읽어 `404` 로 돌려줍니다.
+받은 뒤에 노드 하나가 실패해도 배포 요청 자체는 `202` 입니다. 노드의 실패는 배포 기록의 `nodes[].status`·`nodes[].error` 로 봅니다.
 
 ## 7. 배포는 비동기다
 
-- `POST /aiapp/deployments` 는 요청을 카탈로그와 대조한 뒤 바로 `202` 와 `pending` 기록을 돌려주고, 뒤에서 진행합니다.
+- `POST /aiapp/deployments` 는 요청을 카탈로그와 대조하고 대상 노드가 있는지 CB-Tumblebug 에서 확인한 뒤 바로 `202` 와 `pending` 기록을 돌려주고, 뒤에서 진행합니다.
   `GET /aiapp/deployments/{id}` 를 `status` 가 `pending`·`running` 이 아닐 때까지 읽습니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수
   있습니다(Semaphore 태스크 하나의 상한 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분).
 - **dry-run** 은 노드 조회와 파일 배치만 하고 Semaphore 에 아무것도 올리지 않는 모드입니다. AI-App 설정

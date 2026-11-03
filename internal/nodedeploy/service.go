@@ -79,6 +79,14 @@ const DefaultMaxParallel = 4
 // ErrNotFound is returned when no deployment has an ID.
 var ErrNotFound = errors.New("deployment not found")
 
+// ErrNodeNotFound is returned by Create when CB-Tumblebug has no node for a
+// target.
+var ErrNodeNotFound = errors.New("node not found")
+
+// ErrTumblebug is returned by Create when CB-Tumblebug could not tell whether
+// a target node exists.
+var ErrTumblebug = errors.New("CB-Tumblebug could not be read")
+
 // Tumblebug is what this package reads from and sends to CB-Tumblebug.
 // *tumblebug.Client implements it.
 type Tumblebug interface {
@@ -165,7 +173,8 @@ type plan struct {
 //
 // The request is checked and resolved against the model catalog or the
 // application store first, so that an unknown model, an incompatible runtime
-// or a missing application fails here. With dry run on, the deployment is
+// or a missing application fails here. Every target node is then read from
+// CB-Tumblebug, so that a missing node fails here too. With dry run on, the deployment is
 // carried out before Create returns and the finished record is returned.
 // Otherwise the record is returned pending and the deployment goes on in the
 // background.
@@ -175,6 +184,9 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 	}
 	p, err := s.resolve(ctx, &req)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkTargets(ctx, req.Targets); err != nil {
 		return nil, err
 	}
 	id, err := newUUID()
@@ -207,6 +219,30 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 		s.execute(s.ctx, id, p)
 	}()
 	return s.Get(ctx, id)
+}
+
+// checkTargets reads every target node from CB-Tumblebug, one after another.
+//
+// The error names the target, and never carries the upstream text: that may
+// hold the CB-Tumblebug address. The upstream error is logged instead.
+func (s *Service) checkTargets(ctx context.Context, targets []model.NodeDeployTarget) error {
+	for _, t := range targets {
+		_, err := s.tb.GetNode(ctx, t.NsID, t.InfraID, t.NodeID)
+		if err == nil {
+			continue
+		}
+		name := t.NsID + "/" + t.InfraID + "/" + t.NodeID
+		if errors.Is(err, tumblebug.ErrNodeNotFound) {
+			return fmt.Errorf("%w: %s", ErrNodeNotFound, name)
+		}
+		log.Warn().Str("nsId", t.NsID).Str("infraId", t.InfraID).Str("nodeId", t.NodeID).
+			Str("error", err.Error()).Msg("Failed to read a target node")
+		if status := tumblebug.StatusCode(err); status != 0 {
+			return fmt.Errorf("%w: node %s: CB-Tumblebug responded %d", ErrTumblebug, name, status)
+		}
+		return fmt.Errorf("%w: node %s: CB-Tumblebug did not answer", ErrTumblebug, name)
+	}
+	return nil
 }
 
 // resolve finds the model, artifact and runtime, or the application version,

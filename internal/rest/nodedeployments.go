@@ -23,7 +23,7 @@ import (
 // @Description
 // @Description Once the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.
 // @Description
-// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
 // @Tags [Deployment] Node Deployment
 // @Accept json
 // @Produce json
@@ -31,9 +31,10 @@ import (
 // @Success 200 {object} model.NodeDeployment "Dry run: the files were placed and nothing was run"
 // @Success 202 {object} model.NodeDeployment "Accepted; the deployment goes on in the background"
 // @Failure 400 {object} model.SimpleMsg "Malformed request"
-// @Failure 404 {object} model.SimpleMsg "Model, artifact, runtime profile or application not found"
+// @Failure 404 {object} model.SimpleMsg "Model, artifact, runtime profile, application or target node not found"
 // @Failure 422 {object} model.SimpleMsg "A k8s target, or an artifact the runtime cannot run"
 // @Failure 500 {object} model.SimpleMsg "The record could not be written"
+// @Failure 502 {object} model.SimpleMsg "CB-Tumblebug failed or did not answer while the target nodes were read"
 // @Security BearerAuth
 // @Router /deployments [post]
 func (h *Handler) RestPostNodeDeployment(c echo.Context) error {

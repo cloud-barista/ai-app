@@ -58,6 +58,13 @@ func newNodeDeployServer(t *testing.T, dryRun bool) (*Server, *countingRunner, *
 				"id": "vm1", "publicIP": "203.0.113.21", "sshKeyId": "k", "nodeUserName": "cb-user",
 				"connectionConfig": map[string]any{"providerName": "AWS"},
 			})
+		case "/tumblebug/ns/etri/infra/travel/node/down":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "spider is not ready"})
+		case "/tumblebug/ns/etri/infra/travel/node/vm9", "/tumblebug/ns/etri/infra/nosuch/node/vm1":
+			// CB-Tumblebug 0.13.8 answers a missing node or infra with 500.
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "no Node found (ID: " + strings.TrimPrefix(r.URL.Path, "/tumblebug") + ")"})
 		case "/tumblebug/ns/etri/resources/sshKey/k":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "k", "privateKey": nodeTestKey})
 		case "/tumblebug/ns/etri/control/infra/travel/node/vm1":
@@ -259,6 +266,30 @@ func TestNodeDeploymentRefusals(t *testing.T) {
 	}
 	if runner.count() != 0 {
 		t.Errorf("%d runs for refused requests", runner.count())
+	}
+
+	for _, tc := range []struct {
+		infra, node string
+		want        int
+		message     string
+	}{
+		{"travel", "vm9", http.StatusNotFound, "node not found: etri/travel/vm9"},
+		{"nosuch", "vm1", http.StatusNotFound, "node not found: etri/nosuch/vm1"},
+		{"travel", "down", http.StatusBadGateway, "CB-Tumblebug could not be read: node etri/travel/down: CB-Tumblebug responded 503"},
+	} {
+		body := `{"type":"app","targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"},` +
+			`{"kind":"node","nsId":"etri","infraId":"` + tc.infra + `","nodeId":"` + tc.node + `"}],"app":{"name":"web"}}`
+		rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", body)
+		var msg model.SimpleMsg
+		_ = json.Unmarshal(rec.Body.Bytes(), &msg)
+		if rec.Code != tc.want || msg.Message != tc.message {
+			t.Errorf("%s/%s = %d %q, want %d %q", tc.infra, tc.node, rec.Code, msg.Message, tc.want, tc.message)
+		}
+	}
+	rec := sendNodeJSON(s, http.MethodGet, "/aiapp/deployments", "")
+	var list model.NodeDeploymentListResp
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Deployments) != 0 || runner.count() != 0 {
+		t.Errorf("refused requests left records or runs: %s, runs %d", rec.Body.String(), runner.count())
 	}
 }
 

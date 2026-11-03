@@ -12,6 +12,13 @@ import (
 // defaultSSHPort is used when a node reports no SSH port.
 const defaultSSHPort = 22
 
+// ErrNodeNotFound is wrapped by GetNode when CB-Tumblebug has no such node,
+// or no such Infra above it.
+var ErrNodeNotFound = errors.New("node not found")
+
+// noNodeFoundMessage is how CB-Tumblebug words a missing node.
+const noNodeFoundMessage = "no Node found"
+
 // Node is one node of an Infra, with the fields a deployment needs to reach it.
 //
 // The fields follow model.NodeInfo of the CB-Tumblebug 0.13.8 OpenAPI document,
@@ -116,9 +123,29 @@ func (c *Client) GetNode(ctx context.Context, nsID, infraID, nodeID string) (*No
 
 	result := &Node{}
 	if err := c.Do(ctx, http.MethodGet, path, nil, nil, result); err != nil {
+		if isNodeNotFound(err) {
+			return nil, fmt.Errorf("failed to get node %q of infra %q: %w: %w", nodeID, infraID, ErrNodeNotFound, err)
+		}
 		return nil, fmt.Errorf("failed to get node %q of infra %q: %w", nodeID, infraID, err)
 	}
 	return result, nil
+}
+
+// isNodeNotFound reports whether err is CB-Tumblebug saying the node is not
+// there. CB-Tumblebug 0.13.8 answers a missing node, and a missing Infra, with
+// 500 and the message "no Node found (ID: ...)" rather than 404.
+func isNodeNotFound(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.StatusCode {
+	case http.StatusNotFound:
+		return true
+	case http.StatusInternalServerError:
+		return strings.Contains(apiErr.Message, noNodeFoundMessage)
+	}
+	return false
 }
 
 // GetSSHKey reads an SSH key resource, private key included.

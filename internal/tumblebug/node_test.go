@@ -3,6 +3,7 @@ package tumblebug
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,6 +88,38 @@ func TestGetNodeError(t *testing.T) {
 	_, err := c.GetNode(context.Background(), "etri", "travel", "missing")
 	if err == nil || StatusCode(err) != http.StatusInternalServerError || !strings.Contains(err.Error(), `"missing"`) {
 		t.Errorf("GetNode error = %v, want a 500 naming the node", err)
+	}
+}
+
+func TestGetNodeTellsAMissingNode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tumblebug/ns/etri/infra/travel/node/vm9":
+			// CB-Tumblebug 0.13.8 answers a missing node with 500.
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"no Node found (ID: /ns/etri/infra/travel/node/vm9)"}`)
+		case "/tumblebug/ns/etri/infra/travel/node/gone":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"message":"node gone does not exist"}`)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"database is locked"}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	for node, want := range map[string]bool{"vm9": true, "gone": true, "vm1": false} {
+		_, err := c.GetNode(context.Background(), "etri", "travel", node)
+		if err == nil {
+			t.Fatalf("%s: GetNode succeeded", node)
+		}
+		if got := errors.Is(err, ErrNodeNotFound); got != want {
+			t.Errorf("%s: errors.Is(ErrNodeNotFound) = %v, want %v (%v)", node, got, want, err)
+		}
+		if StatusCode(err) == 0 {
+			t.Errorf("%s: the upstream status is lost: %v", node, err)
+		}
 	}
 }
 
