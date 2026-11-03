@@ -4,9 +4,17 @@
 # Extra vars (passed by AI-App as the Semaphore task environment):
 #   gpu   optional, true on a node with an NVIDIA GPU (default false)
 #
+# The play first waits for the node to accept the connection: a VM that has
+# just turned Running may not have its login user yet.
+#
 # A node that already has docker with the compose plugin is left as it is. A
-# node with docker but without the compose plugin fails instead of being
-# changed, because its docker came from somewhere this playbook does not manage.
+# node with docker but without the compose plugin gets the compose package its
+# own apt sources offer (docker-compose-plugin from Docker, moby-compose from
+# Microsoft on Azure images), and fails when they offer none, because its
+# docker came from somewhere this playbook does not manage.
+#
+# On a GPU node the NVIDIA runtime is registered with docker whenever docker
+# does not list it, also when the toolkit came with the image.
 - name: Install Docker
   hosts: all
   become: true
@@ -15,6 +23,11 @@
     docker_keyring: /etc/apt/keyrings/docker.asc
     nvidia_keyring: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
   tasks:
+    - name: Wait for the node to accept the connection
+      ansible.builtin.wait_for_connection:
+        sleep: 10
+        timeout: 600
+
     - name: Check for docker
       ansible.builtin.shell: command -v docker
       register: docker_check
@@ -28,10 +41,38 @@
       failed_when: false
       when: docker_check.rc == 0
 
-    - name: Refuse a docker without the compose plugin
-      ansible.builtin.fail:
-        msg: docker is installed but "docker compose" is not available; install the compose plugin for this docker
+    - name: Add the compose plugin to a docker that has none
       when: docker_check.rc == 0 and compose_check.rc != 0
+      block:
+        - name: Find a compose package in the node's apt sources
+          # The policy is read into a variable first: grep -q in a pipe would
+          # stop reading early and fail apt-cache with SIGPIPE.
+          ansible.builtin.shell: |
+            apt-get update -qq || true
+            for pkg in docker-compose-plugin moby-compose; do
+              policy=$(apt-cache policy "$pkg" 2>/dev/null)
+              if grep -q 'Candidate: [0-9]' <<<"$policy"; then
+                echo "$pkg"
+                exit 0
+              fi
+            done
+          args:
+            executable: /bin/bash
+          register: compose_package
+          changed_when: false
+
+        - name: Refuse a docker without a compose package
+          ansible.builtin.fail:
+            msg: docker is installed but "docker compose" is not available and no apt source offers docker-compose-plugin or moby-compose; install the compose plugin for this docker
+          when: compose_package.stdout | trim == ''
+
+        - name: Install the compose package
+          ansible.builtin.apt:
+            name: "{{ compose_package.stdout | trim }}"
+
+        - name: Check the compose plugin again
+          ansible.builtin.command: docker compose version
+          changed_when: false
 
     - name: Install docker from Docker's repository
       when: docker_check.rc != 0
@@ -127,14 +168,19 @@
             update_cache: true
           when: nvidia_check.rc != 0
 
+        - name: Read the runtimes docker knows
+          ansible.builtin.command: docker info --format '{{ '{{' }}json .Runtimes{{ '}}' }}'
+          register: docker_runtimes
+          changed_when: false
+
         - name: Register the NVIDIA runtime with docker
           ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
           register: nvidia_configure
           changed_when: "'Wrote updated config' in nvidia_configure.stdout + nvidia_configure.stderr"
-          when: nvidia_check.rc != 0
+          when: "'nvidia' not in docker_runtimes.stdout"
 
         - name: Restart docker
           ansible.builtin.service:
             name: docker
             state: restarted
-          when: nvidia_check.rc != 0
+          when: "'nvidia' not in docker_runtimes.stdout"
