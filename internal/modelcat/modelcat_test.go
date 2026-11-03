@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
@@ -49,6 +51,16 @@ func TestSeedHoldsTheThreeScenarioModels(t *testing.T) {
 func TestFilter(t *testing.T) {
 	store := seeded(t, "")
 	ctx := context.Background()
+	verified, notVerified := true, false
+	vl, err := store.Get(ctx, "qwen3-vl-8b")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	at := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	vl.Artifacts[1].Runtimes[0].VerifiedAt = &at
+	if _, err := store.Register(ctx, *vl); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	for _, tc := range []struct {
 		name   string
 		filter Filter
@@ -64,6 +76,12 @@ func TestFilter(t *testing.T) {
 		// artifact that is both.
 		{"one artifact must match every artifact field", Filter{Format: "gguf", RuntimeID: "vllm"}, nil},
 		{"model and artifact fields together", Filter{Modality: "image", Format: "hf"}, []string{"ministral-3-8b", "qwen3-vl-8b"}},
+		{"origin seed", Filter{Origin: "seed"}, []string{"ministral-3-8b", "qwen3-embedding-0.6b", "qwen3-vl-8b"}},
+		{"origin ignores case", Filter{Origin: "SEED"}, []string{"ministral-3-8b", "qwen3-embedding-0.6b", "qwen3-vl-8b"}},
+		{"origin huggingface", Filter{Origin: "huggingface"}, nil},
+		{"verified", Filter{Verified: &verified}, []string{"qwen3-vl-8b"}},
+		{"not verified", Filter{Verified: &notVerified}, []string{"ministral-3-8b", "qwen3-embedding-0.6b"}},
+		{"verified and origin", Filter{Verified: &verified, Origin: "manual"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ids(store.List(ctx, tc.filter))
@@ -145,6 +163,92 @@ func TestStoreReturnsCopies(t *testing.T) {
 	if again.Artifacts[0].Runtimes[0].Args[1] != "32768" {
 		t.Errorf("stored runtime args changed through a returned copy: %q", again.Artifacts[0].Runtimes[0].Args)
 	}
+
+	at := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	synced, verifiedAt := at, at
+	ministral.Artifacts[0].Runtimes[0].Args[1] = "32768"
+	ministral.SyncedAt = &synced
+	ministral.Artifacts[0].Runtimes[0].VerifiedAt = &verifiedAt
+	if _, err := store.Register(ctx, *ministral); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	synced = synced.Add(time.Hour)
+	verifiedAt = verifiedAt.Add(time.Hour)
+	got, _ := store.Get(ctx, "ministral-3-8b")
+	if !got.SyncedAt.Equal(at) || !got.Artifacts[0].Runtimes[0].VerifiedAt.Equal(at) {
+		t.Errorf("stored times changed through the registered record: syncedAt %v, verifiedAt %v",
+			got.SyncedAt, got.Artifacts[0].Runtimes[0].VerifiedAt)
+	}
+	*got.SyncedAt = got.SyncedAt.Add(time.Hour)
+	*got.Artifacts[0].Runtimes[0].VerifiedAt = got.Artifacts[0].Runtimes[0].VerifiedAt.Add(time.Hour)
+	again, _ = store.Get(ctx, "ministral-3-8b")
+	if !again.SyncedAt.Equal(at) || !again.Artifacts[0].Runtimes[0].VerifiedAt.Equal(at) {
+		t.Errorf("stored times changed through a returned copy: syncedAt %v, verifiedAt %v",
+			again.SyncedAt, again.Artifacts[0].Runtimes[0].VerifiedAt)
+	}
+}
+
+func TestOrigin(t *testing.T) {
+	ctx := context.Background()
+	store := seeded(t, "")
+	for _, m := range store.List(ctx, Filter{}) {
+		if m.Origin != model.OriginSeed {
+			t.Errorf("%s origin = %q, want seed", m.ID, m.Origin)
+		}
+	}
+
+	noOrigin := model.Model{ID: "no-origin", Name: "No origin", Artifacts: []model.Artifact{{
+		ID: "a", Source: "huggingface", Ref: "org/no-origin", Format: model.FormatHF,
+	}}}
+	registered, err := store.Register(ctx, noOrigin)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if registered.Origin != model.OriginManual {
+		t.Errorf("origin of a record without one = %q, want manual", registered.Origin)
+	}
+	if registered.Artifacts[0].Runtimes == nil {
+		t.Error("runtimes of an artifact without runtimes = nil, want an empty list")
+	}
+	if got := ids(store.List(ctx, Filter{Origin: "manual"})); len(got) != 1 || got[0] != "no-origin" {
+		t.Errorf("origin=manual = %v, want [no-origin]", got)
+	}
+
+	collected := noOrigin
+	collected.Origin = "github"
+	if _, err := store.Register(ctx, collected); !errors.Is(err, model.ErrValidation) {
+		t.Errorf("Register with an unknown origin = %v, want a validation error", err)
+	}
+}
+
+func TestFileWithoutOriginReadsAsManual(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	// The layout written before origin, syncedAt, stale and verifiedAt
+	// existed, with one artifact that lists no runtime.
+	old := `{"models":[{"id":"old","name":"Old","artifacts":[` +
+		`{"id":"a","source":"huggingface","ref":"org/old","format":"hf","runtimes":[{"runtimeId":"vllm"}]},` +
+		`{"id":"b","source":"ngc","ref":"nvidia/old","format":"hf","runtimes":[]}]}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, loaded, err := Open(path)
+	if err != nil || !loaded {
+		t.Fatalf("Open = %v, loaded %v", err, loaded)
+	}
+	m, err := store.Get(ctx, "old")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if m.Origin != model.OriginManual || m.Stale || m.SyncedAt != nil || m.Verified() {
+		t.Errorf("old record = origin %q, stale %v, syncedAt %v, verified %v", m.Origin, m.Stale, m.SyncedAt, m.Verified())
+	}
+	if got := ids(store.List(ctx, Filter{Origin: "manual"})); len(got) != 1 {
+		t.Errorf("origin=manual = %v, want [old]", got)
+	}
+	if got := ids(store.List(ctx, Filter{Source: "ngc"})); len(got) != 1 {
+		t.Errorf("source=ngc = %v, want the artifact without runtimes listed", got)
+	}
 }
 
 func TestNotFound(t *testing.T) {
@@ -196,6 +300,25 @@ func TestSeedArtifactsRunOnTheirRuntimes(t *testing.T) {
 					t.Errorf("%s/%s: engine %s does not load %s", m.ID, a.ID, engine.ID, a.Format)
 				}
 			}
+		}
+	}
+}
+
+func TestFileInTheEnginesFormatIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	// The layout written before commit 2e79094, when artifacts listed engines.
+	old := `{"models":[{"id":"qwen3-vl-8b","name":"Qwen3-VL-8B-Instruct","artifacts":[` +
+		`{"id":"hf-bf16","source":"huggingface","ref":"Qwen/Qwen3-VL-8B-Instruct","format":"hf","engines":[{"engine":"vllm"}]}]}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := Open(path)
+	if err == nil {
+		t.Fatal("Open loaded a file in the engines format")
+	}
+	for _, want := range []string{path, "format before runtimes", `model "qwen3-vl-8b" artifacts[0] lists engines`, "remove the file"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Open error = %q, want it to contain %q", err, want)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func validModel() Model {
@@ -43,7 +44,12 @@ func TestModelValidate(t *testing.T) {
 		{"ref with dollar", func(m *Model) { m.Artifacts[0].Ref = "a$b" }, "artifacts[0].ref must match"},
 		{"artifact without format", func(m *Model) { m.Artifacts[0].Format = "" }, "artifacts[0].format required"},
 		{"negative size", func(m *Model) { m.Artifacts[0].SizeGiB = -1 }, "artifacts[0].sizeGiB must not be negative"},
-		{"artifact without runtimes", func(m *Model) { m.Artifacts[0].Runtimes = nil }, "artifacts[0].runtimes must name"},
+		{"artifact without runtimes", func(m *Model) { m.Artifacts[0].Runtimes = nil }, ""},
+		{"artifact with empty runtimes", func(m *Model) { m.Artifacts[0].Runtimes = []RuntimeCompat{} }, ""},
+		{"seed origin", func(m *Model) { m.Origin = OriginSeed }, ""},
+		{"collected origin", func(m *Model) { m.Origin = OriginDockerModelRunner }, ""},
+		{"unknown origin", func(m *Model) { m.Origin = "github" }, "origin must be one of seed, manual, huggingface"},
+		{"upper case origin", func(m *Model) { m.Origin = "Seed" }, "origin must be one of"},
 		{"runtime without id", func(m *Model) { m.Artifacts[0].Runtimes = []RuntimeCompat{{}} }, "artifacts[0].runtimes[0].runtimeId required"},
 		{"vllm runtime args", func(m *Model) {
 			m.Artifacts[0].Runtimes[0].Args = []string{"--max-model-len", "32768"}
@@ -104,5 +110,17 @@ func TestRuntimeProfileValidate(t *testing.T) {
 				t.Errorf("Validate error = %v, want one containing %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestModelVerified(t *testing.T) {
+	m := validModel()
+	if m.Verified() {
+		t.Error("Verified = true for a model without verifiedAt")
+	}
+	at := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	m.Artifacts[1].Runtimes[0].VerifiedAt = &at
+	if !m.Verified() {
+		t.Error("Verified = false for a model with a verified runtime")
 	}
 }

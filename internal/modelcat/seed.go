@@ -19,6 +19,7 @@ import (
 func Seed(ctx context.Context, store *Store) error {
 	models := builtinModels()
 	for _, m := range models {
+		m.Origin = model.OriginSeed
 		if _, err := store.Register(ctx, m); err != nil {
 			return err
 		}

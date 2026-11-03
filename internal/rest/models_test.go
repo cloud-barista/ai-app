@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
@@ -87,6 +88,99 @@ func TestModelRoutes(t *testing.T) {
 	}
 	if rec := do(s, http.MethodDelete, "/aiapp/models/added", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("DELETE again = %d, want 404", rec.Code)
+	}
+}
+
+func TestModelOriginAndVerifiedFilters(t *testing.T) {
+	s := newModelServer(t, "")
+
+	if got := modelIDs(t, s, "/aiapp/models?origin=seed"); len(got) != 3 {
+		t.Errorf("origin=seed = %v, want the 3 seed models", got)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?origin=huggingface"); len(got) != 0 {
+		t.Errorf("origin=huggingface = %v, want none", got)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?verified=false"); len(got) != 3 {
+		t.Errorf("verified=false = %v, want the 3 seed models", got)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?verified=true"); len(got) != 0 {
+		t.Errorf("verified=true = %v, want none", got)
+	}
+
+	// The body claims a collected, stale, synced, verified entry; POST takes it
+	// over as manual, not stale and not synced, and keeps verifiedAt as given.
+	const posted = `{"id":"posted","name":"Posted","origin":"huggingface","stale":true,"syncedAt":"2026-11-04T02:00:00Z","artifacts":[` +
+		`{"id":"a","source":"huggingface","ref":"org/posted","format":"hf",` +
+		`"runtimes":[{"runtimeId":"vllm","verifiedAt":"2026-11-04T03:00:00Z"}]}]}`
+	rec := postJSON(s, "/aiapp/models", posted)
+	var registered model.Model
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &registered) != nil {
+		t.Fatalf("POST /models = %d: %s", rec.Code, rec.Body.String())
+	}
+	if registered.Origin != model.OriginManual || registered.Stale || registered.SyncedAt != nil {
+		t.Errorf("POST /models = origin %q, stale %v, syncedAt %v, want manual, not stale, no syncedAt",
+			registered.Origin, registered.Stale, registered.SyncedAt)
+	}
+	if at := registered.Artifacts[0].Runtimes[0].VerifiedAt; at == nil || !at.Equal(time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)) {
+		t.Errorf("POST /models verifiedAt = %v, want 2026-11-04T03:00:00Z as given", at)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?origin=MANUAL&verified=true"); strings.Join(got, ",") != "posted" {
+		t.Errorf("origin=MANUAL&verified=true = %v, want [posted]", got)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?verified=false"); len(got) != 3 {
+		t.Errorf("verified=false = %v, want the 3 seed models", got)
+	}
+
+	for _, path := range []string{"/aiapp/models?origin=github", "/aiapp/models?verified=maybe"} {
+		if rec := do(s, http.MethodGet, path, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("GET %s = %d, want 400: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := postJSON(s, "/aiapp/models", strings.Replace(posted, `"origin":"huggingface"`, `"origin":"github"`, 1)); rec.Code != http.StatusOK {
+		t.Errorf("POST with an unknown origin in the body = %d, want 200 as manual: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// An artifact without runtimes is listed but cannot be deployed: the compose
+// preview and the deployment are refused with 422 whether or not runtimeId is
+// given.
+func TestArtifactWithoutRuntimes(t *testing.T) {
+	s, runner, _ := newNodeDeployServer(t, false)
+	const listed = `{"id":"listed","name":"Listed","artifacts":[{"id":"a","source":"ngc","ref":"nvidia/listed","format":"hf"}]}`
+	rec := postJSON(s, "/aiapp/models", listed)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /models = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"runtimes":[]`) {
+		t.Errorf("POST /models body lists runtimes other than []: %s", rec.Body.String())
+	}
+	if got := modelIDs(t, s, "/aiapp/models?source=ngc"); strings.Join(got, ",") != "listed" {
+		t.Errorf("source=ngc = %v, want [listed]", got)
+	}
+
+	for _, path := range []string{
+		"/aiapp/models/listed/artifacts/a/compose",
+		"/aiapp/models/listed/artifacts/a/compose?runtimeId=vllm",
+	} {
+		rec := do(s, http.MethodGet, path, "")
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("GET %s = %d, want 422: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	target := `"targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"}]`
+	for _, inference := range []string{
+		`{"modelId":"listed","artifactId":"a"}`,
+		`{"modelId":"listed","artifactId":"a","runtimeId":"vllm"}`,
+	} {
+		rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", `{"type":"inference",`+target+`,"inference":`+inference+`}`)
+		var msg model.SimpleMsg
+		_ = json.Unmarshal(rec.Body.Bytes(), &msg)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(msg.Message, "listed/a") {
+			t.Errorf("deploy %s = %d %q, want 422 naming listed/a", inference, rec.Code, msg.Message)
+		}
+	}
+	if runner.count() != 0 {
+		t.Errorf("%d runs for refused deployments", runner.count())
 	}
 }
 

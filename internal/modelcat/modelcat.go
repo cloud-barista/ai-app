@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -41,12 +42,18 @@ var ErrArtifactNotFound = errors.New("model artifact not found")
 // are properties of an artifact, and a model passes only when one artifact
 // matches all three of them at once: a model with an HF artifact for vLLM and a
 // GGUF artifact for Ollama does not pass format=gguf&runtimeId=vllm.
+//
+// Origin matches the model, an absent origin as manual. Verified, when set,
+// keeps the models for which some artifact has some runtime with verifiedAt
+// set (true) or none has (false).
 type Filter struct {
 	Task      string
 	Modality  string
 	Format    string
 	RuntimeID string
 	Source    string
+	Origin    string
+	Verified  *bool
 }
 
 // Store holds registered models, keyed by ID.
@@ -85,19 +92,47 @@ func Open(path string) (*Store, bool, error) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, false, fmt.Errorf("failed to decode model catalog %q: %w", path, err)
 	}
+	if err := refuseEngines(path, raw); err != nil {
+		return nil, false, err
+	}
 	for i := range body.Models {
 		m := body.Models[i]
 		if err := m.Validate(); err != nil {
 			return nil, false, fmt.Errorf("model catalog %q holds an invalid model %q: %w", path, m.ID, err)
 		}
-		s.models[m.ID] = m
+		s.models[m.ID] = clone(m)
 	}
 	log.Info().Str("file", path).Int("count", len(s.models)).Msg("Loaded AI model catalog")
 	return s, true, nil
 }
 
+// refuseEngines fails when the store file is in the format written before
+// artifacts listed runtimes, when they listed engines. An artifact may now list
+// no runtime, so such a file would otherwise load with every artifact
+// undeployable and nothing to say why.
+func refuseEngines(path string, raw []byte) error {
+	var probe struct {
+		Models []struct {
+			ID        string                       `json:"id"`
+			Artifacts []map[string]json.RawMessage `json:"artifacts"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return fmt.Errorf("failed to decode model catalog %q: %w", path, err)
+	}
+	for _, m := range probe.Models {
+		for i, a := range m.Artifacts {
+			if _, ok := a["engines"]; ok {
+				return fmt.Errorf("model catalog %q is in the format before runtimes: model %q artifacts[%d] lists engines; "+
+					"remove the file or convert engines[].engine to runtimes[].runtimeId", path, m.ID, i)
+			}
+		}
+	}
+	return nil
+}
+
 // Register adds or replaces a model. Replacing keeps the ID and takes every
-// other field from the new record.
+// other field from the new record. An absent origin is recorded as manual.
 func (s *Store) Register(ctx context.Context, m model.Model) (*model.Model, error) {
 	if err := m.Validate(); err != nil {
 		return nil, err
@@ -235,6 +270,12 @@ func (f Filter) matches(m *model.Model) bool {
 	if f.Task != "" && !containsFold(m.Tasks, f.Task) {
 		return false
 	}
+	if f.Origin != "" && !strings.EqualFold(m.Origin, f.Origin) {
+		return false
+	}
+	if f.Verified != nil && m.Verified() != *f.Verified {
+		return false
+	}
 	if f.Modality != "" && !containsFold(m.InputModalities, f.Modality) {
 		return false
 	}
@@ -268,19 +309,39 @@ func containsFold(values []string, want string) bool {
 	return slices.ContainsFunc(values, func(v string) bool { return strings.EqualFold(v, want) })
 }
 
-// clone copies a model with its slices, so a caller that changes what it was
-// handed does not change the stored record.
+// clone copies a model with its slices and times, so a caller that changes
+// what it was handed does not change the stored record.
+//
+// It also fills in what an older or hand-written record leaves out: an absent
+// origin becomes manual, and an artifact without runtimes holds an empty list
+// so that it is written as [] rather than null.
 func clone(m model.Model) model.Model {
+	if m.Origin == "" {
+		m.Origin = model.OriginManual
+	}
 	m.Tasks = slices.Clone(m.Tasks)
 	m.InputModalities = slices.Clone(m.InputModalities)
+	m.SyncedAt = cloneTime(m.SyncedAt)
 	artifacts := make([]model.Artifact, len(m.Artifacts))
 	for i, a := range m.Artifacts {
 		a.Runtimes = slices.Clone(a.Runtimes)
+		if a.Runtimes == nil {
+			a.Runtimes = []model.RuntimeCompat{}
+		}
 		for j := range a.Runtimes {
 			a.Runtimes[j].Args = slices.Clone(a.Runtimes[j].Args)
+			a.Runtimes[j].VerifiedAt = cloneTime(a.Runtimes[j].VerifiedAt)
 		}
 		artifacts[i] = a
 	}
 	m.Artifacts = artifacts
 	return m
+}
+
+func cloneTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	copied := *t
+	return &copied
 }

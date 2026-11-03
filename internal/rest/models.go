@@ -1,8 +1,10 @@
 package rest
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -15,7 +17,7 @@ import (
 // RestGetAllModels godoc
 // @ID GetAllModels
 // @Summary List AI models
-// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task and modality match the model. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.
+// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.
 // @Tags [Model] AI Model Catalog
 // @Produce json
 // @Param task query string false "Model task, such as chat, vision-chat or embedding"
@@ -23,7 +25,10 @@ import (
 // @Param format query string false "Artifact file format: hf (Hugging Face safetensors) or gguf"
 // @Param runtimeId query string false "Runtime profile ID an artifact runs on, as listed by GET /runtimes"
 // @Param source query string false "Artifact source, such as huggingface or ollama"
+// @Param origin query string false "Who put the model in the catalog. An absent origin is read as manual" Enums(seed,manual,huggingface,ollama,docker-model-runner,ngc,kaggle)
+// @Param verified query bool false "true: an inference deployment of some artifact succeeded on some runtime (runtimes[].verifiedAt set); false: none did"
 // @Success 200 {object} model.ModelListResp "AI model list, ordered by id"
+// @Failure 400 {object} model.SimpleMsg "origin is not a known origin, or verified is not a boolean"
 // @Security BearerAuth
 // @Router /models [get]
 func (h *Handler) RestGetAllModels(c echo.Context) error {
@@ -34,6 +39,17 @@ func (h *Handler) RestGetAllModels(c echo.Context) error {
 		Format:    c.QueryParam("format"),
 		RuntimeID: c.QueryParam("runtimeId"),
 		Source:    c.QueryParam("source"),
+		Origin:    c.QueryParam("origin"),
+	}
+	if !model.ValidOrigin(strings.ToLower(filter.Origin)) {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: "origin must be one of " + strings.Join(model.Origins, ", ")})
+	}
+	if raw := c.QueryParam("verified"); raw != "" {
+		verified, err := strconv.ParseBool(raw)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: "verified must be true or false"})
+		}
+		filter.Verified = &verified
 	}
 	return c.JSON(http.StatusOK, model.ModelListResp{Models: h.models.List(ctx, filter)})
 }
@@ -41,7 +57,7 @@ func (h *Handler) RestGetAllModels(c echo.Context) error {
 // RestPostModel godoc
 // @ID PostModel
 // @Summary Register an AI model
-// @Description Register an AI model, or replace the model of the same id with this record. A model needs an id, a name and at least one artifact; each artifact needs an id unique within the model, a source, a ref, a format and at least one compatible runtime in runtimes[]. Runtimes are not checked against the runtime profiles here; a pairing that does not fit is refused when a compose file is rendered for it.
+// @Description Register an AI model, or replace the model of the same id with this record. A model needs an id, a name and at least one artifact; each artifact needs an id unique within the model, a source, a ref and a format. runtimes[] lists the compatible runtimes; an artifact with none is listed but refused with 422 when deployed. The model is recorded with origin manual, stale false and no syncedAt whatever the body says; runtimes[].verifiedAt is kept as given: the catalog sync leaves a model registered or edited here alone. Runtimes are not checked against the runtime profiles here; a pairing that does not fit is refused when a compose file is rendered for it.
 // @Tags [Model] AI Model Catalog
 // @Accept json
 // @Produce json
@@ -58,6 +74,9 @@ func (h *Handler) RestPostModel(c echo.Context) error {
 	if err := c.Bind(&m); err != nil {
 		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: malformedBody})
 	}
+	m.Origin = model.OriginManual
+	m.Stale = false
+	m.SyncedAt = nil
 
 	registered, err := h.models.Register(ctx, m)
 	if err != nil {
@@ -121,7 +140,7 @@ func (h *Handler) RestDeleteModel(c echo.Context) error {
 // @Produce text/yaml,json
 // @Param modelId path string true "AI model ID" default(qwen3-vl-8b)
 // @Param artifactId path string true "Artifact ID within the model" default(hf-bf16)
-// @Param runtimeId query string false "Runtime profile ID. Defaults to the first runtime the artifact lists"
+// @Param runtimeId query string false "Runtime profile ID. Defaults to the first runtime the artifact lists; an artifact that lists none is refused with 422"
 // @Param gpu query bool false "Reserve every NVIDIA GPU of the node for the runtime" default(false)
 // @Param arg query []string false "Extra runtime argument, appended after the catalog args of the artifact (runtimes[].args) and repeated for each, such as arg=--max-model-len&arg=32768" collectionFormat(multi)
 // @Success 200 {string} string "docker-compose.yml, as text/yaml"
@@ -152,6 +171,10 @@ func (h *Handler) RestGetModelCompose(c echo.Context) error {
 
 	runtimeID := c.QueryParam("runtimeId")
 	if runtimeID == "" {
+		if len(artifact.Runtimes) == 0 {
+			err := fmt.Errorf("%w: artifact %s/%s lists no runtime", compose.ErrIncompatible, m.ID, artifact.ID)
+			return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Compose rendering failed")})
+		}
 		runtimeID = artifact.Runtimes[0].RuntimeID
 	}
 	runtime, err := modelcat.Runtime(runtimeID)

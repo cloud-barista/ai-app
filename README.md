@@ -98,7 +98,7 @@
 
 | 남은 것 | 증상 | 할 일 |
 |---|---|---|
-| 모델 카탈로그 파일 (`AIAPP_MODEL_STORE_FILE`, docker compose 는 named volume `catalog` 의 `/app/data/catalog/models.json`). 커밋 `2e79094` 전 코드가 쓴 것 | 아티팩트 필드가 `engines` 라 새 코드가 `runtimes` 를 비어 있다고 보고 **기동을 거부**합니다: `model catalog ".../models.json" holds an invalid model "qwen3-vl-8b": validation failed: artifacts[0].runtimes must name at least one runtime` (2026-11-03, 옛 형식 파일로 띄워 확인) | 그 파일을 지웁니다. 다음 기동이 기본 모델 3개를 다시 넣습니다. 직접 등록한 모델은 새 형식(`runtimes[].runtimeId`)으로 다시 `POST /aiapp/models` 합니다. 업로드한 응용(`apps/`)은 형식이 안 바뀌어 그대로 읽힙니다 |
+| 모델 카탈로그 파일 (`AIAPP_MODEL_STORE_FILE`, docker compose 는 named volume `catalog` 의 `/app/data/catalog/models.json`). 커밋 `2e79094` 전 코드가 쓴 것 | 아티팩트 필드가 `engines` 라 새 코드가 옛 형식으로 보고 **기동을 거부**합니다: `model catalog ".../models.json" is in the format before runtimes: model "qwen3-vl-8b" artifacts[0] lists engines; remove the file or convert engines[].engine to runtimes[].runtimeId` (2026-11-04, 옛 형식 파일로 띄워 확인) | 그 파일을 지웁니다. 다음 기동이 기본 모델 3개를 다시 넣습니다. 직접 등록한 모델은 새 형식(`runtimes[].runtimeId`)으로 다시 `POST /aiapp/models` 합니다. 업로드한 응용(`apps/`)은 형식이 안 바뀌어 그대로 읽힙니다 |
 | 배포 기록 파일 (`AIAPP_DEPLOYMENT_STORE_FILE`, compose 는 volume `archive` 의 `node-deployments.json`) 의 `type: model-service` 기록 | 기동은 됩니다. 기록은 `type: model-service` 로 목록에 남지만 `request.modelService` 가 읽히지 않아 비고, `?type=inference` 필터와 `GET /aiapp/endpoints` 에서 빠집니다 (목록·필터는 2026-11-03 에 확인, 주소 조회는 `internal/nodedeploy/placement.go` 의 `placementFor` 가 그 type 을 거절하는 것을 코드로 확인) | 그 노드에 같은 런타임으로 `type: inference` 배포를 새로 하면 작업 키(`ms-<runtimeId>`)가 같아 옛 컨테이너를 바꿉니다. 옛 기록으로 `heal` 이나 `DELETE` 를 하는 것은 확인하지 않았습니다 |
 
 ## 1. 이게 뭘 하는 건가 - 한 문장

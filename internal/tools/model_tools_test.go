@@ -45,6 +45,10 @@ func TestListModelsFilters(t *testing.T) {
 		{`{"modality":"image"}`, 2},
 		{`{"format":"gguf"}`, 1},
 		{`{"format":"gguf","runtimeId":"vllm"}`, 0},
+		{`{"origin":"seed"}`, 3},
+		{`{"origin":"ollama"}`, 0},
+		{`{"verified":true}`, 0},
+		{`{"verified":false}`, 3},
 	} {
 		out, err := registry.Call(ctx, "default", "list_models", json.RawMessage(tc.input))
 		if err != nil {
@@ -53,6 +57,13 @@ func TestListModelsFilters(t *testing.T) {
 		if got := len(out.(model.ModelListResp).Models); got != tc.want {
 			t.Errorf("list_models %s = %d models, want %d", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestListModelsRefusesUnknownOrigin(t *testing.T) {
+	registry := newModelRegistry(t)
+	if _, err := registry.Call(context.Background(), "default", "list_models", json.RawMessage(`{"origin":"github"}`)); err == nil {
+		t.Error("list_models origin=github succeeded, want an error")
 	}
 }
 

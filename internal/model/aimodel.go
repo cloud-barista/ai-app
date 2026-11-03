@@ -4,7 +4,36 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
+	"time"
 )
+
+// Origins of a catalog entry: who put it in the catalog and keeps it up to
+// date.
+const (
+	// OriginSeed is a built-in model registered when the catalog file did not
+	// exist yet.
+	OriginSeed = "seed"
+	// OriginManual is a model a person registered or edited through the API.
+	OriginManual = "manual"
+	// OriginHuggingFace, OriginOllama, OriginDockerModelRunner, OriginNGC and
+	// OriginKaggle are models the catalog sync collected from that source.
+	OriginHuggingFace       = "huggingface"
+	OriginOllama            = "ollama"
+	OriginDockerModelRunner = "docker-model-runner"
+	OriginNGC               = "ngc"
+	OriginKaggle            = "kaggle"
+)
+
+// Origins lists every origin a catalog entry may carry.
+var Origins = []string{OriginSeed, OriginManual, OriginHuggingFace, OriginOllama,
+	OriginDockerModelRunner, OriginNGC, OriginKaggle}
+
+// ValidOrigin reports whether origin is one of Origins. Empty is valid and is
+// read as OriginManual.
+func ValidOrigin(origin string) bool {
+	return origin == "" || slices.Contains(Origins, origin)
+}
 
 // catalogIDPattern is what a model, artifact or runtime identifier may look
 // like. Identifiers are placed in URL paths and, later, in directory names on a
@@ -49,6 +78,18 @@ type Model struct {
 	// Artifacts are the published forms of the model that a runtime can load.
 	// At least one is required.
 	Artifacts []Artifact `json:"artifacts" validate:"required"`
+	// Origin is who put the model in the catalog: seed for a built-in model,
+	// manual for a model registered or edited through POST /models, or the
+	// source the catalog sync collected it from (huggingface, ollama,
+	// docker-model-runner, ngc, kaggle). Absent is read as manual. POST /models
+	// always records manual. Filter with ?origin=.
+	Origin string `json:"origin,omitempty" enums:"seed,manual,huggingface,ollama,docker-model-runner,ngc,kaggle" example:"huggingface"`
+	// SyncedAt is the last time the catalog sync saw the model at its source.
+	// Absent for a model the sync does not keep.
+	SyncedAt *time.Time `json:"syncedAt,omitempty" example:"2026-11-04T03:00:00Z"`
+	// Stale is true when the source of a collected model no longer lists it.
+	// The entry is kept, and turns false again when the source lists it again.
+	Stale bool `json:"stale,omitempty" example:"false"`
 }
 
 // Artifact is one published form of a model: where it comes from, in which
@@ -75,8 +116,10 @@ type Artifact struct {
 	SizeGiB float64 `json:"sizeGiB,omitempty" example:"16.3"`
 	// Runtimes are the inference runtimes known to load this artifact. Each
 	// runtime must be listed explicitly: the same file format may load in one
-	// runtime version and not in another. Filter with ?runtimeId=.
-	Runtimes []RuntimeCompat `json:"runtimes" validate:"required"`
+	// runtime version and not in another. Filter with ?runtimeId=. An empty
+	// list means no runtime is known to load the artifact: it is listed but
+	// cannot be deployed.
+	Runtimes []RuntimeCompat `json:"runtimes"`
 }
 
 // RuntimeCompat names one inference runtime an artifact runs on.
@@ -92,6 +135,10 @@ type RuntimeCompat struct {
 	// request; vLLM takes the last value when a flag repeats, so the request
 	// can override them. Only vllm takes them.
 	Args []string `json:"args,omitempty" example:"--max-model-len,32768"`
+	// VerifiedAt is when an inference deployment of this artifact on this
+	// runtime last succeeded on a node. A dry run does not count. Absent means
+	// never verified. Filter with ?verified=.
+	VerifiedAt *time.Time `json:"verifiedAt,omitempty" example:"2026-11-04T03:00:00Z"`
 }
 
 // ModelListResp is the model catalog listing body.
@@ -112,6 +159,8 @@ func (m *Model) Validate() error {
 		return errInvalid("contextLength", "must not be negative")
 	case len(m.Artifacts) == 0:
 		return errInvalid("artifacts", "must hold at least one artifact")
+	case !ValidOrigin(m.Origin):
+		return errInvalid("origin", "must be one of "+strings.Join(Origins, ", "))
 	}
 	for i, task := range m.Tasks {
 		if task == "" {
@@ -154,8 +203,6 @@ func (a *Artifact) validate(field string) error {
 		return errRequired(field + ".format")
 	case a.SizeGiB < 0:
 		return errInvalid(field+".sizeGiB", "must not be negative")
-	case len(a.Runtimes) == 0:
-		return errInvalid(field+".runtimes", "must name at least one runtime")
 	}
 	for i, runtime := range a.Runtimes {
 		if runtime.RuntimeID == "" {
@@ -192,6 +239,19 @@ func (a *Artifact) SupportsRuntime(runtimeID string) bool {
 	for _, compat := range a.Runtimes {
 		if compat.RuntimeID == runtimeID {
 			return true
+		}
+	}
+	return false
+}
+
+// Verified reports whether some artifact of the model has some runtime with
+// VerifiedAt set.
+func (m *Model) Verified() bool {
+	for i := range m.Artifacts {
+		for _, compat := range m.Artifacts[i].Runtimes {
+			if compat.VerifiedAt != nil {
+				return true
+			}
 		}
 	}
 	return false
