@@ -320,3 +320,17 @@ func TestSafeFetchTurnsAPanicIntoAnError(t *testing.T) {
 		t.Fatalf("error = %q, want %q", err, want)
 	}
 }
+
+func TestUnreachableSourceRecordsWhy(t *testing.T) {
+	r, _, _ := newTestRunner([]Source{&fakeSource{name: model.OriginNGC}}, time.Hour)
+	r.SetChecker(func(context.Context, Source, Options) error {
+		return errors.New("x509: certificate signed by unknown authority")
+	})
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := r.Status().Sources[0]
+	if got.Skipped != SkippedUnreachable || got.Unreachable != "x509: certificate signed by unknown authority" {
+		t.Fatalf("result = %+v, want skipped unreachable with the check error", got)
+	}
+}

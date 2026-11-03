@@ -86,6 +86,10 @@ type SourceResult struct {
 	// "unreachable" when its host did not answer. The catalog is not touched
 	// then. Empty when the source was fetched.
 	Skipped string `json:"skipped,omitempty" enums:"unreachable" example:""`
+	// Unreachable is why the reachability check failed, such as a timeout
+	// or a TLS certificate the client does not trust. Empty when the host
+	// answered.
+	Unreachable string `json:"unreachable,omitempty" example:"Head \"https://huggingface.co\": context deadline exceeded"`
 	// StartedAt and FinishedAt bound the last run of the source. Both are
 	// absent until the source has run once.
 	StartedAt  *time.Time `json:"startedAt,omitempty" example:"2026-11-04T03:00:00Z"`
@@ -288,7 +292,7 @@ func (r *Runner) runAll(ctx context.Context) bool {
 		}
 		result := r.runOne(ctx, src, check)
 		if result.Skipped == SkippedUnreachable {
-			unreachable = append(unreachable, result.Name)
+			unreachable = append(unreachable, result.Name+": "+result.Unreachable)
 		} else {
 			reached = true
 		}
@@ -318,7 +322,11 @@ func (r *Runner) runOne(ctx context.Context, src Source, check Checker) SourceRe
 	started := time.Now().UTC()
 	result := SourceResult{Name: src.Name(), StartedAt: &started}
 
-	reachable := check(ctx, src, r.opt) == nil
+	checkErr := check(ctx, src, r.opt)
+	reachable := checkErr == nil
+	if checkErr != nil {
+		result.Unreachable = checkErr.Error()
+	}
 	checked := time.Now().UTC()
 	result.Reachable, result.CheckedAt = &reachable, &checked
 	if !reachable {
