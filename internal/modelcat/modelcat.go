@@ -220,6 +220,39 @@ func (s *Store) Delete(ctx context.Context, modelID string) error {
 	return nil
 }
 
+// MarkVerified records at as the verifiedAt of runtimeID on one artifact of a
+// model and writes the file. It reports false, with no error and no write,
+// when the model or the artifact is gone or the artifact no longer lists the
+// runtime. Nothing else of the model changes, origin included.
+func (s *Store) MarkVerified(ctx context.Context, modelID, artifactID, runtimeID string, at time.Time) (bool, error) {
+	at = at.UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	previous, ok := s.models[modelID]
+	if !ok {
+		return false, nil
+	}
+	m := clone(previous)
+	artifact, ok := m.Artifact(artifactID)
+	if !ok {
+		return false, nil
+	}
+	i := slices.IndexFunc(artifact.Runtimes, func(c model.RuntimeCompat) bool { return c.RuntimeID == runtimeID })
+	if i < 0 {
+		return false, nil
+	}
+	artifact.Runtimes[i].VerifiedAt = &at
+
+	s.models[modelID] = m
+	if err := s.save(); err != nil {
+		s.models[modelID] = previous
+		return false, err
+	}
+	return true, nil
+}
+
 // SyncCounts says what one ApplySync did to the catalog.
 type SyncCounts struct {
 	// Added is how many fetched models were new to the catalog.

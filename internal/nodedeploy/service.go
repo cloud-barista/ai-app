@@ -15,6 +15,10 @@
 // openPorts), unless Options.OpenPorts is off. A port that cannot be opened is
 // noted on the node and does not fail it.
 //
+// Once an inference node succeeds, the model catalog records the time as the
+// verifiedAt of the deployed artifact on its runtime (see markVerified). A
+// catalog that cannot record it does not fail the node.
+//
 // A deployment is taken down from its nodes with compose-down (see Remove),
 // which keeps the node folders and the named volumes, and leaves the ports
 // open.
@@ -506,6 +510,26 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	s.openNodePorts(ctx, id, idx, target.NsID, node, ports)
 	s.finishNode(id, idx, model.NodeDeploySucceeded, "")
 	logger.Info().Msg("Node deployment succeeded")
+	if req.Type == model.NodeDeployTypeInference {
+		s.markVerified(ctx, id, p)
+	}
+}
+
+// markVerified records in the model catalog that the artifact of p ran on its
+// runtime on a node. Nothing that goes wrong here changes the deployment: the
+// node succeeded either way.
+func (s *Service) markVerified(ctx context.Context, id string, p *plan) {
+	logger := log.With().Str("deploymentId", id).Str("modelId", p.model.ID).
+		Str("artifactId", p.artifact.ID).Str("runtimeId", p.runtime.ID).Logger()
+	marked, err := s.models.MarkVerified(ctx, p.model.ID, p.artifact.ID, p.runtime.ID, time.Now())
+	switch {
+	case err != nil:
+		logger.Warn().Str("error", err.Error()).Msg("Failed to record the verified runtime in the model catalog")
+	case !marked:
+		logger.Info().Msg("Did not record the verified runtime: the catalog no longer lists the model, artifact or runtime")
+	default:
+		logger.Debug().Msg("Recorded the verified runtime in the model catalog")
+	}
 }
 
 // openNodePorts opens ports in the security groups of node and records the

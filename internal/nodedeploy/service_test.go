@@ -1062,3 +1062,76 @@ func TestGPUCheckEvidenceReadsBothCallbackFormats(t *testing.T) {
 		}
 	}
 }
+
+// verifiedAt reads the verifiedAt of the fixture model tiny on ollama.
+func verifiedAt(t *testing.T, f *fixture) *time.Time {
+	t.Helper()
+	_, artifact, err := f.svc.models.Artifact(context.Background(), "tiny", "gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return artifact.Runtimes[0].VerifiedAt
+}
+
+func TestSucceededInferenceMarksTheRuntimeVerified(t *testing.T) {
+	f := newFixture(t, false)
+	before := time.Now().UTC()
+	created, err := f.svc.Create(context.Background(), modelReq("vm2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded {
+		t.Fatalf("status = %q", d.Status)
+	}
+	got := verifiedAt(t, f)
+	if got == nil || got.Before(before) || got.After(time.Now().UTC()) {
+		t.Errorf("verifiedAt = %v, want the time the node succeeded", got)
+	}
+}
+
+func TestFailedNodeAndDryRunDoNotMarkVerified(t *testing.T) {
+	f := newFixture(t, false)
+	f.runner.statuses["198.51.100.12 "+PlaybookComposeUp] = semaphore.StatusError
+	created, err := f.svc.Create(context.Background(), modelReq("vm2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeployFailed {
+		t.Fatalf("status = %q, want failed", d.Status)
+	}
+	if got := verifiedAt(t, f); got != nil {
+		t.Errorf("failed node: verifiedAt = %v, want none", got)
+	}
+
+	dry := newFixture(t, true)
+	d, err := dry.svc.Create(context.Background(), modelReq("vm1", "vm2"))
+	if err != nil || d.Status != model.NodeDeployDryRun {
+		t.Fatalf("dry run = %v, %v", d, err)
+	}
+	if got := verifiedAt(t, dry); got != nil {
+		t.Errorf("dry run: verifiedAt = %v, want none", got)
+	}
+}
+
+func TestModelDeletedDuringTheDeploymentLeavesTheNodeSucceeded(t *testing.T) {
+	f := newFixture(t, false)
+	f.runner.block = make(chan struct{})
+	created, err := f.svc.Create(context.Background(), modelReq("vm2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for f.runner.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := f.svc.models.Delete(context.Background(), "tiny"); err != nil {
+		t.Fatal(err)
+	}
+	close(f.runner.block)
+	if d := waitFinished(t, f.svc, created.ID); d.Status != model.NodeDeploySucceeded || d.Nodes[0].Error != "" {
+		t.Errorf("deployment = %q %q, want succeeded", d.Status, d.Nodes[0].Error)
+	}
+	if _, err := f.svc.models.Get(context.Background(), "tiny"); !errors.Is(err, modelcat.ErrNotFound) {
+		t.Errorf("deleted model came back: %v", err)
+	}
+}

@@ -145,3 +145,52 @@ func TestApplySyncRefusesNonSyncOrigins(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkVerified(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	synced := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	if _, err := store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{fetched("hf-a", "A", "vllm", "ollama")}, synced); err != nil {
+		t.Fatalf("ApplySync: %v", err)
+	}
+
+	at := time.Date(2026, 11, 4, 12, 30, 0, 0, time.FixedZone("KST", 9*60*60))
+	marked, err := store.MarkVerified(ctx, "hf-a", "hf", "vllm", at)
+	if err != nil || !marked {
+		t.Fatalf("MarkVerified = %v, %v, want true", marked, err)
+	}
+
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open again: %v", err)
+	}
+	got, err := reopened.Get(ctx, "hf-a")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	runtimes := got.Artifacts[0].Runtimes
+	if runtimes[0].VerifiedAt == nil || !runtimes[0].VerifiedAt.Equal(at) || runtimes[0].VerifiedAt.Location() != time.UTC {
+		t.Errorf("vllm verifiedAt = %v, want %v in UTC", runtimes[0].VerifiedAt, at)
+	}
+	if runtimes[1].VerifiedAt != nil {
+		t.Errorf("ollama verifiedAt = %v, want none", runtimes[1].VerifiedAt)
+	}
+	if got.Origin != model.OriginHuggingFace || got.SyncedAt == nil || !got.SyncedAt.Equal(synced) || got.Stale {
+		t.Errorf("origin %q syncedAt %v stale %v changed", got.Origin, got.SyncedAt, got.Stale)
+	}
+
+	for _, c := range []struct{ modelID, artifactID, runtimeID string }{
+		{"nope", "hf", "vllm"},
+		{"hf-a", "nope", "vllm"},
+		{"hf-a", "hf", "tgi"},
+	} {
+		marked, err := store.MarkVerified(ctx, c.modelID, c.artifactID, c.runtimeID, at)
+		if err != nil || marked {
+			t.Errorf("MarkVerified(%s, %s, %s) = %v, %v, want false without error", c.modelID, c.artifactID, c.runtimeID, marked, err)
+		}
+	}
+	if got, _ := store.Get(ctx, "hf-a"); got.Artifacts[0].Runtimes[1].VerifiedAt != nil {
+		t.Errorf("a refused mark changed ollama: %v", got.Artifacts[0].Runtimes[1].VerifiedAt)
+	}
+}
