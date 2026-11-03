@@ -48,8 +48,7 @@
   `internal/boundary/boundary_test.go` 가 이것을 검사합니다.
 - 모의 구현은 로그·응답·콘솔에 `[partner mock]` 또는 "협력 기관 담당 영역 · 모의 구현" 으로 표시됩니다.
 
-설계와 그 근거는 `docs/design/model-catalog-and-node-deploy.md`(3차 개편, 데이터 모델과 배포 경로)와
-`docs/design/app-agent-split.md`(2차 개편, 담당 경계)에 있습니다. 4차 개편(2026-11-03)의 API 계약은 `docs/api/` 와 Swagger 입니다.
+설계와 그 근거는 `docs/design/model-catalog-and-node-deploy.md`(3차 개편, 데이터 모델과 배포 경로)에 있습니다. 4차 개편(2026-11-03)의 API 계약은 `docs/api/` 와 Swagger 입니다.
 
 ## 협력 기관이 할 일 (연동 지점)
 
