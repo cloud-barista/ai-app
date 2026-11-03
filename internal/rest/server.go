@@ -105,6 +105,9 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
 	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
 
+	// What serves on the nodes now, derived from the deployment records.
+	g.GET("/endpoints", handler.RestGetAllEndpoints)
+
 	// Recommendation of models and applications for a requirement. No
 	// recommender is built in; see internal/recommend.
 	rg := g.Group("/recommendations")

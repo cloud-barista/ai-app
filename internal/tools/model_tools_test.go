@@ -26,7 +26,7 @@ func newModelRegistry(t *testing.T) *Registry {
 
 func TestModelToolsAreRead(t *testing.T) {
 	registry := newModelRegistry(t)
-	for _, name := range []string{"list_models", "get_model", "list_runtimes"} {
+	for _, name := range []string{"list_models", "get_model", "list_runtimes", "get_runtime"} {
 		if grade := registry.Grade(name); grade != GradeRead {
 			t.Errorf("%s grade = %q, want read", name, grade)
 		}
@@ -77,5 +77,24 @@ func TestGetModelAndListEngines(t *testing.T) {
 	}
 	if got := len(out.(model.RuntimeProfileListResp).Runtimes); got != 2 {
 		t.Errorf("list_runtimes = %d runtimes, want 2", got)
+	}
+}
+
+func TestGetRuntime(t *testing.T) {
+	registry := newModelRegistry(t)
+	ctx := context.Background()
+
+	out, err := registry.Call(ctx, "default", "get_runtime", json.RawMessage(`{"runtimeId":"vllm"}`))
+	if err != nil {
+		t.Fatalf("get_runtime: %v", err)
+	}
+	if r := out.(*model.RuntimeProfile); r.ID != model.RuntimeVLLM || r.Port != 8000 {
+		t.Errorf("get_runtime = %+v", r)
+	}
+	if _, err := registry.Call(ctx, "default", "get_runtime", json.RawMessage(`{}`)); err == nil {
+		t.Error("get_runtime without runtimeId was accepted")
+	}
+	if _, err := registry.Call(ctx, "default", "get_runtime", json.RawMessage(`{"runtimeId":"nope"}`)); !errors.Is(err, modelcat.ErrRuntimeNotFound) {
+		t.Errorf("get_runtime unknown error = %v, want ErrRuntimeNotFound", err)
 	}
 }

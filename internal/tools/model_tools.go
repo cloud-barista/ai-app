@@ -14,6 +14,7 @@ func RegisterModels(registry *Registry, models *modelcat.Store) {
 	registry.Add(listModelsTool(models))
 	registry.Add(getModelTool(models))
 	registry.Add(listRuntimesTool())
+	registry.Add(getRuntimeTool())
 }
 
 func listModelsTool(models *modelcat.Store) Tool {
@@ -86,6 +87,30 @@ func listRuntimesTool() Tool {
 		InputSchema: object(map[string]any{}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			return model.RuntimeProfileListResp{Runtimes: modelcat.Runtimes()}, nil
+		},
+	}
+}
+
+func getRuntimeTool() Tool {
+	return Tool{
+		Name:  "get_runtime",
+		Grade: GradeRead,
+		Description: "Read one inference runtime profile: pinned container image, artifact formats it loads, serving " +
+			"port, health path and OpenAI compatible API path.",
+		InputSchema: object(map[string]any{
+			"runtimeId": stringProp("Runtime profile id, as list_runtimes reports it"),
+		}, "runtimeId"),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			var args struct {
+				RuntimeID string `json:"runtimeId"`
+			}
+			if err := decode(input, &args); err != nil {
+				return nil, err
+			}
+			if args.RuntimeID == "" {
+				return nil, fmt.Errorf("runtimeId required")
+			}
+			return modelcat.Runtime(args.RuntimeID)
 		},
 	}
 }

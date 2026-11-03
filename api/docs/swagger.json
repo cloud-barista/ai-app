@@ -672,6 +672,62 @@
                 }
             }
         },
+        "/endpoints": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List the addresses of what serves on the nodes now, derived from the deployment records of POST /deployments: one endpoint per node and work key (ms-\u003cruntimeId\u003e for an inference service, app-\u003cname\u003e for an app). Each filter is optional and matched exactly; all given filters must match. Endpoints are ordered by nsId, infraId, nodeId and workKey.\n\nOn a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or running, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment succeeded on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or running leaves none until it ends. Dry-run deployments never make an endpoint.\n\nAn inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://\u003chost\u003e:\u003cport\u003e\u003capiBasePath\u003e) and healthUrl. An app endpoint carries name, version and urls, one http://\u003chost\u003e:\u003cport\u003e per port it serves. host is the public IP of the node, or its private IP when it has none. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Endpoints"
+                ],
+                "summary": "List the inference services and applications serving now",
+                "operationId": "GetAllEndpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CB-Tumblebug namespace of the node",
+                        "name": "nsId",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "inference",
+                            "app"
+                        ],
+                        "type": "string",
+                        "description": "Endpoint type",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CB-Tumblebug Infra of the node",
+                        "name": "infraId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Node within the Infra",
+                        "name": "nodeId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Endpoints serving now",
+                        "schema": {
+                            "$ref": "#/definitions/model.EndpointListResp"
+                        }
+                    }
+                }
+            }
+        },
         "/engine/card": {
             "get": {
                 "security": [
@@ -1889,6 +1945,171 @@
                     "description": "Source is where the artifact is downloaded from, such as huggingface,\nkaggle, ollama or docker-model-runner. Filter with ?source=.",
                     "type": "string",
                     "example": "huggingface"
+                }
+            }
+        },
+        "model.Endpoint": {
+            "type": "object",
+            "properties": {
+                "artifactId": {
+                    "description": "ArtifactID is the artifact of that model. Inference only.",
+                    "type": "string",
+                    "example": "hf-bf16"
+                },
+                "csp": {
+                    "description": "CSP is the cloud of the node, in lower case.",
+                    "type": "string",
+                    "example": "aws"
+                },
+                "deployedAt": {
+                    "description": "DeployedAt is when the deployment finished on the node.",
+                    "type": "string",
+                    "example": "2026-11-03T12:05:00Z"
+                },
+                "deploymentId": {
+                    "description": "DeploymentID is the deployment serving the work key on the node; read\nit with GET /deployments/{id} and take it down with\nDELETE /deployments/{id}.",
+                    "type": "string",
+                    "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
+                },
+                "healthUrl": {
+                    "description": "HealthURL answers 200 once the runtime is up:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime healthPath\u003e. Inference only, and\nonly when the runtime profile names a health path.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/health"
+                },
+                "host": {
+                    "description": "Host is the address the node was reached at and the URLs are built\nfrom: its public IP, or its private IP when it has none.",
+                    "type": "string",
+                    "example": "203.0.113.10"
+                },
+                "infraId": {
+                    "description": "InfraID is the CB-Tumblebug Infra of the node.",
+                    "type": "string",
+                    "example": "travel"
+                },
+                "modelId": {
+                    "description": "ModelID is the model of the model catalog served. Inference only.",
+                    "type": "string",
+                    "example": "qwen3-embedding-0.6b"
+                },
+                "name": {
+                    "description": "Name is the uploaded application. App only.",
+                    "type": "string",
+                    "example": "open-webui"
+                },
+                "nodeId": {
+                    "description": "NodeID is the node within the Infra.",
+                    "type": "string",
+                    "example": "vm1"
+                },
+                "notes": {
+                    "description": "Notes are the notes of the node result, such as port opening being\nturned off.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "nsId": {
+                    "description": "NsID is the CB-Tumblebug namespace of the node.",
+                    "type": "string",
+                    "example": "etri"
+                },
+                "openedPorts": {
+                    "description": "OpenedPorts are, per security group and port, the inbound rules found\nor added when the deployment ran.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeOpenedPort"
+                    }
+                },
+                "ports": {
+                    "description": "Ports are the TCP ports the deployment serves on the node.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        8000
+                    ]
+                },
+                "portsError": {
+                    "description": "PortsError is why some ports could not be opened.",
+                    "type": "string"
+                },
+                "portsOpened": {
+                    "description": "PortsOpened is true when every port in ports was found or added as an\ninbound rule in a CB-Tumblebug security group of the node and no port\nfailed. False means the URLs may not be reachable from outside the\nnode: portsError or notes say why.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "region": {
+                    "description": "Region and Zone are where the node runs.",
+                    "type": "string",
+                    "example": "ap-northeast-2"
+                },
+                "runtimeId": {
+                    "description": "RuntimeID is the inference runtime profile. Inference only.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "type": {
+                    "description": "Type is inference or app.",
+                    "type": "string",
+                    "enum": [
+                        "inference",
+                        "app"
+                    ],
+                    "example": "inference"
+                },
+                "url": {
+                    "description": "URL is the OpenAI compatible API of an inference service:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime apiBasePath\u003e. Inference only.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/v1"
+                },
+                "urls": {
+                    "description": "URLs are http://\u003chost\u003e:\u003cport\u003e for every port the application serves.\nApp only; absent when the application serves no port.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EndpointURL"
+                    }
+                },
+                "version": {
+                    "description": "Version is the application version deployed. App only.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "workKey": {
+                    "description": "WorkKey is what serves on the node: ms-\u003cruntimeId\u003e for an inference\nservice, app-\u003cname\u003e for an application. A node serves one endpoint per\nwork key.",
+                    "type": "string",
+                    "example": "ms-vllm"
+                },
+                "zone": {
+                    "type": "string",
+                    "example": "ap-northeast-2a"
+                }
+            }
+        },
+        "model.EndpointListResp": {
+            "type": "object",
+            "properties": {
+                "endpoints": {
+                    "description": "Endpoints are ordered by nsId, infraId, nodeId and workKey.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Endpoint"
+                    }
+                }
+            }
+        },
+        "model.EndpointURL": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "description": "Port is the TCP port.",
+                    "type": "integer",
+                    "example": 3000
+                },
+                "url": {
+                    "description": "URL is http://\u003chost\u003e:\u003cport\u003e.",
+                    "type": "string",
+                    "example": "http://203.0.113.10:3000"
                 }
             }
         },

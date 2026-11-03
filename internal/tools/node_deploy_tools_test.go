@@ -37,6 +37,7 @@ func TestNodeDeployToolGrades(t *testing.T) {
 		"get_deployment":        GradeRead,
 		"list_node_deployments": GradeRead,
 		"get_deployment_logs":   GradeRead,
+		"list_endpoints":        GradeRead,
 	} {
 		if got := registry.Grade(name); got != want {
 			t.Errorf("%s grade = %q, want %q", name, got, want)
@@ -61,6 +62,15 @@ func TestNodeDeployToolsCheckTheirInput(t *testing.T) {
 	out, err := registry.Call(ctx, "default", "list_node_deployments", json.RawMessage(`{}`))
 	if list, ok := out.(model.NodeDeploymentListResp); err != nil || !ok || len(list.Deployments) != 0 {
 		t.Errorf("list = %v, %v", out, err)
+	}
+	for _, input := range []string{``, `{}`, `{"nsId":"etri","type":"app","infraId":"travel","nodeId":"vm1"}`} {
+		out, err = registry.Call(ctx, "default", "list_endpoints", json.RawMessage(input))
+		if list, ok := out.(model.EndpointListResp); err != nil || !ok || list.Endpoints == nil || len(list.Endpoints) != 0 {
+			t.Errorf("list_endpoints %s = %v, %v", input, out, err)
+		}
+	}
+	if _, err := registry.Call(ctx, "default", "list_endpoints", json.RawMessage(`{"nodeId":1}`)); err == nil {
+		t.Error("list_endpoints with a malformed filter was accepted")
 	}
 }
 

@@ -19,6 +19,7 @@ func RegisterNodeDeploy(registry *Registry, svc *nodedeploy.Service) {
 	registry.Add(createDeploymentTool(svc))
 	registry.Add(getDeploymentTool(svc))
 	registry.Add(listNodeDeploymentsTool(svc))
+	registry.Add(listEndpointsTool(svc))
 	registry.Add(getDeploymentLogsTool(svc))
 	registry.Add(deleteDeploymentTool(svc))
 	registry.Add(controlNodeTool(svc))
@@ -143,6 +144,43 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 				filter = nodedeploy.ListFilter(raw)
 			}
 			return model.NodeDeploymentListResp{Deployments: svc.List(ctx, filter)}, nil
+		},
+	}
+}
+
+func listEndpointsTool(svc *nodedeploy.Service) Tool {
+	return Tool{
+		Name:  "list_endpoints",
+		Grade: GradeRead,
+		Description: "List the addresses of the inference services and applications serving on the nodes now, one per " +
+			"node and work key (ms-<runtimeId> for an inference service, app-<name> for an app), derived from the " +
+			"deployments of create_deployment. The latest deployment of a work key on a node decides it: it is listed " +
+			"only when that deployment succeeded there, so a redeploy replaces it, delete_deployment removes it, and a " +
+			"later deployment that failed after starting its service leaves none. Dry runs are never listed. An " +
+			"inference endpoint has runtimeId, modelId, artifactId, url (OpenAI compatible API) and healthUrl; an app " +
+			"endpoint has name, version and one url per port. portsOpened says whether every port was opened in the " +
+			"node's security groups; portsError and notes say why not. Every filter is optional and matched exactly.",
+		InputSchema: object(map[string]any{
+			"nsId":    stringProp("CB-Tumblebug namespace of the node"),
+			"type":    enumProp("Endpoint type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
+			"infraId": stringProp("CB-Tumblebug Infra of the node"),
+			"nodeId":  stringProp("Node within the Infra"),
+		}),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			var filter nodedeploy.EndpointFilter
+			if len(input) > 0 {
+				var raw struct {
+					NsID    string `json:"nsId"`
+					Type    string `json:"type"`
+					InfraID string `json:"infraId"`
+					NodeID  string `json:"nodeId"`
+				}
+				if err := decode(input, &raw); err != nil {
+					return nil, err
+				}
+				filter = nodedeploy.EndpointFilter(raw)
+			}
+			return model.EndpointListResp{Endpoints: svc.Endpoints(ctx, filter)}, nil
 		},
 	}
 }

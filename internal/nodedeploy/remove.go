@@ -203,21 +203,25 @@ func (s *Service) laterOn(d *model.NodeDeployment, target model.NodeDeployTarget
 		}
 		for i := range e.Nodes {
 			n := &e.Nodes[i]
-			if n.Target.Key() != key {
-				continue
-			}
-			switch n.Status {
-			case model.NodeDeployPending, model.NodeDeployRunning:
-				return e.ID
-			case model.NodeDeployRemoving, model.NodeDeployRemoved, model.NodeDeployDryRun:
-				continue
-			}
-			if startedService(n) {
+			if n.Target.Key() == key && holdsWorkKey(n) {
 				return e.ID
 			}
 		}
 	}
 	return ""
+}
+
+// holdsWorkKey reports whether node result n of a deployment that is not a
+// dry run holds its work key on its node: it is pending or running there, or
+// it started its service there and has not been taken down since.
+func holdsWorkKey(n *model.NodeDeployResult) bool {
+	switch n.Status {
+	case model.NodeDeployPending, model.NodeDeployRunning:
+		return true
+	case model.NodeDeployRemoving, model.NodeDeployRemoved, model.NodeDeployDryRun:
+		return false
+	}
+	return startedService(n)
 }
 
 // executeRemoval takes down every node marked removalRun and records the

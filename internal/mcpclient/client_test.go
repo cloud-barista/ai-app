@@ -47,8 +47,8 @@ func TestDefinitionsGradesAndDryRun(t *testing.T) {
 	}
 
 	defs := client.Definitions()
-	if len(defs) != 9 {
-		t.Fatalf("Definitions returned %d tools, want 9", len(defs))
+	if len(defs) != 11 {
+		t.Fatalf("Definitions returned %d tools, want 11", len(defs))
 	}
 	want := map[string]bool{}
 	for _, def := range registry.Definitions() {
