@@ -122,7 +122,8 @@ func deployRequestSchema() map[string]any {
 			"env": envProp("Runtime container environment. " + envNote),
 			"args": map[string]any{
 				"type": "array", "items": map[string]any{"type": "string"},
-				"description": "Extra arguments appended to the runtime command after the ones the service sets, " +
+				"description": "Extra arguments appended to the runtime command after the ones the service sets " +
+					"and the artifact's catalog args (runtimes[].args, which a repeated flag here overrides for vllm), " +
 					"such as [\"--max-model-len\", \"32768\"] for vllm. At most 32, each 1 to 256 characters without control " +
 					"characters; --model, --port and --host are refused. Runtime ollama refuses args",
 			},

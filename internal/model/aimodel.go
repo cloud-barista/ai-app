@@ -86,6 +86,12 @@ type RuntimeCompat struct {
 	// MinVersion is the oldest runtime version known to load the artifact.
 	// Empty means not recorded.
 	MinVersion string `json:"minVersion,omitempty" example:"0.11.0"`
+	// Args are arguments the runtime needs for this artifact, such as a
+	// context length that fits the GPU memory. They are appended after the
+	// arguments the service sets and before the inference.args of a deploy
+	// request; vLLM takes the last value when a flag repeats, so the request
+	// can override them. Only vllm takes them.
+	Args []string `json:"args,omitempty" example:"--max-model-len,32768"`
 }
 
 // ModelListResp is the model catalog listing body.
@@ -155,6 +161,13 @@ func (a *Artifact) validate(field string) error {
 		if runtime.RuntimeID == "" {
 			return errRequired(fmt.Sprintf("%s.runtimes[%d].runtimeId", field, i))
 		}
+		argsField := fmt.Sprintf("%s.runtimes[%d].args", field, i)
+		if len(runtime.Args) > 0 && runtime.RuntimeID == RuntimeOllama {
+			return errInvalid(argsField, "args are not supported by runtime "+RuntimeOllama)
+		}
+		if err := ValidateRuntimeArgs(argsField, runtime.Args); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -182,4 +195,14 @@ func (a *Artifact) SupportsRuntime(runtimeID string) bool {
 		}
 	}
 	return false
+}
+
+// RuntimeArgs returns the catalog arguments the artifact lists for runtimeID.
+func (a *Artifact) RuntimeArgs(runtimeID string) []string {
+	for _, compat := range a.Runtimes {
+		if compat.RuntimeID == runtimeID {
+			return compat.Args
+		}
+	}
+	return nil
 }

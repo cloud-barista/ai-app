@@ -59,7 +59,8 @@ type Options struct {
 	// template also sets replaces the template value.
 	Env map[string]string
 	// Args are appended to the engine command after the arguments the
-	// service sets. Only vllm takes them.
+	// service sets and the artifact's catalog arguments for the runtime. Only
+	// vllm takes them.
 	Args []string
 }
 
@@ -104,7 +105,9 @@ func Render(m *model.Model, artifact *model.Artifact, engine *model.RuntimeProfi
 	defaults := map[string]string{}
 	switch engine.ID {
 	case model.RuntimeVLLM:
-		v.Args = append(vllmArgs(m, artifact, engine), opts.Args...)
+		v.Args = vllmArgs(m, artifact, engine)
+		v.Args = append(v.Args, artifact.RuntimeArgs(engine.ID)...)
+		v.Args = append(v.Args, opts.Args...)
 		defaults[hfTokenEnv] = "${" + hfTokenEnv + ":-}"
 	default:
 		if len(opts.Args) > 0 {

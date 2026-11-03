@@ -1442,7 +1442,7 @@ async function showModel(id) {
     </div>
     <table style="margin-top:12px">
       <tr><th>아티팩트</th><th>출처 (source)</th><th>ref</th><th>format</th><th>precision</th><th>sizeGiB</th>
-          <th>런타임 (최소 버전)</th><th style="width:300px">compose 미리보기</th></tr>
+          <th>런타임 (최소 버전, 인자)</th><th style="width:300px">compose 미리보기</th></tr>
       ${arts.map((a, i) => `<tr>
         <td class="mono" style="font-size:12px"><b>${esc(a.id)}</b></td>
         <td style="font-size:12px">${esc(a.source)}</td>
@@ -1451,7 +1451,7 @@ async function showModel(id) {
         <td class="mono" style="font-size:12px">${esc(a.precision || '-')}</td>
         <td>${a.sizeGiB ? esc(a.sizeGiB) : '<span class="b b-mut">모름</span>'}</td>
         <td style="font-size:12px">${(a.runtimes || []).map((r) =>
-          `<div><span class="mono">${esc(r.runtimeId)}</span>${r.minVersion ? ' ≥ ' + esc(r.minVersion) : ''}</div>`).join('')}</td>
+          `<div><span class="mono">${esc(r.runtimeId)}</span>${r.minVersion ? ' ≥ ' + esc(r.minVersion) : ''}${(r.args || []).length ? `<div class="mono" style="font-size:11px">${esc(r.args.join(' '))}</div>` : ''}</div>`).join('')}</td>
         <td><div class="row" style="gap:4px">
           <select id="md-ce-${i}" style="padding:4px 6px;font-size:12px;min-width:80px">${(a.runtimes || []).map((r) =>
             `<option value="${esc(r.runtimeId)}">${esc(r.runtimeId)}</option>`).join('')}</select>

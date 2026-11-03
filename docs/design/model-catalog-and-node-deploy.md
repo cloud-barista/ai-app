@@ -91,6 +91,7 @@ classDiagram
     class RuntimeCompat {
         runtimeId
         minVersion
+        args[]
     }
     class RuntimeProfile {
         id : vllm, ollama
@@ -144,7 +145,7 @@ classDiagram
 | `format` | 파일 형식 | `hf`(safetensors), `gguf` |
 | `precision` | 정밀도·양자화, **원래 값 그대로** | `BF16`, `FP8`, `Q4_K_M` |
 | `sizeGiB` | 받을 크기 (모르면 0) | `6.2` |
-| `runtimes[]` | 호환 런타임과 최소 버전 | `{runtimeId: vllm, minVersion: 0.11.0}` |
+| `runtimes[]` | 호환 런타임과 최소 버전, 그 런타임에 필요한 인자(`args`, 서비스 인자 뒤·요청 `inference.args` 앞에 붙음. `ollama` 는 받지 않음) | `{runtimeId: vllm, minVersion: 0.11.0, args: [--max-model-len, "32768"]}` |
 
 - 호환 런타임은 포맷만으로 정하지 않고 명시한다. 같은 safetensors 라도 아키텍처 지원 여부가 런타임 버전마다 다르다.
 - 정밀도로 VRAM 을 계산하는 등의 추천 로직은 넣지 않는다(경희대 몫).

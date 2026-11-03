@@ -100,7 +100,19 @@ func builtinModels() []model.Model {
 					Ref:       "mistralai/Ministral-3-8B-Instruct-2512",
 					Format:    model.FormatHF,
 					Precision: "FP8",
-					Runtimes:  []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
+					// The default context length leaves no room for the KV
+					// cache on an L4 (24 GiB), so it is capped at 32768. The
+					// mistral format flags follow the model card. These are
+					// the flags of the run that answered on 2026-11-03.
+					Runtimes: []model.RuntimeCompat{{
+						RuntimeID: model.RuntimeVLLM,
+						Args: []string{
+							"--max-model-len", "32768",
+							"--tokenizer-mode", "mistral",
+							"--config-format", "mistral",
+							"--load-format", "mistral",
+						},
+					}},
 				},
 			},
 		},

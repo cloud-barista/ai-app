@@ -123,7 +123,7 @@ func (h *Handler) RestDeleteModel(c echo.Context) error {
 // @Param artifactId path string true "Artifact ID within the model" default(hf-bf16)
 // @Param runtimeId query string false "Runtime profile ID. Defaults to the first runtime the artifact lists"
 // @Param gpu query bool false "Reserve every NVIDIA GPU of the node for the runtime" default(false)
-// @Param arg query []string false "Extra runtime argument, repeated for each, such as arg=--max-model-len&arg=32768" collectionFormat(multi)
+// @Param arg query []string false "Extra runtime argument, appended after the catalog args of the artifact (runtimes[].args) and repeated for each, such as arg=--max-model-len&arg=32768" collectionFormat(multi)
 // @Success 200 {string} string "docker-compose.yml, as text/yaml"
 // @Failure 400 {object} model.SimpleMsg "gpu is not a boolean, or an arg is refused"
 // @Failure 404 {object} model.SimpleMsg "AI model, artifact or runtime profile not found"

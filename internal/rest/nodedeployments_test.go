@@ -265,7 +265,7 @@ func TestNodeDeploymentRefusals(t *testing.T) {
 func TestNodeDeploymentArgsReachTheRecordAndTheCompose(t *testing.T) {
 	s, _, _ := newNodeDeployServer(t, true)
 	body := `{"type":"inference","targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"}],` +
-		`"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","gpu":true,"args":["--max-model-len","32768"]}}`
+		`"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","gpu":true,"args":["--max-model-len","16384"]}}`
 	rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST = %d: %s", rec.Code, rec.Body.String())
@@ -278,10 +278,11 @@ func TestNodeDeploymentArgsReachTheRecordAndTheCompose(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("GET = %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := d.Request.Inference.Args; !reflect.DeepEqual(got, []string{"--max-model-len", "32768"}) {
+	if got := d.Request.Inference.Args; !reflect.DeepEqual(got, []string{"--max-model-len", "16384"}) {
 		t.Errorf("recorded args = %q", got)
 	}
-	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", "--max-model-len", "32768"]`
+	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", ` +
+		`"--max-model-len", "32768", "--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--max-model-len", "16384"]`
 	if !strings.Contains(d.Nodes[0].Compose, want) {
 		t.Errorf("node compose lacks %q:\n%s", want, d.Nodes[0].Compose)
 	}

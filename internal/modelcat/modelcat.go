@@ -276,6 +276,9 @@ func clone(m model.Model) model.Model {
 	artifacts := make([]model.Artifact, len(m.Artifacts))
 	for i, a := range m.Artifacts {
 		a.Runtimes = slices.Clone(a.Runtimes)
+		for j := range a.Runtimes {
+			a.Runtimes[j].Args = slices.Clone(a.Runtimes[j].Args)
+		}
 		artifacts[i] = a
 	}
 	m.Artifacts = artifacts

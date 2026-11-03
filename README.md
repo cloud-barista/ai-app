@@ -271,6 +271,7 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 | `artifacts[].precision` | `BF16`, `FP8`, `Q4_K_M` 처럼 **원래 값 그대로**. 정규화하지 않음 |
 | `artifacts[].sizeGiB` | 받을 크기. 모르면 0 |
 | `artifacts[].runtimes[]` | 호환 런타임(`runtimeId`)과 `minVersion`. 포맷만으로 정하지 않고 명시. 첫 번째가 기본 런타임 |
+| `artifacts[].runtimes[].args` | 그 런타임으로 이 아티팩트를 띄울 때 필요한 인자. 서비스가 넣는 인자 뒤, 요청의 `inference.args` 앞에 붙음. vLLM 은 같은 플래그가 되풀이되면 마지막 값을 쓰므로 요청이 덮어쓸 수 있음. 검사는 `inference.args` 와 같고, `ollama` 항목에 주면 `400` |
 
 정밀도로 VRAM 을 계산하는 등의 추천 로직은 넣지 않았습니다(모델 추천 쪽 몫).
 `POST /aiapp/models` 는 같은 `id` 가 있으면 바꿔 씁니다.
@@ -281,7 +282,7 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 |---|---|---|---|
 | `qwen3-embedding-0.6b` | `embedding` | `hf-bf16` (`Qwen/Qwen3-Embedding-0.6B`, BF16) | `vllm` (`--runner pooling` 으로 기동) |
 | `qwen3-vl-8b` | `vision-chat` | `hf-bf16` (`Qwen/Qwen3-VL-8B-Instruct`, BF16), `ollama-gguf` (`qwen3-vl:8b`) | `vllm`, `ollama` |
-| `ministral-3-8b` | `chat` | `hf-fp8` (`mistralai/Ministral-3-8B-Instruct-2512`, FP8) | `vllm` |
+| `ministral-3-8b` | `chat` | `hf-fp8` (`mistralai/Ministral-3-8B-Instruct-2512`, FP8) | `vllm` (`--max-model-len 32768 --tokenizer-mode mistral --config-format mistral --load-format mistral` 로 기동. L4 24GB 에서 기본 문맥 길이로는 KV 캐시가 안 들어감) |
 
 ### 4-2. Runtime 프로필
 
@@ -289,12 +290,12 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 
 | `id` | `image` | `formats` | `port` | `healthPath` | `apiBasePath` | compose |
 |---|---|---|---|---|---|---|
-| `vllm` | `vllm/vllm-openai:v0.32.0` | `hf` | `8000` | `/health` | `/v1` | `--model <ref>` 로 기동, 요청의 `inference.args` 는 기본 인자 뒤에 붙음, HF 캐시는 named volume, `HF_TOKEN` 은 env 나 `.env` 에서 |
+| `vllm` | `vllm/vllm-openai:v0.32.0` | `hf` | `8000` | `/health` | `/v1` | `--model <ref>` 로 기동, 아티팩트의 `runtimes[].args` 와 요청의 `inference.args` 가 이 순서로 기본 인자 뒤에 붙음, HF 캐시는 named volume, `HF_TOKEN` 은 env 나 `.env` 에서 |
 | `ollama` | `ollama/ollama:0.40.13` | `gguf` | `11434` | `/` | `/v1` | 서버가 healthy 가 되면 한 번 도는 `model-pull` 컨테이너가 `ollama pull <ref>` 후 종료 |
 
 GPU 를 쓰면 런타임 서비스에 NVIDIA GPU 전부를 예약하는 `deploy.resources.reservations.devices` 블록이 붙습니다.
 `GET /aiapp/models/{modelId}/artifacts/{artifactId}/compose?runtimeId=&gpu=` 로 노드에 갈 compose 를 미리 볼 수 있습니다.
-런타임 인자는 `arg` 를 되풀이해 줍니다(`&arg=--max-model-len&arg=32768`).
+런타임 인자는 `arg` 를 되풀이해 줍니다(`&arg=--max-model-len&arg=32768`). 아티팩트의 `runtimes[].args` 뒤에 붙습니다.
 (만들어지는 compose 안에서 런타임 서비스의 이름은 `engine` 입니다. API 이름을 바꿀 때 노드 쪽 이름은 그대로 두었습니다.)
 
 ### 4-3. App
@@ -352,8 +353,9 @@ curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
 - `kind: k8s` 는 자리만 있고 `422` 로 거절합니다.
 - `inference.runtimeId` 를 빼면 아티팩트의 첫 런타임, `app.version` 을 빼거나 `0` 이면 최신 버전입니다. 기록에는 고른 값이 채워집니다.
 - `inference.gpu` 를 빼면 노드 스펙에서 정합니다 (5-4).
-- `inference.args` 는 런타임 명령 뒤에 붙는 인자입니다. vLLM 이면 `vllm serve --model <ref> --port <port>`(임베딩은 `--runner pooling` 까지) 뒤에
-  붙습니다. 예 `["--max-model-len", "32768"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, 서비스가 정하는 `--model`·`--port`·`--host`
+- `inference.args` 는 런타임 명령 뒤에 붙는 인자입니다. vLLM 이면 `vllm serve --model <ref> --port <port>`(임베딩은 `--runner pooling` 까지)와
+  아티팩트의 `runtimes[].args` 뒤에 붙습니다. 예 `["--max-model-len", "16384"]`. 같은 플래그가 되풀이되면 vLLM 은 마지막 값을 쓰므로
+  카탈로그 인자를 덮어씁니다. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, 서비스가 정하는 `--model`·`--port`·`--host`
   (와 그 앞부분만 쓴 `--mod` 같은 줄임)는 `400` 입니다. Ollama 는 명령 인자를 받지 않아 `args` 를 주면 `400` 입니다.
 - `app.ports` 를 주면 그 배포에서는 업로드 때의 `ports` 대신 그것을 엽니다 (5-6).
 - `env` 이름은 `[A-Z_][A-Z0-9_]*`, 값에는 줄바꿈과 작은따옴표를 넣을 수 없습니다. 추론 서비스는 런타임 컨테이너 환경과 `.env` 에,
@@ -515,7 +517,7 @@ AI-App 도구 13개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대
 | 응용 `name` | `[a-z0-9][a-z0-9_-]*`, 63자 | compose 프로젝트 이름(`aiapp-app-<name>`)이 됨 |
 | 응용 파일 이름 | 경로 구분자 없음, `.` 으로 시작 안 함 | 노드 폴더에 평평하게 놓이고 `.env`·`.aiapp-*` 와 겹치지 않게 |
 | `env` | 이름 `[A-Z_][A-Z0-9_]*`, 값에 줄바꿈·작은따옴표 없음 | `.env` 에 작은따옴표로 쓰여 compose 와 bash 가 그대로 읽음 |
-| `inference.args` | 32개, 하나에 1~256자, 제어 문자 없음, `--model`·`--port`·`--host` 아님 | compose `command` 에 따옴표 친 YAML 문자열로 들어가고 `$` 는 `$$` 로 씀 |
+| `inference.args`, 아티팩트 `runtimes[].args` | 32개, 하나에 1~256자, 제어 문자 없음, `--model`·`--port`·`--host` 아님 | compose `command` 에 따옴표 친 YAML 문자열로 들어가고 `$` 는 `$$` 로 씀 |
 | `targets[].nsId`·`infraId`·`nodeId` | `[A-Za-z0-9][A-Za-z0-9._-]*`, 128자 | 공유 저장소 폴더 이름이 됨 |
 
 ## 7. 아카이빙 (1차년도 ⑥ 산출물)

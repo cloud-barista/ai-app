@@ -120,8 +120,8 @@ func TestModelComposeRoute(t *testing.T) {
 		t.Errorf("compose body:\n%s", body)
 	}
 
-	rec = do(s, http.MethodGet, "/aiapp/models/ministral-3-8b/artifacts/hf-fp8/compose?arg=--max-model-len&arg=32768", "")
-	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, `"--port", "8000", "--max-model-len", "32768"]`) {
+	rec = do(s, http.MethodGet, "/aiapp/models/ministral-3-8b/artifacts/hf-fp8/compose?arg=--max-model-len&arg=16384", "")
+	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, `"--load-format", "mistral", "--max-model-len", "16384"]`) {
 		t.Errorf("compose with args = %d:\n%s", rec.Code, body)
 	}
 

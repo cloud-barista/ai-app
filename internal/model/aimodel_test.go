@@ -45,6 +45,15 @@ func TestModelValidate(t *testing.T) {
 		{"negative size", func(m *Model) { m.Artifacts[0].SizeGiB = -1 }, "artifacts[0].sizeGiB must not be negative"},
 		{"artifact without runtimes", func(m *Model) { m.Artifacts[0].Runtimes = nil }, "artifacts[0].runtimes must name"},
 		{"runtime without id", func(m *Model) { m.Artifacts[0].Runtimes = []RuntimeCompat{{}} }, "artifacts[0].runtimes[0].runtimeId required"},
+		{"vllm runtime args", func(m *Model) {
+			m.Artifacts[0].Runtimes[0].Args = []string{"--max-model-len", "32768"}
+		}, ""},
+		{"ollama runtime args", func(m *Model) {
+			m.Artifacts[1].Runtimes[0].Args = []string{"--max-model-len", "32768"}
+		}, "artifacts[1].runtimes[0].args args are not supported by runtime ollama"},
+		{"runtime args set port", func(m *Model) {
+			m.Artifacts[0].Runtimes[0].Args = []string{"--port", "9000"}
+		}, "artifacts[0].runtimes[0].args[0] must not set --port"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

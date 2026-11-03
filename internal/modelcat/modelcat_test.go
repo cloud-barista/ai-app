@@ -135,6 +135,16 @@ func TestStoreReturnsCopies(t *testing.T) {
 	if again.Artifacts[0].Runtimes[0].RuntimeID != model.RuntimeVLLM || again.Tasks[0] != "vision-chat" {
 		t.Errorf("stored model changed through a returned copy: %+v", again)
 	}
+
+	ministral, err := store.Get(ctx, "ministral-3-8b")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	ministral.Artifacts[0].Runtimes[0].Args[1] = "changed"
+	again, _ = store.Get(ctx, "ministral-3-8b")
+	if again.Artifacts[0].Runtimes[0].Args[1] != "32768" {
+		t.Errorf("stored runtime args changed through a returned copy: %q", again.Artifacts[0].Runtimes[0].Args)
+	}
 }
 
 func TestNotFound(t *testing.T) {

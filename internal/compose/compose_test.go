@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -170,21 +171,56 @@ func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
 }
 
 func TestRenderAppendsArgsAfterBuiltins(t *testing.T) {
-	m, a := artifactOf(t, "ministral-3-8b", "hf-fp8")
+	m, a := artifactOf(t, "qwen3-vl-8b", "hf-bf16")
 	args := []string{"--max-model-len", "32768", `--odd=a "q" $HOME: # é,[x]{y}`}
 	rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Args: args})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", ` +
+	want := `command: ["--model", "Qwen/Qwen3-VL-8B-Instruct", "--port", "8000", ` +
 		`"--max-model-len", "32768", "--odd=a \"q\" $$HOME: # é,[x]{y}"]`
 	if !strings.Contains(rendered, want) {
 		t.Errorf("rendered file lacks %q\n%s", want, rendered)
 	}
 	dockerComposeConfig(t, rendered)
 	if got := composeCommand(t, rendered); !reflect.DeepEqual(got, append([]string{
-		"--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000"}, args...)) {
+		"--model", "Qwen/Qwen3-VL-8B-Instruct", "--port", "8000"}, args...)) {
 		t.Errorf("docker compose reads command %q", got)
+	}
+}
+
+func TestRenderPutsCatalogArgsBeforeRequestArgs(t *testing.T) {
+	m, a := artifactOf(t, "qwen3-vl-8b", "hf-bf16")
+	a.Runtimes = []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM, Args: []string{"--max-model-len", "16384"}}}
+	builtin := []string{"--model", "Qwen/Qwen3-VL-8B-Instruct", "--port", "8000"}
+
+	for name, tc := range map[string]struct {
+		request []string
+		want    []string
+	}{
+		"catalog only":        {nil, append(slices.Clone(builtin), "--max-model-len", "16384")},
+		"catalog and request": {[]string{"--max-model-len", "8192"}, append(slices.Clone(builtin), "--max-model-len", "16384", "--max-model-len", "8192")},
+	} {
+		rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Args: tc.request})
+		if err != nil {
+			t.Fatalf("%s: Render: %v", name, err)
+		}
+		if got := composeCommand(t, rendered); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: docker compose reads command %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+func TestRenderSeedMinistralCarriesCatalogArgs(t *testing.T) {
+	m, a := artifactOf(t, "ministral-3-8b", "hf-fp8")
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", ` +
+		`"--max-model-len", "32768", "--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral"]`
+	if !strings.Contains(rendered, want) {
+		t.Errorf("rendered file lacks %q\n%s", want, rendered)
 	}
 }
 

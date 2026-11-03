@@ -116,9 +116,12 @@ type NodeInferenceReq struct {
 	// values hold no line break and no single quote.
 	Env map[string]string `json:"env,omitempty"`
 	// Args are appended to the runtime command after the arguments this
-	// service sets. For vllm they follow `vllm serve --model <ref> --port
-	// <port>` (and --runner pooling for an embedding model), for example
-	// ["--max-model-len", "32768"]. At most 32, each 1 to 256 characters
+	// service sets and the catalog arguments of the artifact
+	// (runtimes[].args). For vllm they follow `vllm serve --model <ref>
+	// --port <port>` (and --runner pooling for an embedding model) and the
+	// catalog arguments, for example ["--max-model-len", "32768"]; vllm takes
+	// the last value of a repeated flag, so they override the catalog
+	// arguments. At most 32, each 1 to 256 characters
 	// without control characters; --model, --port and --host are set by the
 	// service and refused. Runtime ollama takes none and refuses them.
 	Args []string `json:"args,omitempty" example:"--max-model-len,32768"`
