@@ -13,7 +13,7 @@
 |---|---|
 | AI-App 은 무엇을 하나 | CB-Tumblebug 이 이미 만든 VM(노드)에 **추론 서비스(런타임 + 모델)와 AI 응용을 올리고 내리는 API** 입니다. VM 은 만들지 않습니다 (1절) |
 | 기관마다 무엇을 하나 | ETRI 는 Tumblebug API 로 GPU VM 을 만듭니다([etri.md](etri.md)). BESP AI-Web 은 카탈로그를 읽고 배포를 요청하고 주소를 읽습니다([besp.md](besp.md)). 경희대는 모델·응용 추천을 이 repo 안에 구현합니다. 지금은 자리만 있고 `501` 입니다([khu.md](khu.md)) |
-| 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다. 응용은 올린 파일 묶음과 `deploy.sh` 이고, Dify, Open WebUI, Langflow 예시가 있습니다. 셋이 각각 모델에 어떻게 붙는지와 실제 화면은 12절입니다 |
+| 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 모델 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다(`type: inference`). 응용은 응용 카탈로그(`GET /aiapp/apps`)에 먼저 올린 파일 묶음과 `deploy.sh` 이고(`type: app`, 10절), Dify, Open WebUI, Langflow 예시가 있습니다. 셋이 각각 모델에 어떻게 붙는지와 실제 화면은 12절입니다 |
 | 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
 | 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절). Semaphore 는 Ansible playbook 을 웹 화면·API 로 돌려 주는 서버이고, 노드에서 무슨 일이 있었는지 화면으로 볼 수 있습니다 (3-1절) |
 | 언제 `succeeded` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
@@ -383,6 +383,16 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 
 ## 10. 배포 요청 모양
 
+배포는 `POST /aiapp/deployments` 하나이고, `type` 이 무엇을 어디서 가져와 올릴지 정합니다.
+
+| `type` | 무엇을 올리나 | 어디서 가져오나 | 요청에서 가리키는 것 | 노드에서 하는 일 |
+|---|---|---|---|---|
+| `inference` | 추론 서비스 (런타임 + 모델) | **모델 카탈로그** (`GET /aiapp/models`) 와 런타임 목록 (`GET /aiapp/runtimes`) | `inference.modelId` + `artifactId` (+ `runtimeId`) | AI-App 이 compose 파일을 만들어 `docker compose up` |
+| `app` | 응용 (Dify, Open WebUI, Langflow 등) | **응용 카탈로그** (응용 저장소, `GET /aiapp/apps`). 먼저 `POST /aiapp/apps` 로 올려 두어야 함 | `app.name` (+ `version`, 빼면 최신) | 올린 파일을 노드에 복사하고 올린 스크립트(`deploy.sh`) 실행 |
+
+두 카탈로그는 서로 이어져 있지 않습니다. 응용이 쓸 모델은 응용 카탈로그에 적지 않고, 배포할 때 `app.env` 로 추론 서비스 주소를
+넘깁니다(4절의 순서: 추론 서비스 배포 → `GET /aiapp/endpoints` 로 주소 → 그 주소를 `app.env` 에 넣어 응용 배포).
+
 추론 서비스:
 
 ```json
@@ -431,7 +441,7 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 |---|---|---|---|
 | 런타임 (`vllm`, `ollama`) | AI-App 코드에 들어 있음 (이미지 태그 고정) | 코드 변경 | `GET /aiapp/runtimes` |
 | 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 등록한 것은 카탈로그 파일에 저장 | `POST /aiapp/models` | `GET /aiapp/models` |
-| 응용 (Dify, Open WebUI, Langflow, 그 밖의 것) | **응용 저장소.** 처음에는 비어 있고, 업로드한 파일 묶음과 스크립트가 버전마다 AI-App 의 저장 폴더(`AIAPP_APP_STORE_DIR`)에 남음 | `POST /aiapp/apps` (multipart: `name`, `script`, `files`, `ports`) | `GET /aiapp/apps` |
+| 응용 (Dify, Open WebUI, Langflow, 그 밖의 것) | **응용 카탈로그(응용 저장소).** 처음에는 비어 있고, 업로드한 파일 묶음과 스크립트가 버전마다 AI-App 의 저장 폴더(`AIAPP_APP_STORE_DIR`)에 남음 | `POST /aiapp/apps` (multipart: `name`, `script`, `files`, `ports`) | `GET /aiapp/apps` |
 
 `examples/apps/` 는 이 repo 에 들어 있는 업로드용 예시 묶음일 뿐이고, AI-App 이 저절로 읽지 않습니다. 쓰려면 누군가 한 번 업로드합니다
 ([etri.md](etri.md) 3절의 curl, `docs/api/examples/02-upload-app.sh`). 배포 요청은 `app.name`(과 `version`)으로 업로드한 것을 가리키고, AI-App 은

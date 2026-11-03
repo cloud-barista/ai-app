@@ -229,7 +229,7 @@ save(f, "05-design-context")
 
 
 # --------------------------------------------------------- 06 catalog data model
-f = Fig(1600, 1270, title="카탈로그와 응용 저장소에 담기는 것",
+f = Fig(1600, 1270, title="모델 카탈로그와 응용 카탈로그에 담기는 것",
         subtitle="필드를 위에서 아래로 적었다. 파란 줄은 배열이고, 화살표가 그 배열에 담기는 항목을 가리킨다")
 
 ROW = 32
@@ -262,7 +262,7 @@ def entity(x, y, w, name, rows, sub=None, style="white"):
     return h, ys
 
 
-label(f, 40, 140, "추론 서비스 카탈로그   GET /aiapp/models · GET /aiapp/runtimes", "#1e3a8a", 18, 700, "start")
+label(f, 40, 140, "모델 카탈로그   GET /aiapp/models · GET /aiapp/runtimes   (type inference 배포가 가리킴)", "#1e3a8a", 18, 700, "start")
 _, m = entity(40, 160, 350, "Model", [
     ("id", "string", "ministral-3-8b", None),
     ("name", "string", "표시 이름", None),
@@ -318,7 +318,7 @@ for i, t in enumerate(js):
     f.add(f'<text x="900" y="{512 + i * 26}" font-size="14" fill="#0f172a" font-family="DejaVu Sans Mono,monospace" '
           f'xml:space="preserve">{t.replace("&", "&amp;").replace("<", "&lt;")}</text>')
 
-f.lines(40, 600, ["배포는 아티팩트 하나를 골라서 한다.",
+f.lines(40, 600, ["추론 배포(type inference)는 아티팩트 하나를 골라서 한다.",
                   "  POST /aiapp/deployments  { modelId, artifactId, runtimeId }",
                   "runtimeId 는 그 아티팩트의 runtimes[] 안에 있어야 하고,",
                   "그 런타임의 formats 에 아티팩트의 format 이 있어야 한다.",
@@ -327,7 +327,7 @@ f.lines(40, 600, ["배포는 아티팩트 하나를 골라서 한다.",
         15, "#334155", 400, "start", 26)
 
 f.rect(40, 790, 1520, 2, "ghost", rx=0, sw=0)
-label(f, 40, 840, "응용 저장소   POST·GET /aiapp/apps   (모델 카탈로그와 따로, 처음에는 비어 있고 업로드한 것만 있음)", "#1e3a8a", 18, 700, "start")
+label(f, 40, 840, "응용 카탈로그   POST·GET /aiapp/apps   (type app 배포가 가리킴. 처음에는 비어 있고 올린 것만 있음)", "#1e3a8a", 18, 700, "start")
 _, ap = entity(40, 860, 350, "App", [
     ("name", "string", "open-webui", None),
     ("versions", "AppVersion[]", "올릴 때마다 추가", "list")], "응용 하나")
@@ -346,7 +346,7 @@ label(f, 425, 880, "여러 개", "#1d4ed8", 13, 700)
 f.arrow(f"M804,{av['files']} L845,{av['files']} L845,890 L876,890", "blue", 2.5)
 label(f, 845, 880, "여러 개", "#1d4ed8", 13, 700)
 f.lines(1250, 900, ["같은 name 으로 다시 올리면", "version 이 하나 늘고", "옛 버전도 남는다.", "",
-                    "배포 요청은 { name, version }.", "version 을 비우면 최신."], 15, "#334155", 400, "start", 27)
+                    "응용 배포(type app) 요청은", "{ name, version }. version 을", "비우면 최신."], 15, "#334155", 400, "start", 27)
 f.lines(40, 1130, ["대상 노드와 다른 노드의 주소(env)는 등록에 없다. 배포 요청에서 받는다.",
                    "파일 내용은 AI-App 이 보관하고, 배포할 때 노드의 /opt/aiapp/app-<name>/ 에 그대로 놓인다."],
         15, "#334155", 400, "start", 26)
