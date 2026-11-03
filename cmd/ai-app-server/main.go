@@ -21,6 +21,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
@@ -83,6 +84,23 @@ func main() {
 	}
 	if cfg.Model.StoreFile == "" {
 		log.Warn().Msg("AIAPP_MODEL_STORE_FILE is not set: the AI model catalog is kept in memory and registered models are lost on restart")
+	}
+
+	syncCtx, stopSync := context.WithCancel(ctx)
+	defer stopSync()
+	var syncRunner *catalogsync.Runner
+	if cfg.CatalogSync.Enabled {
+		syncSources, err := newSyncSources(cfg.CatalogSync.Sources)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to set up catalog sync sources")
+			os.Exit(1)
+		}
+		syncRunner = catalogsync.NewRunner(modelCatalog, syncSources,
+			catalogsync.Options{Limit: cfg.CatalogSync.Limit}, cfg.CatalogSync.Interval)
+		log.Info().Strs("sources", cfg.CatalogSync.Sources).Str("interval", cfg.CatalogSync.Interval.String()).
+			Int("limit", cfg.CatalogSync.Limit).Msg("Catalog sync is on")
+	} else {
+		log.Info().Msg("AIAPP_CATALOG_SYNC_ENABLED is off: the model catalog is not filled from public sources")
 	}
 
 	appStore, err := appstore.Open(cfg.AppStore.Dir, cfg.AppStore.UploadMaxBytes)
@@ -158,8 +176,12 @@ func main() {
 		NodeDeploy: nodeDeployService,
 		Recommend:  recommender,
 		Status:     rest.NewStatusChecker(cfg, semaphoreClient, tumblebugClient),
+		Sync:       syncRunner,
 	})
 	rest.MarkReady()
+	if syncRunner != nil {
+		syncRunner.Start(syncCtx)
+	}
 
 	go func() {
 		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
@@ -174,6 +196,7 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
+	stopSync()
 
 	// Node deployments are shut down whether or not the HTTP server stopped
 	// cleanly: each deletes the SSH key it registered in Semaphore.

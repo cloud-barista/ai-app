@@ -220,6 +220,140 @@ func (s *Store) Delete(ctx context.Context, modelID string) error {
 	return nil
 }
 
+// SyncCounts says what one ApplySync did to the catalog.
+type SyncCounts struct {
+	// Added is how many fetched models were new to the catalog.
+	Added int `json:"added" example:"12"`
+	// Updated is how many entries of the origin were replaced from the fetch.
+	Updated int `json:"updated" example:"80"`
+	// Staled is how many entries of the origin the fetch did not return. Each
+	// is marked stale, whether or not it already was.
+	Staled int `json:"staled" example:"3"`
+	// Skipped is how many fetched models were left alone because the catalog
+	// holds an entry of the same ID from another origin.
+	Skipped int `json:"skipped" example:"1"`
+	// Invalid is how many fetched models were dropped because they do not
+	// validate or repeat an ID earlier in the same fetch.
+	Invalid int `json:"invalid" example:"0"`
+}
+
+// syncOrigin reports whether origin is one the catalog sync collects from.
+func syncOrigin(origin string) bool {
+	return origin != model.OriginSeed && origin != model.OriginManual &&
+		origin != "" && model.ValidOrigin(origin)
+}
+
+// ApplySync merges what one source returned into the catalog and writes the
+// file once.
+//
+// A fetched model with a new ID is added. One whose entry has the same origin
+// replaces it, keeping every runtimes[].verifiedAt recorded for the same
+// artifact ID and runtime ID. One whose entry has another origin (seed,
+// manual or another source) is skipped: the sync never changes what it did
+// not put there. Added and replaced entries get origin, syncedAt at and stale
+// false; a verifiedAt the fetch carries is dropped. Every entry of the origin the fetch did not return is marked stale
+// and otherwise kept as it was. A fetched model that does not validate is
+// dropped and counted; it does not fail the rest.
+func (s *Store) ApplySync(ctx context.Context, origin string, models []model.Model, at time.Time) (SyncCounts, error) {
+	var counts SyncCounts
+	if !syncOrigin(origin) {
+		return counts, fmt.Errorf("%q is not an origin the catalog sync collects from", origin)
+	}
+	at = at.UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := make(map[string]model.Model, len(s.models)+len(models))
+	for id, m := range s.models {
+		next[id] = m
+	}
+	seen := make(map[string]bool, len(models))
+	for i := range models {
+		m := clone(models[i])
+		m.Origin = origin
+		m.Stale = false
+		synced := at
+		m.SyncedAt = &synced
+		clearVerified(&m)
+		if err := m.Validate(); err != nil {
+			counts.Invalid++
+			log.Warn().Err(err).Str("origin", origin).Str("modelId", m.ID).Msg("Dropped an invalid model from the catalog sync")
+			continue
+		}
+		if seen[m.ID] {
+			counts.Invalid++
+			log.Warn().Str("origin", origin).Str("modelId", m.ID).Msg("Dropped a model the catalog sync fetched twice")
+			continue
+		}
+		seen[m.ID] = true
+
+		previous, exists := next[m.ID]
+		switch {
+		case !exists:
+			counts.Added++
+		case previous.Origin != origin:
+			counts.Skipped++
+			continue
+		default:
+			keepVerified(&m, &previous)
+			counts.Updated++
+		}
+		next[m.ID] = m
+	}
+	for id, m := range next {
+		if m.Origin != origin || seen[id] {
+			continue
+		}
+		m.Stale = true
+		next[id] = m
+		counts.Staled++
+	}
+
+	previous := s.models
+	s.models = next
+	if err := s.save(); err != nil {
+		s.models = previous
+		return SyncCounts{}, err
+	}
+
+	log.Info().Str("origin", origin).Int("added", counts.Added).Int("updated", counts.Updated).
+		Int("staled", counts.Staled).Int("skipped", counts.Skipped).Int("invalid", counts.Invalid).
+		Msg("Applied catalog sync")
+	return counts, nil
+}
+
+// clearVerified drops every verifiedAt of m. Only a deployment on a node
+// records one; a source cannot know it.
+func clearVerified(m *model.Model) {
+	for i := range m.Artifacts {
+		for j := range m.Artifacts[i].Runtimes {
+			m.Artifacts[i].Runtimes[j].VerifiedAt = nil
+		}
+	}
+}
+
+// keepVerified copies onto m every verifiedAt previous records for the same
+// artifact ID and runtime ID: a source does not know which pairings were
+// deployed, so a fetch must not erase that.
+func keepVerified(m, previous *model.Model) {
+	for i := range m.Artifacts {
+		old, ok := previous.Artifact(m.Artifacts[i].ID)
+		if !ok {
+			continue
+		}
+		for j := range m.Artifacts[i].Runtimes {
+			compat := &m.Artifacts[i].Runtimes[j]
+			for _, was := range old.Runtimes {
+				if was.RuntimeID == compat.RuntimeID && was.VerifiedAt != nil {
+					compat.VerifiedAt = cloneTime(was.VerifiedAt)
+					break
+				}
+			}
+		}
+	}
+}
+
 // save writes every model to the store file. The caller holds the write lock.
 //
 // The file is written next to its final path and renamed over it, so a crash

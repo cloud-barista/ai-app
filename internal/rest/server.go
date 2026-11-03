@@ -14,6 +14,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
@@ -50,6 +51,9 @@ type AppDependencies struct {
 	// Status checks Semaphore, CB-Tumblebug and the stage folder. Nil builds
 	// one from the configuration with clients of its own.
 	Status *StatusChecker
+	// Sync fills the model catalog from public model sources. Nil leaves the
+	// catalog sync disabled: GET /models/sync says so and POST answers 503.
+	Sync *catalogsync.Runner
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
@@ -73,6 +77,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		nodeDeploy: deps.NodeDeploy,
 		recommend:  recommender,
 		status:     status,
+		sync:       deps.Sync,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -101,6 +106,8 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// inference runtime profiles those artifacts run on.
 	g.GET("/models", handler.RestGetAllModels)
 	g.POST("/models", handler.RestPostModel)
+	g.GET("/models/sync", handler.RestGetModelSync)
+	g.POST("/models/sync", handler.RestPostModelSync)
 	g.GET("/models/:modelId", handler.RestGetModel)
 	g.DELETE("/models/:modelId", handler.RestDeleteModel)
 	g.GET("/models/:modelId/artifacts/:artifactId/compose", handler.RestGetModelCompose)

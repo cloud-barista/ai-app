@@ -7,10 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
 const envPrefix = "AIAPP"
@@ -55,6 +58,8 @@ type Config struct {
 	NodeDeploy NodeDeployConfig
 	// Recommender names the model and application recommenders.
 	Recommender RecommenderConfig
+	// CatalogSync fills the model catalog from public model sources.
+	CatalogSync CatalogSyncConfig
 }
 
 // ServerConfig holds the HTTP settings of the AI-App service.
@@ -211,6 +216,30 @@ type RecommenderConfig struct {
 	App string
 }
 
+// CatalogSyncConfig holds how the model catalog is filled from public model
+// sources.
+type CatalogSyncConfig struct {
+	// Enabled turns the sync on (AIAPP_CATALOG_SYNC_ENABLED, true by
+	// default). A source whose host does not answer is skipped, so a service
+	// without internet access runs with it on; false turns it off.
+	Enabled bool
+	// Interval is the wait between scheduled runs, after the one at startup
+	// (AIAPP_CATALOG_SYNC_INTERVAL, 24h by default).
+	Interval time.Duration
+	// Sources are the sources to run, in order, by origin name
+	// (AIAPP_CATALOG_SYNC_SOURCES, a comma separated list, every source by
+	// default).
+	Sources []string
+	// Limit caps how many models one listing of a source returns
+	// (AIAPP_CATALOG_SYNC_LIMIT, 100 by default).
+	Limit int
+}
+
+// SyncSources are the origins the catalog sync can collect from, in the
+// order they run by default.
+var SyncSources = []string{model.OriginHuggingFace, model.OriginOllama, model.OriginDockerModelRunner,
+	model.OriginNGC, model.OriginKaggle}
+
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
 	Dir string
@@ -266,6 +295,10 @@ func Load() (*Config, error) {
 	v.SetDefault("semaphore.timeout", 30*time.Minute)
 	v.SetDefault("stage.root", "/var/lib/aiapp/stage")
 	v.SetDefault("deployment.open_ports", true)
+	v.SetDefault("catalog_sync.enabled", true)
+	v.SetDefault("catalog_sync.interval", 24*time.Hour)
+	v.SetDefault("catalog_sync.sources", strings.Join(SyncSources, ","))
+	v.SetDefault("catalog_sync.limit", 100)
 
 	// AutomaticEnv only resolves keys that viper already knows about.
 	for _, key := range []string{
@@ -309,6 +342,10 @@ func Load() (*Config, error) {
 		"deployment.open_ports",
 		"recommender.model",
 		"recommender.app",
+		"catalog_sync.enabled",
+		"catalog_sync.interval",
+		"catalog_sync.sources",
+		"catalog_sync.limit",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -389,6 +426,12 @@ func Load() (*Config, error) {
 			Model: strings.TrimSpace(v.GetString("recommender.model")),
 			App:   strings.TrimSpace(v.GetString("recommender.app")),
 		},
+		CatalogSync: CatalogSyncConfig{
+			Enabled:  v.GetBool("catalog_sync.enabled"),
+			Interval: v.GetDuration("catalog_sync.interval"),
+			Sources:  splitList(v.GetString("catalog_sync.sources")),
+			Limit:    v.GetInt("catalog_sync.limit"),
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -464,7 +507,42 @@ func (c *Config) validate() error {
 				envPrefix, setting.env, setting.name)
 		}
 	}
+	return c.CatalogSync.validate()
+}
+
+func (s CatalogSyncConfig) validate() error {
+	if s.Interval <= 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_INTERVAL must be a positive Go duration such as 24h", envPrefix)
+	}
+	if s.Limit <= 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_LIMIT must be a positive number", envPrefix)
+	}
+	if len(s.Sources) == 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_SOURCES must name at least one of %s",
+			envPrefix, strings.Join(SyncSources, ", "))
+	}
+	for i, name := range s.Sources {
+		if !slices.Contains(SyncSources, name) {
+			return fmt.Errorf("%s_CATALOG_SYNC_SOURCES names %q, which is not one of %s",
+				envPrefix, name, strings.Join(SyncSources, ", "))
+		}
+		if slices.Contains(s.Sources[:i], name) {
+			return fmt.Errorf("%s_CATALOG_SYNC_SOURCES names %q twice", envPrefix, name)
+		}
+	}
 	return nil
+}
+
+// splitList splits a comma separated list, trimming each entry and dropping
+// empty ones.
+func splitList(raw string) []string {
+	var out []string
+	for _, entry := range strings.Split(raw, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func (s SemaphoreConfig) validate() error {

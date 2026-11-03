@@ -313,3 +313,48 @@ func TestRecommenderNames(t *testing.T) {
 // uiURLSecret is a made-up password for the UI URL test, so no literal looks
 // like a secret.
 var uiURLSecret = "u-" + rand.Text()
+
+func TestCatalogSyncDefaultsAndOverrides(t *testing.T) {
+	for _, key := range []string{"ENABLED", "INTERVAL", "SOURCES", "LIMIT"} {
+		t.Setenv("AIAPP_CATALOG_SYNC_"+key, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := cfg.CatalogSync
+	if !got.Enabled || got.Interval != 24*time.Hour || got.Limit != 100 ||
+		strings.Join(got.Sources, ",") != "huggingface,ollama,docker-model-runner,ngc,kaggle" {
+		t.Errorf("catalog sync = %+v, want on, 24h, 100 and every source by default", got)
+	}
+
+	t.Setenv("AIAPP_CATALOG_SYNC_ENABLED", "false")
+	t.Setenv("AIAPP_CATALOG_SYNC_INTERVAL", "6h")
+	t.Setenv("AIAPP_CATALOG_SYNC_SOURCES", " ollama , huggingface,")
+	t.Setenv("AIAPP_CATALOG_SYNC_LIMIT", "20")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got = cfg.CatalogSync
+	if got.Enabled || got.Interval != 6*time.Hour || got.Limit != 20 || strings.Join(got.Sources, ",") != "ollama,huggingface" {
+		t.Errorf("catalog sync = %+v, want off, 6h, 20, ollama and huggingface", got)
+	}
+
+	for _, tc := range []struct{ key, value, want string }{
+		{"INTERVAL", "0s", "CATALOG_SYNC_INTERVAL"},
+		{"INTERVAL", "daily", "CATALOG_SYNC_INTERVAL"},
+		{"LIMIT", "0", "CATALOG_SYNC_LIMIT"},
+		{"LIMIT", "many", "CATALOG_SYNC_LIMIT"},
+		{"SOURCES", "huggingface,civitai", `"civitai"`},
+		{"SOURCES", "ollama,ollama", "twice"},
+		{"SOURCES", " , ", "at least one"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv("AIAPP_CATALOG_SYNC_"+tc.key, tc.value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Load error = %v, want one containing %s", err, tc.want)
+			}
+		})
+	}
+}

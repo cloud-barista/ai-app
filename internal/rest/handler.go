@@ -6,6 +6,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
 	"github.com/ish-hcc/ai-agent-proto/internal/compose"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
@@ -33,6 +34,8 @@ type Handler struct {
 	recommend *recommend.Service
 	// status checks what deployment depends on.
 	status *StatusChecker
+	// sync fills the model catalog from public sources. Nil when disabled.
+	sync *catalogsync.Runner
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
