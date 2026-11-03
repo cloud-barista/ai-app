@@ -10,6 +10,9 @@
 // work key (see placement), not of its deployment ID, so that deploying the
 // same inference runtime or application again replaces the previous one.
 //
+// A deployment is taken down from its nodes with compose-down (see Remove),
+// which keeps the node folders and the named volumes.
+//
 // With dry run on, only the look-up and the file placement are done, and
 // nothing is registered in Semaphore.
 package nodedeploy

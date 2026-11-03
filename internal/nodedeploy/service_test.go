@@ -34,7 +34,7 @@ const (
 
 // fakeTumblebug answers the node, ssh key, spec and node control routes for
 // nodes vm1 (aws, GPU spec), vm2 (azure, CPU spec) and vm3 (gcp, spec that
-// cannot be read), all in namespace etri, infra travel.
+// cannot be read), all in namespace etri, infra travel. Node gone answers 404.
 type fakeTumblebug struct {
 	mu       sync.Mutex
 	controls []string
@@ -47,7 +47,7 @@ func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"vm1": {"id": "vm1", "publicIP": "203.0.113.11", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"specId": "aws+gpu", "connectionConfig": map[string]any{"providerName": "AWS",
 				"regionZoneInfo": map[string]any{"assignedRegion": "ap-northeast-2", "assignedZone": "ap-northeast-2a"}}},
-		"vm2": {"id": "vm2", "privateIP": "10.0.0.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
+		"vm2": {"id": "vm2", "privateIP": "198.51.100.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"specId": "azure+cpu", "connectionConfig": map[string]any{"providerName": "Azure"}},
 		"vm3": {"id": "vm3", "publicIP": "203.0.113.13", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"specId": "gcp+missing", "connectionConfig": map[string]any{"providerName": "GCP"}},
@@ -57,6 +57,10 @@ func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"connectionConfig": map[string]any{"providerName": "AWS"}},
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/tumblebug")
+	if path == "/ns/etri/infra/travel/node/gone" {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "node gone does not exist"})
+		return
+	}
 	if m := regexp.MustCompile(`^/ns/etri/infra/travel/node/([^/]+)$`).FindStringSubmatch(path); m != nil {
 		if node, ok := nodes[m[1]]; ok {
 			writeJSON(w, http.StatusOK, node)
@@ -278,7 +282,7 @@ func TestInferenceDeploymentSucceeds(t *testing.T) {
 	if vm1.Node == nil || vm1.Node.CSP != "aws" || vm1.Node.Host != "203.0.113.11" || vm1.Node.Region != "ap-northeast-2" {
 		t.Errorf("vm1 node = %+v", vm1.Node)
 	}
-	if vm2.Node == nil || vm2.Node.Host != "10.0.0.12" || vm2.Node.CSP != "azure" {
+	if vm2.Node == nil || vm2.Node.Host != "198.51.100.12" || vm2.Node.CSP != "azure" {
 		t.Errorf("vm2 node = %+v, want the private IP when there is no public one", vm2.Node)
 	}
 	if !vm1.GPU || vm1.GPUSource != "spec" || vm2.GPU || vm2.GPUSource != "spec" {
@@ -420,7 +424,7 @@ func TestDeploymentFailsAndPartiallyFails(t *testing.T) {
 	}
 
 	// install-docker failing stops the node before compose-up.
-	f.runner.statuses["10.0.0.12 "+PlaybookInstallDocker] = semaphore.StatusError
+	f.runner.statuses["198.51.100.12 "+PlaybookInstallDocker] = semaphore.StatusError
 	before := f.runner.count()
 	created, err = f.svc.Create(context.Background(), modelReq("vm1", "vm2"))
 	if err != nil {

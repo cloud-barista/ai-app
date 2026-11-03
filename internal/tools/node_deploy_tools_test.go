@@ -33,6 +33,7 @@ func TestNodeDeployToolGrades(t *testing.T) {
 	for name, want := range map[string]Grade{
 		"create_deployment":     GradeWrite,
 		"control_node":          GradeWrite,
+		"delete_deployment":     GradeDestructive,
 		"get_deployment":        GradeRead,
 		"list_node_deployments": GradeRead,
 		"get_deployment_logs":   GradeRead,
@@ -60,5 +61,19 @@ func TestNodeDeployToolsCheckTheirInput(t *testing.T) {
 	out, err := registry.Call(ctx, "default", "list_node_deployments", json.RawMessage(`{}`))
 	if list, ok := out.(model.NodeDeploymentListResp); err != nil || !ok || len(list.Deployments) != 0 {
 		t.Errorf("list = %v, %v", out, err)
+	}
+}
+
+func TestDeleteDeploymentTool(t *testing.T) {
+	registry := newNodeDeployRegistry(t)
+	ctx := context.Background()
+	if !registry.Grade("delete_deployment").GuardedByDryRun() {
+		t.Error("delete_deployment is not guarded by dry run")
+	}
+	if _, err := registry.Call(ctx, "default", "delete_deployment", json.RawMessage(`{}`)); err == nil {
+		t.Error("delete_deployment without id was accepted")
+	}
+	if _, err := registry.Call(ctx, "default", "delete_deployment", json.RawMessage(`{"id":"missing"}`)); !errors.Is(err, nodedeploy.ErrNotFound) {
+		t.Errorf("delete_deployment missing = %v", err)
 	}
 }

@@ -52,6 +52,8 @@ func statusCodeFor(err error) int {
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, nodedeploy.ErrNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, nodedeploy.ErrBusy):
+		return http.StatusConflict
 	case errors.Is(err, compose.ErrInvalidOption):
 		return http.StatusBadRequest
 	case errors.Is(err, mcpclient.ErrUnavailable):
@@ -85,7 +87,7 @@ func messageFor(err error, fallback string) string {
 	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrRuntimeNotFound,
 		compose.ErrIncompatible, compose.ErrInvalidOption,
 		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge,
-		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound} {
+		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound, nodedeploy.ErrBusy} {
 		if errors.Is(err, own) {
 			return err.Error()
 		}

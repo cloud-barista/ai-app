@@ -47,6 +47,18 @@ const (
 	// because it shut down or restarted while the deployment ran. What the
 	// node ended up with is unknown.
 	NodeDeployInterrupted = "interrupted"
+	// NodeDeployRemoving is a deployment being taken down from its nodes by
+	// DELETE /deployments/{id}: compose-down runs on the nodes that need it.
+	NodeDeployRemoving = "removing"
+	// NodeDeployRemoved is a deployment taken down from every node. Its
+	// containers are gone; its node folders and named volumes are kept. A
+	// node is also removed without running anything when the deployment was
+	// a dry run, never started its service there, or was replaced there by a
+	// later deployment of the same work key; its notes say which.
+	NodeDeployRemoved = "removed"
+	// NodeDeployRemoveFailed is a deployment whose compose-down failed on at
+	// least one node. Removing it again retries the nodes not removed yet.
+	NodeDeployRemoveFailed = "remove-failed"
 )
 
 // MaxNodeDeployTargets bounds the targets of one deployment request.
@@ -238,8 +250,9 @@ type NodeDeployment struct {
 	Type string `json:"type" enums:"inference,app" example:"inference"`
 	// Status is pending, running, succeeded (every node), failed (every node),
 	// partial (some nodes), dry-run (files placed, nothing run) or interrupted
-	// (the service stopped while it ran).
-	Status string `json:"status" enums:"pending,running,succeeded,failed,partial,dry-run,interrupted" example:"succeeded"`
+	// (the service stopped while it ran); once taken down with
+	// DELETE /deployments/{id}, removing, removed or remove-failed.
+	Status string `json:"status" enums:"pending,running,succeeded,failed,partial,dry-run,interrupted,removing,removed,remove-failed" example:"succeeded"`
 	// DryRun is true when the service ran with dry run on: only the node
 	// look-up and file placement were done.
 	DryRun bool `json:"dryRun" example:"false"`
@@ -254,14 +267,18 @@ type NodeDeployment struct {
 	CreatedAt time.Time `json:"createdAt" example:"2026-10-29T12:00:00Z"`
 	// FinishedAt is when the last node finished. Absent while it runs.
 	FinishedAt *time.Time `json:"finishedAt,omitempty" example:"2026-10-29T12:05:00Z"`
+	// RemovedAt is when taking the deployment down ended, removed or
+	// remove-failed. Absent until then.
+	RemovedAt *time.Time `json:"removedAt,omitempty" example:"2026-11-03T12:00:00Z"`
 }
 
 // NodeDeployResult is what happened on one node.
 type NodeDeployResult struct {
 	// Target is the target as requested.
 	Target NodeDeployTarget `json:"target"`
-	// Status is pending, running, succeeded, failed, dry-run or interrupted.
-	Status string `json:"status" enums:"pending,running,succeeded,failed,dry-run,interrupted" example:"succeeded"`
+	// Status is pending, running, succeeded, failed, dry-run or interrupted;
+	// once taken down, removing, removed or remove-failed.
+	Status string `json:"status" enums:"pending,running,succeeded,failed,dry-run,interrupted,removing,removed,remove-failed" example:"succeeded"`
 	// Node is how the node was reached, as read from CB-Tumblebug. Absent
 	// when the node could not be read. The SSH key is never included.
 	Node *NodeDeployNode `json:"node,omitempty"`
@@ -293,8 +310,10 @@ type NodeDeployResult struct {
 	// Steps are the playbooks run on the node, in order. A step that failed
 	// ends the node.
 	Steps []NodeDeployStep `json:"steps,omitempty"`
-	// Error is why the node failed.
+	// Error is why the node failed, or why taking it down failed.
 	Error string `json:"error,omitempty"`
+	// RemovedAt is when the deployment was taken down from the node.
+	RemovedAt *time.Time `json:"removedAt,omitempty" example:"2026-11-03T12:00:00Z"`
 	// StartedAt is when work on the node began.
 	StartedAt *time.Time `json:"startedAt,omitempty" example:"2026-10-29T12:00:01Z"`
 	// FinishedAt is when work on the node ended.
@@ -320,7 +339,8 @@ type NodeDeployNode struct {
 
 // NodeDeployStep is one playbook run through Semaphore.
 type NodeDeployStep struct {
-	// Playbook is install-docker.yml, compose-up.yml or copy-and-run.yml.
+	// Playbook is install-docker.yml, compose-up.yml, copy-and-run.yml, or
+	// compose-down.yml when the deployment was taken down.
 	Playbook string `json:"playbook" example:"compose-up.yml"`
 	// TaskID is the Semaphore task, kept in Semaphore with its log.
 	TaskID int `json:"taskId,omitempty" example:"2147483645"`

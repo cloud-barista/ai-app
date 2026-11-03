@@ -73,8 +73,8 @@ func TestListRegisteredTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(res.Tools) != 8 {
-		t.Fatalf("tools/list returned %d tools, want 8", len(res.Tools))
+	if len(res.Tools) != 9 {
+		t.Fatalf("tools/list returned %d tools, want 9", len(res.Tools))
 	}
 	found := false
 	for _, tool := range res.Tools {

@@ -557,7 +557,7 @@ definitions:
         description: Compose is the rendered docker-compose.yml of an inference service.
         type: string
       error:
-        description: Error is why the node failed.
+        description: Error is why the node failed, or why taking it down failed.
         type: string
       finishedAt:
         description: FinishedAt is when work on the node ended.
@@ -598,6 +598,10 @@ definitions:
         items:
           type: string
         type: array
+      removedAt:
+        description: RemovedAt is when the deployment was taken down from the node.
+        example: "2026-11-03T12:00:00Z"
+        type: string
       serviceUrl:
         description: |-
           ServiceURL is the inference API on the node, built from the public or
@@ -616,7 +620,9 @@ definitions:
         example: "2026-10-29T12:00:01Z"
         type: string
       status:
-        description: Status is pending, running, succeeded, failed, dry-run or interrupted.
+        description: |-
+          Status is pending, running, succeeded, failed, dry-run or interrupted;
+          once taken down, removing, removed or remove-failed.
         enum:
         - pending
         - running
@@ -624,6 +630,9 @@ definitions:
         - failed
         - dry-run
         - interrupted
+        - removing
+        - removed
+        - remove-failed
         example: succeeded
         type: string
       steps:
@@ -668,7 +677,9 @@ definitions:
           type: string
         type: array
       playbook:
-        description: Playbook is install-docker.yml, compose-up.yml or copy-and-run.yml.
+        description: |-
+          Playbook is install-docker.yml, compose-up.yml, copy-and-run.yml, or
+          compose-down.yml when the deployment was taken down.
         example: compose-up.yml
         type: string
       startedAt:
@@ -750,6 +761,12 @@ definitions:
         items:
           $ref: '#/definitions/model.NodeDeployResult'
         type: array
+      removedAt:
+        description: |-
+          RemovedAt is when taking the deployment down ended, removed or
+          remove-failed. Absent until then.
+        example: "2026-11-03T12:00:00Z"
+        type: string
       request:
         allOf:
         - $ref: '#/definitions/model.NodeDeploymentReq'
@@ -760,7 +777,8 @@ definitions:
         description: |-
           Status is pending, running, succeeded (every node), failed (every node),
           partial (some nodes), dry-run (files placed, nothing run) or interrupted
-          (the service stopped while it ran).
+          (the service stopped while it ran); once taken down with
+          DELETE /deployments/{id}, removing, removed or remove-failed.
         enum:
         - pending
         - running
@@ -769,6 +787,9 @@ definitions:
         - partial
         - dry-run
         - interrupted
+        - removing
+        - removed
+        - remove-failed
         example: succeeded
         type: string
       type:
@@ -1267,6 +1288,9 @@ paths:
         - partial
         - dry-run
         - interrupted
+        - removing
+        - removed
+        - remove-failed
         in: query
         name: status
         type: string
@@ -1336,12 +1360,52 @@ paths:
       tags:
       - '[Deployment] Node Deployment'
   /deployments/{id}:
+    delete:
+      description: |-
+        Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds.
+
+        Only the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.
+
+        When some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).
+      operationId: DeleteNodeDeployment
+      parameters:
+      - description: Deployment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Nothing to run on any node, already removed, or dry run
+          schema:
+            $ref: '#/definitions/model.NodeDeployment'
+        "202":
+          description: Accepted; the nodes are taken down in the background
+          schema:
+            $ref: '#/definitions/model.NodeDeployment'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "409":
+          description: The deployment is still pending or running, or is being taken
+            down
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Take a deployment down from its nodes
+      tags:
+      - '[Deployment] Node Deployment'
     get:
       description: 'Read one deployment: its status (pending, running, succeeded,
-        failed, partial, dry-run, interrupted), and for every node its status, how
-        it was reached (csp, region, zone, host, port, user, specId; never the key),
-        whether it got the GPU and why, the stage folder, the rendered compose and
-        service URL of an inference service, and every playbook run with its Semaphore
+        failed, partial, dry-run, interrupted; removing, removed or remove-failed
+        once taken down with DELETE /deployments/{id}), and for every node its status,
+        how it was reached (csp, region, zone, host, port, user, specId; never the
+        key), whether it got the GPU and why, the stage folder, the rendered compose
+        and service URL of an inference service, and every playbook run with its Semaphore
         task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.'
       operationId: GetNodeDeployment
       parameters:

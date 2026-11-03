@@ -243,6 +243,9 @@
   .b-dp-partial { background: #FFE9C7; color: #8A4B00; }
   .b-dp-pending, .b-dp-running { background: var(--accent-soft); color: var(--accent); }
   .b-dp-interrupted { background: #F0F0EC; color: var(--ink-3); }
+  .b-dp-removing { background: var(--accent-soft); color: var(--accent); }
+  .b-dp-removed { background: #F0F0EC; color: var(--ink-2); }
+  .b-dp-remove-failed { background: var(--bad-soft); color: var(--bad); }
   .tg-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 6px; }
   .tg-row button { padding: 5px 10px; font-size: 12px; font-weight: 400; }
   .node-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 12px; background: #FDFDFB; }
@@ -344,7 +347,7 @@
         <div class="box ext">
           <div class="who">외부 플랫폼</div>
           <div class="t">Semaphore UI</div>
-          <div class="d">노드에 SSH 로 플레이북(install-docker, compose-up, copy-and-run)을 돌립니다</div>
+          <div class="d">노드에 SSH 로 플레이북(install-docker, compose-up, copy-and-run, 내릴 때 compose-down)을 돌립니다</div>
           <div class="st" id="ov-st-sem"><span class="spin">부르는 중...</span></div>
         </div>
       </div>
@@ -607,6 +610,7 @@
         <option value="terminate">terminate · 종료</option>
       </select>
       <button class="danger" onclick="controlDeployment()">노드 제어</button>
+      <button class="danger" onclick="removeDeployment()">내리기</button>
       <button class="ghost" onclick="openEngineFor('status')">엔진 status</button>
       <button class="ghost" onclick="openEngineFor('heal')">엔진 heal</button>
     </div>
@@ -1915,6 +1919,7 @@ function renderNodeResult(n, d) {
     ['서비스 주소', n.serviceUrl ? `<span class="mono">${esc(n.serviceUrl)}</span>` : '-'],
     ['시작 · 끝', `${esc(n.startedAt ? fmtTime(n.startedAt) : '-')} · ${esc(n.finishedAt ? fmtTime(n.finishedAt) : '-')}`]
   ];
+  if (n.removedAt) rows.push(['내린 시각', esc(fmtTime(n.removedAt))]);
   const steps = n.steps || [];
   return `<div class="node-box">
     <h4><span class="mono">${esc(targetKey(n.target || {}))}</span> ${depBadge(n.status)}</h4>
@@ -1939,12 +1944,14 @@ function renderNodeResult(n, d) {
   </div>`;
 }
 
-/* A deployment that is still pending or running is read again every few
-   seconds while it is the one open, for at most ten minutes. */
+/* A deployment that is still pending, running or removing is read again every
+   few seconds while it is the one open, for at most ten minutes. */
+const DP_BUSY = ['pending', 'running', 'removing'];
+
 function pollDeployment(d) {
   if (DP_POLL) { clearTimeout(DP_POLL.timer); DP_POLL = null; }
   $('dp-poll').textContent = '';
-  if (d.status !== 'pending' && d.status !== 'running') return;
+  if (!DP_BUSY.includes(d.status)) return;
   const state = { id: d.id, left: 200, timer: null };
   DP_POLL = state;
   const tick = async () => {
@@ -1954,7 +1961,7 @@ function pollDeployment(d) {
     if (DP_POLL !== state || DP_CURRENT !== state.id) return;
     if (!r.ok) { $('dp-poll').textContent = '자동 새로고침 실패 · HTTP ' + r.status; return; }
     renderDeploymentDetail(r.data || {}, r);
-    if (r.data && r.data.status !== 'pending' && r.data.status !== 'running') loadDeployments();
+    if (r.data && !DP_BUSY.includes(r.data.status)) loadDeployments();
   };
   $('dp-poll').textContent = '진행 중이라 3초마다 다시 읽습니다.';
   state.timer = setTimeout(tick, 3000);
@@ -2000,6 +2007,23 @@ async function controlDeployment() {
       <td>${ctlBadge(n.status)}</td>
       <td style="font-size:12px">${esc(n.message || '')}</td>
     </tr>`).join('')}</table>`;
+}
+
+/* removeDeployment takes the open deployment down from its nodes. The record
+   comes back removing and is followed by pollDeployment. */
+async function removeDeployment() {
+  if (!DP_CURRENT) return;
+  if (!confirm(`배포 ${DP_CURRENT} 를 노드에서 내립니다 (docker compose down, named volume 과 노드 폴더는 남김).` +
+      (DRY === false ? ' dry-run 이 꺼져 있어 노드의 컨테이너가 실제로 내려갑니다.' : ''))) return;
+
+  $('dp-ctl-out').innerHTML = '<div class="spin">부르는 중...</div>';
+  const r = await api('DELETE', `/deployments/${encodeURIComponent(DP_CURRENT)}`);
+  wire($('dp-ctl-wire'), r);
+  if (!r.ok) { $('dp-ctl-out').innerHTML = failNote(r) + platformNote(r); return; }
+  const d = r.data || {};
+  $('dp-ctl-out').innerHTML = `<span style="color:var(--ok)">HTTP ${esc(r.status)} · 내리기 ${depBadge(d.status)}</span>`;
+  loadDeployments();
+  renderDeploymentDetail(d, r);
 }
 
 /* openEngineFor opens the engine page with a workflow over the open deployment. */

@@ -1,0 +1,61 @@
+# Takes the compose project of a work key down on a node, for
+# DELETE /aiapp/deployments/{id}.
+#
+# Extra vars (passed by AI-App as the Semaphore task environment):
+#   node_dir        folder on the node: /opt/aiapp/<work key>
+#   compose_project compose project name: aiapp-<work key>
+#   work_key        ms-<runtime> or app-<name>; only shown with the task
+#   deployment_id   the deployment taken down; not used on the node, only
+#                   shown with the task in Semaphore
+#
+# The containers and networks of the project are removed. No -v, so that named
+# volumes, such as model weights a runtime downloaded, stay for the next
+# deployment of the work key. The node folder is kept too: files a container
+# wrote there through a bind mount are data, and the next deployment of the
+# work key replaces the deployed files (tasks/place-files.yml).
+#
+# A node without docker, or without the project, has nothing to take down and
+# succeeds.
+- name: Take the compose project down
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check the required variables
+      ansible.builtin.assert:
+        that:
+          - compose_project is defined and compose_project is match('^aiapp-[a-z0-9][a-z0-9_-]*$')
+          - node_dir is defined and node_dir is match('^/opt/aiapp/[a-z0-9][a-z0-9._-]*$')
+        fail_msg: compose_project must be aiapp-<work key> and node_dir a folder right under /opt/aiapp
+        quiet: true
+
+    - name: Check whether docker is installed
+      ansible.builtin.command:
+        argv: [docker, version, --format, "{{ '{{' }}.Server.Version{{ '}}' }}"]
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    # Run from / so that compose finds the project by its labels and does not
+    # read a compose file of the folder, which may need variables that are not
+    # set here. A project that does not exist is a no-op that exits 0.
+    - name: Take down the containers of the project
+      ansible.builtin.command:
+        argv: [docker, compose, -p, "{{ compose_project }}", down, --remove-orphans]
+        chdir: /
+      register: down_result
+      changed_when: down_result.stderr is search('Removed')
+      when: docker_check.rc == 0
+
+    - name: Show the compose output
+      ansible.builtin.debug:
+        var: down_result.stderr_lines
+      when: docker_check.rc == 0
+
+    - name: Count the containers left in the project
+      ansible.builtin.command:
+        argv: [docker, ps, -a, -q, --filter, "label=com.docker.compose.project={{ compose_project }}"]
+      register: left_result
+      changed_when: false
+      failed_when: left_result.stdout | length > 0
+      when: docker_check.rc == 0

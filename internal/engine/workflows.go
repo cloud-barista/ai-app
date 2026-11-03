@@ -83,6 +83,11 @@ func (e *Engine) Heal(ctx context.Context, nsID string, in HealInput) (*Run, err
 		r.add("run the deployment request again", toolCreateDeployment, d.Request, StepSkipped, r.skipMessage())
 		r.add(waitStepName, toolGetDeployment, nil, StepSkipped, r.skipMessage())
 		return r.finish(), nil
+	case model.NodeDeployRemoving, model.NodeDeployRemoved, model.NodeDeployRemoveFailed:
+		r.fail(step, fmt.Sprintf("deployment %s is %s; a deployment taken down is not healed", d.ID, d.Status))
+		r.add("run the deployment request again", toolCreateDeployment, d.Request, StepSkipped, r.skipMessage())
+		r.add(waitStepName, toolGetDeployment, nil, StepSkipped, r.skipMessage())
+		return r.finish(), nil
 	}
 
 	if again, ok := r.createAndWait(ctx, d.Request); ok {

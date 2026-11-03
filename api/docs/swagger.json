@@ -384,7 +384,10 @@
                             "failed",
                             "partial",
                             "dry-run",
-                            "interrupted"
+                            "interrupted",
+                            "removing",
+                            "removed",
+                            "remove-failed"
                         ],
                         "type": "string",
                         "description": "Deployment status",
@@ -477,7 +480,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
+                "description": "Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
                 "produces": [
                     "application/json"
                 ],
@@ -504,6 +507,57 @@
                     },
                     "404": {
                         "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-\u003cwork key\u003e down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/\u003cwork key\u003e are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds.\n\nOnly the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.\n\nWhen some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Take a deployment down from its nodes",
+                "operationId": "DeleteNodeDeployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Nothing to run on any node, already removed, or dry run",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeployment"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted; the nodes are taken down in the background",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeployment"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "409": {
+                        "description": "The deployment is still pending or running, or is being taken down",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1940,7 +1994,7 @@
                     "type": "string"
                 },
                 "error": {
-                    "description": "Error is why the node failed.",
+                    "description": "Error is why the node failed, or why taking it down failed.",
                     "type": "string"
                 },
                 "finishedAt": {
@@ -1983,6 +2037,11 @@
                         "type": "string"
                     }
                 },
+                "removedAt": {
+                    "description": "RemovedAt is when the deployment was taken down from the node.",
+                    "type": "string",
+                    "example": "2026-11-03T12:00:00Z"
+                },
                 "serviceUrl": {
                     "description": "ServiceURL is the inference API on the node, built from the public or\nprivate IP the node was reached at, the runtime port and its API base\npath. Inference services only.",
                     "type": "string",
@@ -1999,7 +2058,7 @@
                     "example": "2026-10-29T12:00:01Z"
                 },
                 "status": {
-                    "description": "Status is pending, running, succeeded, failed, dry-run or interrupted.",
+                    "description": "Status is pending, running, succeeded, failed, dry-run or interrupted;\nonce taken down, removing, removed or remove-failed.",
                     "type": "string",
                     "enum": [
                         "pending",
@@ -2007,7 +2066,10 @@
                         "succeeded",
                         "failed",
                         "dry-run",
-                        "interrupted"
+                        "interrupted",
+                        "removing",
+                        "removed",
+                        "remove-failed"
                     ],
                     "example": "succeeded"
                 },
@@ -2059,7 +2121,7 @@
                     }
                 },
                 "playbook": {
-                    "description": "Playbook is install-docker.yml, compose-up.yml or copy-and-run.yml.",
+                    "description": "Playbook is install-docker.yml, compose-up.yml, copy-and-run.yml, or\ncompose-down.yml when the deployment was taken down.",
                     "type": "string",
                     "example": "compose-up.yml"
                 },
@@ -2156,6 +2218,11 @@
                         "$ref": "#/definitions/model.NodeDeployResult"
                     }
                 },
+                "removedAt": {
+                    "description": "RemovedAt is when taking the deployment down ended, removed or\nremove-failed. Absent until then.",
+                    "type": "string",
+                    "example": "2026-11-03T12:00:00Z"
+                },
                 "request": {
                     "description": "Request is the request as accepted, with the runtime and app version\nthat were taken filled in.",
                     "allOf": [
@@ -2165,7 +2232,7 @@
                     ]
                 },
                 "status": {
-                    "description": "Status is pending, running, succeeded (every node), failed (every node),\npartial (some nodes), dry-run (files placed, nothing run) or interrupted\n(the service stopped while it ran).",
+                    "description": "Status is pending, running, succeeded (every node), failed (every node),\npartial (some nodes), dry-run (files placed, nothing run) or interrupted\n(the service stopped while it ran); once taken down with\nDELETE /deployments/{id}, removing, removed or remove-failed.",
                     "type": "string",
                     "enum": [
                         "pending",
@@ -2174,7 +2241,10 @@
                         "failed",
                         "partial",
                         "dry-run",
-                        "interrupted"
+                        "interrupted",
+                        "removing",
+                        "removed",
+                        "remove-failed"
                     ],
                     "example": "succeeded"
                 },

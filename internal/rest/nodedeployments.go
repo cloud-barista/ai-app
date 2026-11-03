@@ -61,7 +61,7 @@ func (h *Handler) RestPostNodeDeployment(c echo.Context) error {
 // @Produce json
 // @Param type query string false "Deployment type" Enums(inference, app)
 // @Param nsId query string false "CB-Tumblebug namespace of any target"
-// @Param status query string false "Deployment status" Enums(pending, running, succeeded, failed, partial, dry-run, interrupted)
+// @Param status query string false "Deployment status" Enums(pending, running, succeeded, failed, partial, dry-run, interrupted, removing, removed, remove-failed)
 // @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first"
 // @Security BearerAuth
 // @Router /deployments [get]
@@ -78,7 +78,7 @@ func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
 // RestGetNodeDeployment godoc
 // @ID GetNodeDeployment
 // @Summary Get a deployment onto nodes
-// @Description Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
+// @Description Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"
@@ -147,4 +147,36 @@ func (h *Handler) RestPostNodeDeploymentControl(c echo.Context) error {
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Node control failed")})
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// RestDeleteNodeDeployment godoc
+// @ID DeleteNodeDeployment
+// @Summary Take a deployment down from its nodes
+// @Description Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds.
+// @Description
+// @Description Only the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.
+// @Description
+// @Description When some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeployment "Nothing to run on any node, already removed, or dry run"
+// @Success 202 {object} model.NodeDeployment "Accepted; the nodes are taken down in the background"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Failure 409 {object} model.SimpleMsg "The deployment is still pending or running, or is being taken down"
+// @Security BearerAuth
+// @Router /deployments/{id} [delete]
+func (h *Handler) RestDeleteNodeDeployment(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	d, err := h.nodeDeploy.Remove(ctx, id)
+	if err != nil {
+		log.Warn().Err(err).Str("deploymentId", id).Msg("Refused deployment removal")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment removal failed")})
+	}
+	if d.Status == model.NodeDeployRemoving {
+		return c.JSON(http.StatusAccepted, d)
+	}
+	return c.JSON(http.StatusOK, d)
 }

@@ -905,3 +905,19 @@ func TestAppToolsUsedCoversEveryCall(t *testing.T) {
 		}
 	}
 }
+
+func TestHealLeavesADeploymentTakenDown(t *testing.T) {
+	for _, status := range []string{model.NodeDeployRemoving, model.NodeDeployRemoved, model.NodeDeployRemoveFailed} {
+		fake := &fakeApp{records: map[string]model.NodeDeployment{
+			"old": deployment("old", status, false, modelRequest("vm1"))}}
+		e, _ := newEngine(t, fake)
+
+		run := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "old"})
+
+		expectShape(t, run, "get_deployment:failed create_deployment:skipped get_deployment:skipped")
+		want := "deployment old is " + status + "; a deployment taken down is not healed"
+		if got := run.Steps[0].Error; got != want {
+			t.Errorf("%s: read error = %q", status, got)
+		}
+	}
+}

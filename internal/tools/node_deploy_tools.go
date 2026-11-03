@@ -10,7 +10,8 @@ import (
 )
 
 // RegisterNodeDeploy adds the tools that deploy onto nodes CB-Tumblebug
-// already runs, read those deployments, and control their nodes.
+// already runs, read those deployments, take them down, and control their
+// nodes.
 //
 // The namespace a tool call runs in is not used: every target names its own
 // CB-Tumblebug namespace, as the REST route does.
@@ -19,6 +20,7 @@ func RegisterNodeDeploy(registry *Registry, svc *nodedeploy.Service) {
 	registry.Add(getDeploymentTool(svc))
 	registry.Add(listNodeDeploymentsTool(svc))
 	registry.Add(getDeploymentLogsTool(svc))
+	registry.Add(deleteDeploymentTool(svc))
 	registry.Add(controlNodeTool(svc))
 }
 
@@ -95,7 +97,7 @@ func getDeploymentTool(svc *nodedeploy.Service) Tool {
 		Name:  "get_deployment",
 		Grade: GradeRead,
 		Description: "Read one deployment made by create_deployment: its status (pending, running, succeeded, failed, " +
-			"partial, dry-run, interrupted) and for every node its status, address, whether it got the GPU, the " +
+			"partial, dry-run, interrupted, or removing, removed, remove-failed once taken down by delete_deployment) and for every node its status, address, whether it got the GPU, the " +
 			"rendered compose and service URL of an inference service, and each playbook run with its status. Task output " +
 			"is left out; read it with get_deployment_logs.",
 		InputSchema: object(map[string]any{
@@ -121,7 +123,7 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 		InputSchema: object(map[string]any{
 			"type":   enumProp("Deployment type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"nsId":   stringProp("CB-Tumblebug namespace of any target"),
-			"status": stringProp("Deployment status: pending, running, succeeded, failed, partial, dry-run or interrupted"),
+			"status": stringProp("Deployment status: pending, running, succeeded, failed, partial, dry-run, interrupted, removing, removed or remove-failed"),
 		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var filter nodedeploy.ListFilter
@@ -156,6 +158,31 @@ func getDeploymentLogsTool(svc *nodedeploy.Service) Tool {
 				return nil, err
 			}
 			return svc.Logs(ctx, id)
+		},
+	}
+}
+
+func deleteDeploymentTool(svc *nodedeploy.Service) Tool {
+	return Tool{
+		Name:  "delete_deployment",
+		Grade: GradeDestructive,
+		Description: "Take a deployment made by create_deployment down from its nodes: its containers are stopped " +
+			"and removed (docker compose down of its work key), while named volumes such as downloaded model weights " +
+			"and the node folder are kept. A node where a later deployment of the same work key replaced this one is " +
+			"left running and marked removed with a note naming the later deployment. Returns the record with status " +
+			"removing; follow it with get_deployment until it is removed or remove-failed. Nothing needs running, and " +
+			"the record comes back removed at once, for a dry-run deployment or nodes where the service never started. " +
+			"A deployment still pending or running is refused. With dry run on, nothing is sent and the nodes keep " +
+			"their status with a note.",
+		InputSchema: object(map[string]any{
+			"id": stringProp("Deployment id returned by create_deployment"),
+		}, "id"),
+		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
+			id, err := deploymentIDArgs(input)
+			if err != nil {
+				return nil, err
+			}
+			return svc.Remove(ctx, id)
 		},
 	}
 }

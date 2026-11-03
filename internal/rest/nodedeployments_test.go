@@ -198,6 +198,33 @@ func TestNodeDeploymentRoutes(t *testing.T) {
 	if rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments/missing/control", `{"action":"reboot"}`); rec.Code != http.StatusNotFound {
 		t.Errorf("control missing = %d, want 404", rec.Code)
 	}
+
+	rec = sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/"+created.ID, "")
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"status":"removing"`) {
+		t.Fatalf("DELETE = %d: %s", rec.Code, rec.Body.String())
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		rec = sendNodeJSON(s, http.MethodGet, "/aiapp/deployments/"+created.ID, "")
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		if got.Status != model.NodeDeployRemoving {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got.Status != model.NodeDeployRemoved || got.Nodes[0].Status != model.NodeDeployRemoved || runner.count() != 3 {
+		t.Errorf("after DELETE = %q after %d runs: %s", got.Status, runner.count(), rec.Body.String())
+	}
+	rec = sendNodeJSON(s, http.MethodGet, "/aiapp/deployments/"+created.ID+"/logs", "")
+	if !strings.Contains(rec.Body.String(), "ran compose-down.yml") {
+		t.Errorf("logs after DELETE = %s", rec.Body.String())
+	}
+	if rec := sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/"+created.ID, ""); rec.Code != http.StatusOK || runner.count() != 3 {
+		t.Errorf("DELETE again = %d after %d runs, want 200 with nothing run", rec.Code, runner.count())
+	}
+	if rec := sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/missing", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("DELETE missing = %d, want 404", rec.Code)
+	}
 }
 
 func TestNodeDeploymentRefusals(t *testing.T) {
@@ -240,5 +267,9 @@ func TestNodeDeploymentDryRunAnswersAtOnce(t *testing.T) {
 	rec = sendNodeJSON(s, http.MethodPost, "/aiapp/deployments/"+d.ID+"/control", `{"action":"terminate"}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"blocked"`) || len(*controls) != 0 {
 		t.Errorf("control in dry run = %d: %s, calls %v", rec.Code, rec.Body.String(), *controls)
+	}
+	rec = sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/"+d.ID, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"removed"`) || runner.count() != 0 {
+		t.Errorf("DELETE in dry run = %d: %s, runs %d", rec.Code, rec.Body.String(), runner.count())
 	}
 }

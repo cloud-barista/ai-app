@@ -40,7 +40,8 @@ type storeFile struct {
 //
 // A record left pending or running by a previous process is marked
 // interrupted: nothing follows it any more, and what its nodes ended up with is
-// unknown.
+// unknown. A record left removing is marked remove-failed, so that it can be
+// taken down again.
 func OpenStore(path string) (*Store, error) {
 	s := &Store{path: path, records: make(map[string]*model.NodeDeployment)}
 	if path == "" {
@@ -84,6 +85,18 @@ func OpenStore(path string) (*Store, error) {
 // markInterrupted marks an unfinished record and its unfinished nodes
 // interrupted, and reports whether it changed anything.
 func markInterrupted(d *model.NodeDeployment, now time.Time) bool {
+	if d.Status == model.NodeDeployRemoving {
+		d.Status = model.NodeDeployRemoveFailed
+		d.RemovedAt = &now
+		for i := range d.Nodes {
+			n := &d.Nodes[i]
+			if n.Status == model.NodeDeployRemoving {
+				n.Status = model.NodeDeployRemoveFailed
+				n.Error = "the service stopped while the node was taken down; the state of its containers is unknown"
+			}
+		}
+		return true
+	}
 	if d.Status != model.NodeDeployPending && d.Status != model.NodeDeployRunning {
 		return false
 	}

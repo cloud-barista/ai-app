@@ -92,6 +92,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.POST("/deployments", handler.RestPostNodeDeployment)
 	g.GET("/deployments", handler.RestGetAllNodeDeployments)
 	g.GET("/deployments/:id", handler.RestGetNodeDeployment)
+	g.DELETE("/deployments/:id", handler.RestDeleteNodeDeployment)
 	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
 	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
 
