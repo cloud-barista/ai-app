@@ -9,6 +9,12 @@
 #   VLLM_BASE_URL   OpenAI compatible model server, e.g. http://10.0.0.5:8000/v1.
 #                   Dify takes model servers in its web interface, so this is
 #                   printed at the end to be entered there.
+#   DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN
+#                   token the agent backend and the local sandbox of Dify share.
+#                   Both refuse to start without one and Dify ships it empty,
+#                   so when neither this nor dify-src/docker/.env sets it, a
+#                   random token is generated on the node and kept in that
+#                   .env, where a redeploy finds it again. It is never printed.
 set -euo pipefail
 
 DIFY_VERSION=1.18.0
@@ -41,6 +47,21 @@ fi
 if [ -n "${DIFY_PORT:-}" ]; then
 	sed -i "s/^EXPOSE_NGINX_PORT=.*/EXPOSE_NGINX_PORT=${DIFY_PORT}/" .env
 fi
+
+sandbox_token=${DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN:-}
+if [ -z "$sandbox_token" ]; then
+	sandbox_token=$(sed -n 's/^DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN=//p' .env | tail -n 1)
+fi
+if [ -z "$sandbox_token" ]; then
+	sandbox_token=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+fi
+if grep -q '^DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN=' .env; then
+	escaped=$(printf '%s' "$sandbox_token" | sed 's/[\\|&]/\\&/g')
+	sed -i "s|^DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN=.*|DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN=${escaped}|" .env
+else
+	printf 'DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN=%s\n' "$sandbox_token" >>.env
+fi
+unset sandbox_token escaped
 
 docker compose up -d
 docker compose ps
