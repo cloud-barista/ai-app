@@ -9,8 +9,8 @@
 > **자연어 지원 에이전트(LLM)와 인프라 추천은 협력 기관 담당 영역입니다.** 이 저장소에는 연동을 확인하려고 둔
 > **모의 구현**만 `mock/partner/` 아래에 있고, 이노그리드 프로토타입에 들지 않습니다.
 >
-> **AI-App 은 VM 을 만들지 않습니다** (3차 개편). Infra 생성은 Infra 를 만드는 쪽(인프라 추천 또는 운영자)이 하고, AI-App 은
-> 배포한 추론 서비스·응용의 서빙 포트만 노드 보안 그룹에 엽니다 (4차 개편, 5-6).
+> **AI-App 은 VM 을 만들지 않습니다.** Infra 생성은 Infra 를 만드는 쪽(인프라 추천 또는 운영자)이 하고, AI-App 은
+> 배포한 추론 서비스·응용의 서빙 포트만 노드 보안 그룹에 엽니다 (5-6).
 >
 > **협력 기관 개발자는 [docs/api/](docs/api/README.md) 부터 보십시오.** 부르는 순서, 인증, 오류 형식, 기관별 연동 가이드
 > (ETRI·BESP·경희대)와 curl 예제가 거기 있습니다.
@@ -48,7 +48,7 @@
   `internal/boundary/boundary_test.go` 가 이것을 검사합니다.
 - 모의 구현은 로그·응답·콘솔에 `[partner mock]` 또는 "협력 기관 담당 영역 · 모의 구현" 으로 표시됩니다.
 
-설계와 그 근거는 `docs/design/model-catalog-and-node-deploy.md`(3차 개편, 데이터 모델과 배포 경로)에 있습니다. 4차 개편(2026-11-03)의 API 계약은 `docs/api/` 와 Swagger 입니다.
+설계와 그 근거는 `docs/design/model-catalog-and-node-deploy.md`(2026-10-29 개편, 데이터 모델과 배포 경로)에 있습니다. 2026-11-03 개편의 API 계약은 `docs/api/` 와 Swagger 입니다.
 
 ## 협력 기관이 할 일 (연동 지점)
 
@@ -65,11 +65,11 @@
 
 ## 개편 이력과 지워진 것
 
-1차년도 프로토타입은 한 프로세스였습니다. 2026-10 1차 개편에서 AI-App 서비스와 LLM 에이전트를 MCP 로 나눴고,
-2차 개편에서 자연어 해석(LLM)과 인프라 추천을 협력 기관 담당 영역의 모의 구현으로 옮기고, 그 자리에 LLM 없는
-자동배포/자동제어 엔진을 두었습니다. 3차 개편(2026-10-29, `docs/design/model-catalog-and-node-deploy.md`)에서
+1차년도 프로토타입은 한 프로세스였습니다. 2026-10 초 개편에서 AI-App 서비스와 LLM 에이전트를 MCP 로 나눴고,
+2026-10-13 개편에서 자연어 해석(LLM)과 인프라 추천을 협력 기관 담당 영역의 모의 구현으로 옮기고, 그 자리에 LLM 없는
+자동배포/자동제어 엔진을 두었습니다. 2026-10-29 개편(`docs/design/model-catalog-and-node-deploy.md`)에서
 데이터 모델을 모델·아티팩트·엔진 프로필·응용으로 다시 나누고, 배포 경로를 "VM 을 만들면서 설치 명령 실행" 에서
-"이미 있는 노드에 Semaphore 로 배포" 로 바꿨습니다. 4차 개편(2026-11-03)에서 다른 기관에 공유할 API 로 이름을 일정의 말
+"이미 있는 노드에 Semaphore 로 배포" 로 바꿨습니다. 2026-11-03 개편에서 다른 기관에 공유할 API 로 이름을 일정의 말
 (Runtime/Model/App)에 맞추고, 내리기·주소 조회·서빙 포트 열기·연결 상태·추천 자리를 넣었습니다. 아래 이름은 **지금 코드에 없습니다.**
 
 | 지워진 것 | 지금 |
@@ -84,17 +84,17 @@
 | 옛 응용 카탈로그(`AppSpec`, `internal/catalog`, 시드 4개)와 도구 `list_ai_apps`·`find_ai_apps`·`get_ai_app` | 카탈로그 `/aiapp/runtimes`·`/aiapp/models` (도구 `list_runtimes`·`get_runtime`·`list_models`·`get_model`), 응용 `/aiapp/apps` (도구 `list_apps`·`get_app`) |
 | 규칙 매처(`internal/catalog/resolve.go`), `GET /aiapp/apps/search`, 콘솔 "자연어 매칭" 화면, 엔진 `list_applications` 의 `query` | 없습니다. `list_applications` 는 `task`·`modality`·`format`·`runtimeId`·`source` 필터만 받습니다 |
 | **VM 생성 경로**(`internal/deploy`): `/aiapp/ns/{nsId}/deployments...`, `infraDynamicReview`/`infraDynamic` 호출, `postCommands` 로 설치, `infraName` 중복 차단(409), 도구 `plan_deployment`·`review_deployment`·`deploy_ai_app`·`update_deployment`·`control_deployment`·`delete_deployment`·`list_deployments`·`get_deployment_status`·`recommend_accelerator_spec`·`resolve_node_image` | **AI-App 은 VM 을 만들지 않습니다.** CB-Tumblebug 이 이미 띄운 노드에 배포: `/aiapp/deployments...` (도구 `create_deployment`·`get_deployment`·`list_node_deployments`·`get_deployment_logs`·`delete_deployment`·`control_node`). 지금의 `delete_deployment` 는 4차에 새로 만든 것으로 노드에서 컨테이너를 내리며 VM 을 지우지 않습니다 |
-| **서빙 포트 개방 (VM 생성 경로)**: 생성 직후 노드 보안 그룹에 `serving.port` 인바운드 규칙 추가 | 4차 개편에서 노드 배포 쪽으로 다시 넣었습니다. playbook 이 성공한 노드의 보안 그룹에 런타임·응용 포트를 엽니다 (5-6) |
-| (4차) `/aiapp/engines`, `/aiapp/engines/{engineId}`, 도구 `list_engines`, 모델 필터·compose 미리 보기 쿼리 `engine`, 아티팩트 `engines[].engine` | `/aiapp/runtimes`, `/aiapp/runtimes/{runtimeId}`, 도구 `list_runtimes`·`get_runtime`, 쿼리 `runtimeId`, 아티팩트 `runtimes[].runtimeId` |
-| (4차) 배포 `type: model-service`, 요청 필드 `modelService`, `modelService.engine` | `type: inference`, `inference`, `inference.runtimeId`. 노드 작업 키 접두사 `ms-` 는 그대로 (이미 배포된 노드 폴더·compose 프로젝트를 이어 쓰려고) |
+| **서빙 포트 개방 (VM 생성 경로)**: 생성 직후 노드 보안 그룹에 `serving.port` 인바운드 규칙 추가 | 2026-11-03 개편에서 노드 배포 쪽으로 다시 넣었습니다. playbook 이 성공한 노드의 보안 그룹에 런타임·응용 포트를 엽니다 (5-6) |
+| (2026-11-03) `/aiapp/engines`, `/aiapp/engines/{engineId}`, 도구 `list_engines`, 모델 필터·compose 미리 보기 쿼리 `engine`, 아티팩트 `engines[].engine` | `/aiapp/runtimes`, `/aiapp/runtimes/{runtimeId}`, 도구 `list_runtimes`·`get_runtime`, 쿼리 `runtimeId`, 아티팩트 `runtimes[].runtimeId` |
+| (2026-11-03) 배포 `type: model-service`, 요청 필드 `modelService`, `modelService.engine` | `type: inference`, `inference`, `inference.runtimeId`. 노드 작업 키 접두사 `ms-` 는 그대로 (이미 배포된 노드 폴더·compose 프로젝트를 이어 쓰려고) |
 | **가속기 실측**: `GET .../{infraId}/accelerator`, 도구 `probe_accelerator`, PCI 버스 + 벤더 도구 7종 판독(`internal/deploy/accelerator*.go`) | **없습니다.** 노드 배포는 CB-Tumblebug 노드 스펙의 `acceleratorType` 으로 GPU 여부만 정합니다 (5-4) |
 | **Infra 기준 헬스**: `GET .../{infraId}/health`, 도구 `check_serving_health`, `waitHealthy`, `POST /ns/{ns}/cmd/infra/{infra}` 로 노드 안 curl | **없습니다.** 추론 서비스 헬스는 `compose-up` playbook 이 노드 안에서 `health_url` 을 기다려 판정합니다 (5-5) |
 | 엔진 `deploy` 입력 `appId`·`deploymentName`·`specId`·`imageId`, `requires` 로 추론 서비스 먼저 배포 | 입력이 노드 배포 요청 그대로입니다 (3-2) |
 
-아래 10절(10-1 ~ 10-8)·12절의 실측 기록은 3차 개편 전, VM 을 만들던 시절에 잰 것이라 그대로 두었습니다.
+아래 10절(10-1 ~ 10-8)·12절의 실측 기록은 2026-10-29 개편 전, VM 을 만들던 시절에 잰 것이라 그대로 두었습니다.
 그때의 배포 경로 `/aiapp/ns/{nsId}/deployments...` 는 지금 없습니다 (위 표).
 
-### 업그레이드 (4차 개편 전에 띄운 AI-App 에서 올 때)
+### 업그레이드 (2026-11-03 개편 전에 띄운 AI-App 에서 올 때)
 
 | 남은 것 | 증상 | 할 일 |
 |---|---|---|
@@ -137,16 +137,16 @@ DELETE /aiapp/deployments/{id}   Semaphore 가 compose-down (named volume 은 �
 ## 2. 왜 이렇게 만들었나 - 설계 결정
 
 1차년도 결정의 근거는 과제 산출물인 기술 조사 문서의 사례 조사에 있고, 그 문서는 이 저장소 밖에 있습니다.
-3차 개편 결정의 근거는 `docs/design/model-catalog-and-node-deploy.md` 에 있습니다.
+2026-10-29 개편 결정의 근거는 `docs/design/model-catalog-and-node-deploy.md` 에 있습니다.
 
 | # | 결정 | 근거 |
 |---|---|---|
 | 1 | 계층을 넷으로 자름 (카탈로그 / 도구 / 엔진 / 아카이브) | 컨소시엄 담당 경계가 아직 유동적이라, 어느 쪽이 넘어가도 계층 하나만 잘리게 |
 | 2 | 엔진은 **정해진 순서(워크플로)** 로 돌고 다음 호출을 LLM 이 정하지 않음 | 배포는 체인이지만 분기(실패면 같은 요청으로 한 번 다시 배포)는 미리 정해 둘 수 있다. 자연어 해석과 LLM 반복 루프는 협력 기관 담당이라 모의 쪽에 있다 |
-| 3 | **포맷·정밀도·호환 런타임은 모델이 아니라 아티팩트에** 둠 (3차) | 같은 모델이 출처마다 다른 형태로 배포된다(HF 의 BF16 safetensors, Ollama 의 GGUF). 모델에 두면 런타임·포맷마다 항목을 통째로 복사해야 한다 |
-| 4 | **VM 을 만들지 않고 이미 있는 노드에 Semaphore 로 배포** (3차) | `postCommands` 는 VM 을 만들 때 한 번만 돌아 이미 있는 노드에 배포할 수 없고, 파일을 넘길 통로와 단계별 로그가 없었다 |
+| 3 | **포맷·정밀도·호환 런타임은 모델이 아니라 아티팩트에** 둠 (2026-10-29) | 같은 모델이 출처마다 다른 형태로 배포된다(HF 의 BF16 safetensors, Ollama 의 GGUF). 모델에 두면 런타임·포맷마다 항목을 통째로 복사해야 한다 |
+| 4 | **VM 을 만들지 않고 이미 있는 노드에 Semaphore 로 배포** (2026-10-29) | `postCommands` 는 VM 을 만들 때 한 번만 돌아 이미 있는 노드에 배포할 수 없고, 파일을 넘길 통로와 단계별 로그가 없었다 |
 | 5 | **쓰기는 기본적으로 실행 안 됨** (dry-run 기본 ON) | AWS MCP 도 쓰기를 안 열었고, CB-Tumblebug MCP 는 스스로 PoC 경고 |
-| 6 | **노드 위 폴더와 compose 프로젝트를 배포 ID 가 아니라 작업 키로** 고정 (3차) | 같은 노드에 같은 런타임·응용을 다시 배포하면 옛 컨테이너가 포트를 쥔 채 남아 새 컨테이너가 뜨지 못했다 (5-3) |
+| 6 | **노드 위 폴더와 compose 프로젝트를 배포 ID 가 아니라 작업 키로** 고정 (2026-10-29) | 같은 노드에 같은 런타임·응용을 다시 배포하면 옛 컨테이너가 포트를 쥔 채 남아 새 컨테이너가 뜨지 못했다 (5-3) |
 | 7 | **설정 없이 기동** | 클라우드에 안 닿는 기능이 대부분인데, 설정 하나 없다고 그 전부를 못 쓰게 할 이유가 없다 |
 | 8 | **담당 경계대로 자름** (이노그리드 구현 / 협력 기관 모의) | 협력 기관 담당 영역을 이노그리드가 구현한 것처럼 보이지 않게. 모의 구현은 `mock/partner/` 에만 두고 이노그리드 코드가 import 하지 않음 |
 
@@ -194,7 +194,7 @@ POST /aiapp/engine/workflows/{workflow} ─▶  deploy · heal · control · sta
 
 모의 자연어 에이전트의 계획 모델은 `AIAPP_LLM_BASE_URL` 에 `/v1/messages` 를 붙여 부르므로 **Anthropic Messages
 형식을 받는 엔드포인트면 무엇이든** 됩니다. Ollama 도 0.15 부터 `/v1/messages` 를 받아서 그대로 붙습니다
-(2026-10-07, 1차 개편 때의 에이전트로 `glm-4.7-flash` 시연). `AIAPP_LLM_API_KEY` 가 비어 있으면 모의 에이전트가
+(2026-10-07, 2026-10 초 개편 때의 에이전트로 `glm-4.7-flash` 시연). `AIAPP_LLM_API_KEY` 가 비어 있으면 모의 에이전트가
 계획 모델이 없다고 보고 지시 경로에 503 을 내므로, Ollama 처럼 키를 보지 않는 곳에도 아무 값이나 넣습니다.
 
 ### 3-1. 왜 도구 계층이 따로 있나
@@ -414,7 +414,7 @@ curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
 
 `inference.gpu` 를 주면 그 값(`gpuSource: request`), 안 주면 노드의 `specId` 를 `AIAPP_TUMBLEBUG_SPEC_NAMESPACE` 에서 읽어
 `acceleratorType` 이 `gpu` 인지(`spec`), 스펙을 못 읽으면 `false`(`default`, 이유는 `notes`)입니다. GPU 면 `install-docker` 가
-NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가속기 실측(PCI·벤더 도구 판독)은 3차 개편에서 지웠습니다.
+NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가속기 실측(PCI·벤더 도구 판독)은 2026-10-29 개편에서 지웠습니다.
 
 ### 5-5. 헬스
 
@@ -425,10 +425,10 @@ NVIDIA Container Toolkit 을 깔고 compose 에 GPU 예약이 붙습니다. 가�
   끝난 것이 있으면 실패합니다. 0 으로 끝난 초기화 컨테이너는 괜찮습니다. 자세한 것은 [docs/api/README.md](docs/api/README.md) 7절.
 - Infra 기준 헬스 경로(`.../{infraId}/health`, `check_serving_health`)와 엔진의 별도 헬스 단계는 없습니다.
 
-### 5-6. 서빙 포트 열기 (4차 개편)
+### 5-6. 서빙 포트 열기
 
 노드의 playbook 이 다 성공하면 AI-App 이 그 배포가 쓰는 포트를 CB-Tumblebug 보안 그룹에 엽니다 (`internal/nodedeploy/ports.go`).
-3차 개편에서 VM 생성 경로와 함께 지웠던 것을 노드 배포 쪽으로 다시 넣었습니다.
+2026-10-29 개편에서 VM 생성 경로와 함께 지웠던 것을 노드 배포 쪽으로 다시 넣었습니다.
 
 - 포트: 추론 서비스는 런타임 `port`(vLLM `8000`, Ollama `11434`), 응용은 업로드 때의 `ports`(배포 요청 `app.ports` 가 있으면 그것). 노드 결과 `ports`.
 - 대상: 노드 정보의 `securityGroupIds` 전부. 규칙은 **TCP 인바운드, `0.0.0.0/0`** (시험 환경 기준, 출처 제한은 열린 문제).
@@ -728,7 +728,7 @@ curl -X POST localhost:8090/aiapp/deployments -H 'Content-Type: application/json
      -d '{"type":"app","targets":[{"kind":"k8s","nsId":"etri"}],"app":{"name":"open-webui"}}'
 # HTTP 422  {"message":"unsupported deployment target: targets[0]: kind k8s is not deployed to yet; use kind node"}
 curl localhost:8090/aiapp/engines
-# HTTP 404  {"message":"Not Found"}   (4차 개편에서 /aiapp/runtimes 로 바뀜)
+# HTTP 404  {"message":"Not Found"}   (2026-11-03 개편에서 /aiapp/runtimes 로 바뀜)
 curl -X POST 'localhost:8090/aiapp/engine/workflows/status?ns=default' -H 'Content-Type: application/json' -d '{"deploymentId":"none-01"}'
 # HTTP 200  {"workflow":"status", ... "status":"failed","message":"deployment: deployment not found: none-01; output: deployment not found: none-01"}
 curl -X POST localhost:8090/aiapp/partner/nl/ns/default/intents -H 'Content-Type: application/json' -d '{"intent":"x"}'
@@ -927,7 +927,7 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 
 ## 10. 검증 결과
 
-### 10-00. 4차 개편 (2026-11-03, 로컬)
+### 10-00. 2026-11-03 (로컬)
 
 실제 CB-Tumblebug 과 클라우드 VM 에서는 아직 돌리지 않았습니다. 작업 진행 기록(저장소에 커밋하지 않는 문서)에서 옮겼고,
 "구현자" 는 그 작업을 구현한 쪽이 돌려 보고한 것입니다.
@@ -944,14 +944,14 @@ AI-App·엔진·모의 추천 API 는 같은 설정 로더(`internal/config`)를
 `docs/api/examples/` 의 `00`·`01`·`02`·`03`(dry-run)·`04`(dry-run)·`05`·`06`·`07` 은 2026-11-03 에 가짜 CB-Tumblebug 을 붙인 로컬 AI-App 에
 돌려 봤습니다(인증 켠 상태). dry-run 이라 `05` 는 빈 목록이었습니다.
 
-### 10-0. 3차 개편 (2026-10-29, 로컬)
+### 10-0. 2026-10-29 (로컬)
 
 실제 클라우드 노드에는 배포하지 않았습니다. 로컬의 실 Semaphore `v2.12.17` + docker-in-docker 컨테이너(노드 대신) + 가짜 CB-Tumblebug 으로
 app 배포, Ollama 추론 서비스(당시 이름 `model-service`) 배포, 같은 노드 재배포 교체, dry-run 시 Semaphore 변화 없음, 실행 뒤 남은 key·inventory 0 을 확인했습니다.
 vLLM GPU 기동, `install-docker` 의 실제 설치 분기, MCP 를 거친 `create_deployment` 끝까지의 배포는 확인하지 못했습니다.
 작업별 커밋과 확인한 것·못 한 것은 `docs/design/model-catalog-and-node-deploy.md` 11절에 있습니다.
 
-아래 10-1 ~ 10-8 은 **3차 개편 전 기록**입니다. 2026-09 에 한 프로세스 시절 코드로 잰 것이고, 그때의 VM 생성 경로·서빙 포트 개방·
+아래 10-1 ~ 10-8 은 **2026-10-29 개편 전 기록**입니다. 2026-09 에 한 프로세스 시절 코드로 잰 것이고, 그때의 VM 생성 경로·서빙 포트 개방·
 가속기 프로브·규칙 매처는 지금 코드에 없습니다. 본문의 절 번호(6-4, 6-5 등)는 그때 README 의 번호입니다.
 
 **실제 VM 생성부터 삭제까지 (2026-09-02)**
@@ -1138,9 +1138,9 @@ NVIDIA Deep Learning AMI 를 붙였습니다. 부팅은 되지만 드라이버�
 
 | 안 넣은 것 | 왜 |
 |---|---|
-| VM(Infra) 생성 | 3차 개편에서 지움. CB-Tumblebug 이 만든 노드를 받아 배포함. 생성은 인프라 추천 쪽이나 운영자 몫 |
+| VM(Infra) 생성 | 2026-10-29 개편에서 지움. CB-Tumblebug 이 만든 노드를 받아 배포함. 생성은 인프라 추천 쪽이나 운영자 몫 |
 | 서빙 포트 닫기, 출처 제한 | 배포 때 `0.0.0.0/0` 으로 열기만 하고 내릴 때 닫지 않음 (5-6). 같은 보안 그룹을 다른 작업이 쓸 수 있고, 출처는 정하지 않음 |
-| 가속기 실측 | 3차 개편에서 지움. 노드 기준으로 다시 만들려면 노드 원격 명령 경로부터 정해야 함 |
+| 가속기 실측 | 2026-10-29 개편에서 지움. 노드 기준으로 다시 만들려면 노드 원격 명령 경로부터 정해야 함 |
 | 쿠버네티스 대상 배포 | `kind: k8s` 자리만 있고 `422`. 계획서상 3차년도 항목 |
 | 모델 추천·인프라 추천 로직 | 경희대·협력 기관 몫. AI-App 은 메타데이터를 원래 값 그대로 내주고, 모델·응용 추천 구현을 끼울 자리(`internal/recommend`)만 둠 |
 | 한 런타임에 모델 여러 개 | 작업 키가 `ms-<runtimeId>` 라 노드 하나에 런타임마다 추론 서비스 하나. 같은 런타임으로 다른 모델을 배포하면 바뀜 |
@@ -1153,7 +1153,7 @@ NVIDIA Deep Learning AMI 를 붙였습니다. 부팅은 되지만 드라이버�
 
 ## 12. 이 프로토타입이 확인해 준 CB-Tumblebug 사실
 
-> **3차 개편 전 기록.** VM 을 만들던 시절(2026-09-01)에 확인한 것이라 지금 코드가 쓰지 않는 API(`infraDynamic`, `postCommands`,
+> **2026-10-29 개편 전 기록.** VM 을 만들던 시절(2026-09-01)에 확인한 것이라 지금 코드가 쓰지 않는 API(`infraDynamic`, `postCommands`,
 > 보안 그룹 규칙 등)가 섞여 있습니다. CB-Tumblebug 쪽 사실이라 그대로 둡니다.
 
 다른 팀도 겪을 것들이라 적어 둡니다. 전부 2026-09-01 실측입니다.
