@@ -324,7 +324,8 @@ Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8
 | Semaphore 는 깨진 키에 panic 한다 | Semaphore v2.12.17 은 형식이 깨진 SSH 키를 등록할 때 거절하지 않고, 그 키를 쓰는 태스크에서 프로세스 전체가 panic("close of nil channel", `pkg/ssh/agent.go`)으로 죽는다. 우리는 PEM 개인키 블록인지 먼저 검사해 막는다(`internal/semaphore/run.go` `CheckPrivateKey`). PEM 블록 안의 키 내용까지는 검사하지 않는다 |
 | 큰 모델은 시간 상한에 걸릴 수 있다 | 태스크 하나의 상한이 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분이고, Ollama 모델 pull 대기 `wait_timeout` 기본 1800초도 30분이다. vLLM 은 `/health` 가 가중치를 다 받은 뒤 응답하는데 `compose-up` 의 헬스 대기는 10초 간격 60번(약 10분)이다. 큰 모델을 처음 받는 노드는 이 상한들에 걸릴 수 있다 |
 | compose env 가 평문으로 남는다 | 배포 요청의 `env`(예 `HF_TOKEN`)가 배포 기록(`AIAPP_DEPLOYMENT_STORE_FILE`), 배포·제어 아카이브, 공유 저장소의 `.env`, 노드의 `.env` 에 평문으로 남는다. 비밀값을 가리거나 따로 넘기는 경로가 없다 |
-| 실측하지 못한 경로 | `install-docker` 가 docker 를 처음부터 까는 분기(docker 가 없는 Ubuntu 노드)는 실제 VM 에서 돌지 않았다. 시험한 이미지에는 모두 docker 가 있었다 |
+| 실측하지 못한 경로 | `install-docker` 가 docker 를 처음부터 까는 분기는 RHEL 9·Amazon Linux 2023(aws)과 AlmaLinux 9(azure) 실제 VM 에서 확인했고, Ubuntu·Debian·Fedora·Oracle Linux·CentOS Stream 은 실제 VM 에서 돌지 않았다(Ubuntu·Debian 은 컨테이너로만 확인) |
+| CB-Tumblebug 이 만든 aws RHEL 계열 VM 에 `cb-user` 가 없다 | cb-spider 의 사용자 생성이 `useradd -G sudo` 라 `sudo` 그룹이 없는 이미지에서 실패한다. AI-App 은 `targets[].sshUser` 로 이미지 기본 사용자를 쓰게 해 피해 간다. 고칠 곳은 cb-spider 다 |
 | 엔진 대기 상한이 AI-App 쪽 상한보다 짧다 | 엔진의 대기 단계는 `AIAPP_HEALTH_TIMEOUT` 기본 15분에서 멈추는데, AI-App 은 노드마다 `install-docker` 와 `compose-up` 을 각각 최대 30분(`AIAPP_SEMAPHORE_TIMEOUT`)까지 돌린다. 엔진 실행은 실패로 끝났는데 배포는 나중에 성공하는 일이 생긴다 |
 | 응용 저장소에 이름 규칙 위반 디렉터리가 있으면 기동 실패 | AI-App 은 기동 때 `AIAPP_APP_STORE_DIR` 을 다시 읽고, 응용 이름 규칙(`[a-z0-9][a-z0-9_-]*`)에 안 맞는 디렉터리나 깨진 버전이 있으면 기동을 거부한다(`internal/appstore/appstore.go`). 손으로 넣은 디렉터리가 남아 있으면 서비스가 뜨지 않는다 |
 

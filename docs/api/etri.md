@@ -42,11 +42,24 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 
 GPU 사용을 직접 정하려면 배포 요청에 `"gpu": true` 를 넣습니다. 그러면 스펙을 보지 않습니다.
 
-CB-Tumblebug(cb-spider)은 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로 만듭니다. `sudo` 그룹이 없는 이미지(RHEL,
+아래 이미지로 VM 을 만들어 AI-App 배포까지 확인했습니다.
+
+| CSP | 이미지 | 스펙 | `install-docker` | 배포 | 계정 |
+|---|---|---|---|---|---|
+| aws | RHEL 9.8 (`ami-0938769ffbe276d3b`) | t3.medium | Docker rpm 저장소로 docker 29.9.3, compose 5.7.0 | Open WebUI `running`, 밖에서 HTTP 200 | `sshUser: ec2-user` |
+| aws | Amazon Linux 2023 (`ami-0c051224e18c11f2e`) | t3.medium | 배포판 `docker` 25.0.18, compose 5.7.0 (GitHub, sha256 확인) | Open WebUI `running`, HTTP 200 | `sshUser: ec2-user` |
+| aws | Deep Learning Base OSS Nvidia Driver GPU AMI (Amazon Linux 2023, `ami-0f328602208fc4f93`) | g4dn.xlarge (T4) | compose 5.7.0 추가, nvidia 런타임은 이미지에 있음 | Ollama + Qwen3-VL-8B `running`, GPU 확인 `library=CUDA` Tesla T4 | `sshUser: ec2-user` |
+| azure | AlmaLinux 9 (`almalinux:almalinux-x86_64:9-gen2`) | Standard_B2s | docker 가 없는 상태에서 Docker rpm 저장소로 설치 | Open WebUI `running`, HTTP 200 | `cb-user` (지정 없음) |
+
+CB-Tumblebug(cb-spider)은 aws 에 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로 만듭니다. `sudo` 그룹이 없는 이미지(RHEL,
 Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해, 노드 정보에는 `cb-user` 가 있는데 노드에는 그 사용자가 없습니다.
-이미지의 기본 사용자(aws 는 `ec2-user`, azure 는 VM 을 만들 때 정한 관리자 사용자)는 같은 키로 접속되므로, 배포 요청의 대상에
+azure 는 VM 을 만들 때 Azure 가 관리자 사용자로 `cb-user` 를 만들어 이 문제가 없습니다(AlmaLinux 9 에서 확인).
+aws 에서는 이미지의 기본 사용자(`ec2-user`)가 같은 키로 접속되므로, 배포 요청의 대상에
 `"sshUser": "ec2-user"` 처럼 줍니다. 키는 그대로 CB-Tumblebug 이 가진 키를 쓰고, 실제로 접속한 사용자는 `nodes[].sshUser` 에 남으며
 같은 배포를 내릴 때도 그 사용자로 접속합니다([README](README.md) 10절).
+
+azure 마켓플레이스에서 플랜(구매 조건)이 붙은 이미지(예: CIQ 의 Rocky Linux 이미지)는 지금 CB-Tumblebug 으로 만들 수 없습니다.
+VM 생성이 `VMMarketplaceInvalidInput: ... requires Plan information in the request` 로 실패합니다. 플랜이 없는 이미지(AlmaLinux, RHEL 등)를 씁니다.
 
 ### 2-1. 실제로 써 본 이미지 (2026-11-03)
 
