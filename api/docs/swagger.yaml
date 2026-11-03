@@ -764,6 +764,15 @@ definitions:
           Container Toolkit was installed.
         example: false
         type: boolean
+      gpuCheck:
+        description: |-
+          GPUCheck is, for an inference service given the GPU, what compose-up
+          found on the node showing that the runtime runs on it: the method
+          (nvidia-smi or log) and the nvidia-smi compute process or the log line.
+          When the runtime is not on the GPU the node fails instead. Absent
+          without GPU, for an app and for a dry run.
+        example: 'nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB'
+        type: string
       gpuSource:
         description: |-
           GPUSource says where GPU came from: request, spec, or default when the
@@ -1083,9 +1092,12 @@ definitions:
       args:
         description: |-
           Args are appended to the runtime command after the arguments this
-          service sets. For vllm they follow `vllm serve --model <ref> --port
-          <port>` (and --runner pooling for an embedding model), for example
-          ["--max-model-len", "32768"]. At most 32, each 1 to 256 characters
+          service sets and the catalog arguments of the artifact
+          (runtimes[].args). For vllm they follow `vllm serve --model <ref>
+          --port <port>` (and --runner pooling for an embedding model) and the
+          catalog arguments, for example ["--max-model-len", "32768"]; vllm takes
+          the last value of a repeated flag, so they override the catalog
+          arguments. At most 32, each 1 to 256 characters
           without control characters; --model, --port and --host are set by the
           service and refused. Runtime ollama takes none and refuses them.
         example:
@@ -1156,6 +1168,19 @@ definitions:
     type: object
   model.RuntimeCompat:
     properties:
+      args:
+        description: |-
+          Args are arguments the runtime needs for this artifact, such as a
+          context length that fits the GPU memory. They are appended after the
+          arguments the service sets and before the inference.args of a deploy
+          request; vLLM takes the last value when a flag repeats, so the request
+          can override them. Only vllm takes them.
+        example:
+        - --max-model-len
+        - "32768"
+        items:
+          type: string
+        type: array
       minVersion:
         description: |-
           MinVersion is the oldest runtime version known to load the artifact.
@@ -1951,15 +1976,15 @@ paths:
       description: |-
         Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
 
-        type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
+        type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 
         Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 
-        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
+        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 
         Once the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.
 
-        The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+        The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
       operationId: PostNodeDeployment
       parameters:
       - description: What to deploy and where
@@ -1984,7 +2009,8 @@ paths:
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "404":
-          description: Model, artifact, runtime profile or application not found
+          description: Model, artifact, runtime profile, application or target node
+            not found
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "422":
@@ -1993,6 +2019,11 @@ paths:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
           description: The record could not be written
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "502":
+          description: CB-Tumblebug failed or did not answer while the target nodes
+            were read
           schema:
             $ref: '#/definitions/model.SimpleMsg'
       security:
@@ -2504,7 +2535,8 @@ paths:
         name: gpu
         type: boolean
       - collectionFormat: multi
-        description: Extra runtime argument, repeated for each, such as arg=--max-model-len&arg=32768
+        description: Extra runtime argument, appended after the catalog args of the
+          artifact (runtimes[].args) and repeated for each, such as arg=--max-model-len&arg=32768
         in: query
         items:
           type: string

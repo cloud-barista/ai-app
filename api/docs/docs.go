@@ -424,7 +424,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
                 "consumes": [
                     "application/json"
                 ],
@@ -467,7 +467,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Model, artifact, runtime profile or application not found",
+                        "description": "Model, artifact, runtime profile, application or target node not found",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -480,6 +480,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "The record could not be written",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "502": {
+                        "description": "CB-Tumblebug failed or did not answer while the target nodes were read",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1193,7 +1199,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "multi",
-                        "description": "Extra runtime argument, repeated for each, such as arg=--max-model-len\u0026arg=32768",
+                        "description": "Extra runtime argument, appended after the catalog args of the artifact (runtimes[].args) and repeated for each, such as arg=--max-model-len\u0026arg=32768",
                         "name": "arg",
                         "in": "query"
                     }
@@ -2445,6 +2451,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "gpuCheck": {
+                    "description": "GPUCheck is, for an inference service given the GPU, what compose-up\nfound on the node showing that the runtime runs on it: the method\n(nvidia-smi or log) and the nvidia-smi compute process or the log line.\nWhen the runtime is not on the GPU the node fails instead. Absent\nwithout GPU, for an app and for a dry run.",
+                    "type": "string",
+                    "example": "nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB"
+                },
                 "gpuSource": {
                     "description": "GPUSource says where GPU came from: request, spec, or default when the\nspec could not be read.",
                     "type": "string",
@@ -2804,7 +2815,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "args": {
-                    "description": "Args are appended to the runtime command after the arguments this\nservice sets. For vllm they follow ` + "`" + `vllm serve --model \u003cref\u003e --port\n\u003cport\u003e` + "`" + ` (and --runner pooling for an embedding model), for example\n[\"--max-model-len\", \"32768\"]. At most 32, each 1 to 256 characters\nwithout control characters; --model, --port and --host are set by the\nservice and refused. Runtime ollama takes none and refuses them.",
+                    "description": "Args are appended to the runtime command after the arguments this\nservice sets and the catalog arguments of the artifact\n(runtimes[].args). For vllm they follow ` + "`" + `vllm serve --model \u003cref\u003e\n--port \u003cport\u003e` + "`" + ` (and --runner pooling for an embedding model) and the\ncatalog arguments, for example [\"--max-model-len\", \"32768\"]; vllm takes\nthe last value of a repeated flag, so they override the catalog\narguments. At most 32, each 1 to 256 characters\nwithout control characters; --model, --port and --host are set by the\nservice and refused. Runtime ollama takes none and refuses them.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -2878,6 +2889,17 @@ const docTemplate = `{
                 "runtimeId"
             ],
             "properties": {
+                "args": {
+                    "description": "Args are arguments the runtime needs for this artifact, such as a\ncontext length that fits the GPU memory. They are appended after the\narguments the service sets and before the inference.args of a deploy\nrequest; vLLM takes the last value when a flag repeats, so the request\ncan override them. Only vllm takes them.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "--max-model-len",
+                        "32768"
+                    ]
+                },
                 "minVersion": {
                     "description": "MinVersion is the oldest runtime version known to load the artifact.\nEmpty means not recorded.",
                     "type": "string",
