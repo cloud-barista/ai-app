@@ -58,6 +58,9 @@ type Options struct {
 	// Env is added to the engine container environment. A key that the
 	// template also sets replaces the template value.
 	Env map[string]string
+	// Args are appended to the engine command after the arguments the
+	// service sets. Only vllm takes them.
+	Args []string
 }
 
 // envVar is one rendered environment entry.
@@ -93,12 +96,20 @@ func Render(m *model.Model, artifact *model.Artifact, engine *model.RuntimeProfi
 		return "", fmt.Errorf("%w: no compose template for runtime %s", ErrIncompatible, engine.ID)
 	}
 
+	if err := model.ValidateRuntimeArgs("args", opts.Args); err != nil {
+		return "", err
+	}
+
 	v := view{Model: m, Artifact: artifact, Engine: engine, GPU: opts.GPU}
 	defaults := map[string]string{}
 	switch engine.ID {
 	case model.RuntimeVLLM:
-		v.Args = vllmArgs(m, artifact, engine)
+		v.Args = append(vllmArgs(m, artifact, engine), opts.Args...)
 		defaults[hfTokenEnv] = "${" + hfTokenEnv + ":-}"
+	default:
+		if len(opts.Args) > 0 {
+			return "", fmt.Errorf("%w: args are not supported by runtime %s", ErrInvalidOption, engine.ID)
+		}
 	}
 	env, err := mergeEnv(defaults, opts.Env)
 	if err != nil {

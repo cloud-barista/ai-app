@@ -3,8 +3,10 @@ package compose
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -165,4 +167,82 @@ func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
 	if got := CompletionServices(model.RuntimeVLLM); len(got) != 0 {
 		t.Errorf("vllm completion services = %v, want none", got)
 	}
+}
+
+func TestRenderAppendsArgsAfterBuiltins(t *testing.T) {
+	m, a := artifactOf(t, "ministral-3-8b", "hf-fp8")
+	args := []string{"--max-model-len", "32768", `--odd=a "q" $HOME: # é,[x]{y}`}
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Args: args})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", ` +
+		`"--max-model-len", "32768", "--odd=a \"q\" $$HOME: # é,[x]{y}"]`
+	if !strings.Contains(rendered, want) {
+		t.Errorf("rendered file lacks %q\n%s", want, rendered)
+	}
+	dockerComposeConfig(t, rendered)
+	if got := composeCommand(t, rendered); !reflect.DeepEqual(got, append([]string{
+		"--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000"}, args...)) {
+		t.Errorf("docker compose reads command %q", got)
+	}
+}
+
+func TestRenderRefusesArgs(t *testing.T) {
+	vllmModel, vllmArtifact := artifactOf(t, "ministral-3-8b", "hf-fp8")
+	tooMany := make([]string, model.MaxRuntimeArgs+1)
+	for i := range tooMany {
+		tooMany[i] = "x"
+	}
+	for name, args := range map[string][]string{
+		"too many":   tooMany,
+		"newline":    {"--max-model-len\n32768"},
+		"control":    {"a\tb"},
+		"empty":      {""},
+		"too long":   {strings.Repeat("x", 257)},
+		"model":      {"--model", "other/model"},
+		"model=":     {"--model=other/model"},
+		"port":       {"--port", "9000"},
+		"host":       {"--host=0.0.0.0"},
+		"prefix":     {"--mod", "other/model"},
+		"end of opt": {"--", "other/model"},
+	} {
+		if _, err := Render(vllmModel, vllmArtifact, engineOf(t, model.RuntimeVLLM), Options{Args: args}); !errors.Is(err, model.ErrValidation) {
+			t.Errorf("%s: error = %v, want ErrValidation", name, err)
+		}
+	}
+	if _, err := Render(vllmModel, vllmArtifact, engineOf(t, model.RuntimeVLLM), Options{Args: []string{strings.Repeat("é", 256), "--model-impl", "vllm"}}); err != nil {
+		t.Errorf("256 characters and --model-impl: %v", err)
+	}
+
+	m, a := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
+	_, err := Render(m, a, engineOf(t, model.RuntimeOllama), Options{Args: []string{"--max-model-len", "32768"}})
+	if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "args are not supported by runtime ollama") {
+		t.Errorf("ollama: error = %v, want ErrInvalidOption about ollama", err)
+	}
+}
+
+// composeCommand is the command of the engine service as docker compose reads
+// the rendered file. The config output writes a literal "$" as "$$" again.
+func composeCommand(t *testing.T, rendered string) []string {
+	t.Helper()
+	cmd := exec.Command("docker", "compose", "-p", "modelcheck", "-f", "-", "config", "--format", "json")
+	cmd.Stdin = strings.NewReader(rendered)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("docker compose config: %v", err)
+	}
+	var cfg struct {
+		Services map[string]struct {
+			Command []string `json:"command"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatalf("decode compose config: %v", err)
+	}
+	command := cfg.Services["engine"].Command
+	for i := range command {
+		command[i] = strings.ReplaceAll(command[i], "$$", "$")
+	}
+	return command
 }

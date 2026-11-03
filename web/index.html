@@ -576,6 +576,10 @@
         <label>env · 한 줄에 KEY=VALUE. 엔진 컨테이너 환경과 .env 에 들어갑니다</label>
         <textarea id="dp-ms-env" rows="3" placeholder="HF_TOKEN=..."></textarea>
       </div>
+      <div class="field">
+        <label>런타임 인자 (args) · 공백으로 구분. vLLM 기본 인자 뒤에 붙습니다. --model·--port·--host 는 못 바꿉니다</label>
+        <input type="text" id="dp-ms-args" placeholder="--max-model-len 32768">
+      </div>
     </div>
 
     <div id="dp-f-app" style="margin-top:14px;display:none">
@@ -1785,6 +1789,8 @@ function buildDeployRequest() {
     if ($('dp-gpu').value) ms.gpu = $('dp-gpu').value === 'true';
     const env = parseEnv($('dp-ms-env').value, 'env');
     if (Object.keys(env).length) ms.env = env;
+    const args = $('dp-ms-args').value.split(/\s+/).filter(Boolean);
+    if (args.length) ms.args = args;
     req.inference = ms;
   } else {
     const app = { name: $('dp-app').value };

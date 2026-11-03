@@ -254,9 +254,9 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 	if err != nil {
 		return nil, err
 	}
-	// A render up front refuses an incompatible pairing or env before the
+	// A render up front refuses an incompatible pairing, env or args before the
 	// request is accepted. The GPU block is decided per node later.
-	if _, err := compose.Render(m, artifact, runtime, compose.Options{Env: inf.Env}); err != nil {
+	if _, err := compose.Render(m, artifact, runtime, compose.Options{Env: inf.Env, Args: inf.Args}); err != nil {
 		return nil, err
 	}
 	req.Inference = &inf
@@ -577,7 +577,7 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 		return "", writeManifest(dir)
 	}
 
-	rendered, err := compose.Render(p.model, p.artifact, p.runtime, compose.Options{GPU: gpu, Env: req.Inference.Env})
+	rendered, err := compose.Render(p.model, p.artifact, p.runtime, compose.Options{GPU: gpu, Env: req.Inference.Env, Args: req.Inference.Args})
 	if err != nil {
 		return "", err
 	}

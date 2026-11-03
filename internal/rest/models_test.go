@@ -120,6 +120,11 @@ func TestModelComposeRoute(t *testing.T) {
 		t.Errorf("compose body:\n%s", body)
 	}
 
+	rec = do(s, http.MethodGet, "/aiapp/models/ministral-3-8b/artifacts/hf-fp8/compose?arg=--max-model-len&arg=32768", "")
+	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, `"--port", "8000", "--max-model-len", "32768"]`) {
+		t.Errorf("compose with args = %d:\n%s", rec.Code, body)
+	}
+
 	for _, tc := range []struct {
 		path string
 		want int
@@ -129,6 +134,8 @@ func TestModelComposeRoute(t *testing.T) {
 		{"/aiapp/models/qwen3-vl-8b/artifacts/nope/compose", http.StatusNotFound},
 		{"/aiapp/models/nope/artifacts/hf-bf16/compose", http.StatusNotFound},
 		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?gpu=maybe", http.StatusBadRequest},
+		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?arg=--port&arg=9000", http.StatusBadRequest},
+		{"/aiapp/models/qwen3-vl-8b/artifacts/ollama-gguf/compose?arg=--verbose", http.StatusBadRequest},
 	} {
 		if rec := do(s, http.MethodGet, tc.path, ""); rec.Code != tc.want {
 			t.Errorf("GET %s = %d, want %d: %s", tc.path, rec.Code, tc.want, rec.Body.String())

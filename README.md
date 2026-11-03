@@ -289,11 +289,12 @@ REST 로 직접 배포하든, 엔진이 MCP 로 부르든, 모의 에이전트�
 
 | `id` | `image` | `formats` | `port` | `healthPath` | `apiBasePath` | compose |
 |---|---|---|---|---|---|---|
-| `vllm` | `vllm/vllm-openai:v0.32.0` | `hf` | `8000` | `/health` | `/v1` | `--model <ref>` 로 기동, HF 캐시는 named volume, `HF_TOKEN` 은 env 나 `.env` 에서 |
+| `vllm` | `vllm/vllm-openai:v0.32.0` | `hf` | `8000` | `/health` | `/v1` | `--model <ref>` 로 기동, 요청의 `inference.args` 는 기본 인자 뒤에 붙음, HF 캐시는 named volume, `HF_TOKEN` 은 env 나 `.env` 에서 |
 | `ollama` | `ollama/ollama:0.40.13` | `gguf` | `11434` | `/` | `/v1` | 서버가 healthy 가 되면 한 번 도는 `model-pull` 컨테이너가 `ollama pull <ref>` 후 종료 |
 
 GPU 를 쓰면 런타임 서비스에 NVIDIA GPU 전부를 예약하는 `deploy.resources.reservations.devices` 블록이 붙습니다.
 `GET /aiapp/models/{modelId}/artifacts/{artifactId}/compose?runtimeId=&gpu=` 로 노드에 갈 compose 를 미리 볼 수 있습니다.
+런타임 인자는 `arg` 를 되풀이해 줍니다(`&arg=--max-model-len&arg=32768`).
 (만들어지는 compose 안에서 런타임 서비스의 이름은 `engine` 입니다. API 이름을 바꿀 때 노드 쪽 이름은 그대로 두었습니다.)
 
 ### 4-3. App
@@ -351,6 +352,9 @@ curl -F name=open-webui -F script=@examples/apps/open-webui/deploy.sh \
 - `kind: k8s` 는 자리만 있고 `422` 로 거절합니다.
 - `inference.runtimeId` 를 빼면 아티팩트의 첫 런타임, `app.version` 을 빼거나 `0` 이면 최신 버전입니다. 기록에는 고른 값이 채워집니다.
 - `inference.gpu` 를 빼면 노드 스펙에서 정합니다 (5-4).
+- `inference.args` 는 런타임 명령 뒤에 붙는 인자입니다. vLLM 이면 `vllm serve --model <ref> --port <port>`(임베딩은 `--runner pooling` 까지) 뒤에
+  붙습니다. 예 `["--max-model-len", "32768"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, 서비스가 정하는 `--model`·`--port`·`--host`
+  (와 그 앞부분만 쓴 `--mod` 같은 줄임)는 `400` 입니다. Ollama 는 명령 인자를 받지 않아 `args` 를 주면 `400` 입니다.
 - `app.ports` 를 주면 그 배포에서는 업로드 때의 `ports` 대신 그것을 엽니다 (5-6).
 - `env` 이름은 `[A-Z_][A-Z0-9_]*`, 값에는 줄바꿈과 작은따옴표를 넣을 수 없습니다. 추론 서비스는 런타임 컨테이너 환경과 `.env` 에,
   응용은 `.env` 에 쓰이고 script 실행 전에 export 됩니다.
@@ -511,6 +515,7 @@ AI-App 도구 13개는 `GET /aiapp/tools` 와 MCP 서버 `/aiapp/mcp` 로 그대
 | 응용 `name` | `[a-z0-9][a-z0-9_-]*`, 63자 | compose 프로젝트 이름(`aiapp-app-<name>`)이 됨 |
 | 응용 파일 이름 | 경로 구분자 없음, `.` 으로 시작 안 함 | 노드 폴더에 평평하게 놓이고 `.env`·`.aiapp-*` 와 겹치지 않게 |
 | `env` | 이름 `[A-Z_][A-Z0-9_]*`, 값에 줄바꿈·작은따옴표 없음 | `.env` 에 작은따옴표로 쓰여 compose 와 bash 가 그대로 읽음 |
+| `inference.args` | 32개, 하나에 1~256자, 제어 문자 없음, `--model`·`--port`·`--host` 아님 | compose `command` 에 따옴표 친 YAML 문자열로 들어가고 `$` 는 `$$` 로 씀 |
 | `targets[].nsId`·`infraId`·`nodeId` | `[A-Za-z0-9][A-Za-z0-9._-]*`, 128자 | 공유 저장소 폴더 이름이 됨 |
 
 ## 7. 아카이빙 (1차년도 ⑥ 산출물)

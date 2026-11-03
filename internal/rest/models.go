@@ -116,15 +116,16 @@ func (h *Handler) RestDeleteModel(c echo.Context) error {
 // RestGetModelCompose godoc
 // @ID GetModelCompose
 // @Summary Preview the compose file of an inference service
-// @Description Render the docker-compose.yml that runs one artifact of a model with one runtime profile, without deploying anything. The pairing is refused with 422 unless the artifact lists the runtime and the runtime loads the artifact format. The file starts with one `docker compose up -d`: for vllm it runs the OpenAI compatible server with --model set to the artifact ref (and --runner pooling for an embedding model); for ollama it runs the server and a one-shot container that pulls the model once the server is healthy. HF_TOKEN is left to the environment or a .env file beside the compose file.
+// @Description Render the docker-compose.yml that runs one artifact of a model with one runtime profile, without deploying anything. The pairing is refused with 422 unless the artifact lists the runtime and the runtime loads the artifact format. The file starts with one `docker compose up -d`: for vllm it runs the OpenAI compatible server with --model set to the artifact ref (and --runner pooling for an embedding model); for ollama it runs the server and a one-shot container that pulls the model once the server is healthy. HF_TOKEN is left to the environment or a .env file beside the compose file. Each arg is appended to the vllm command after those arguments, as inference.args of POST /deployments is; ollama refuses them with 400.
 // @Tags [Model] AI Model Catalog
 // @Produce text/yaml,json
 // @Param modelId path string true "AI model ID" default(qwen3-vl-8b)
 // @Param artifactId path string true "Artifact ID within the model" default(hf-bf16)
 // @Param runtimeId query string false "Runtime profile ID. Defaults to the first runtime the artifact lists"
 // @Param gpu query bool false "Reserve every NVIDIA GPU of the node for the runtime" default(false)
+// @Param arg query []string false "Extra runtime argument, repeated for each, such as arg=--max-model-len&arg=32768" collectionFormat(multi)
 // @Success 200 {string} string "docker-compose.yml, as text/yaml"
-// @Failure 400 {object} model.SimpleMsg "gpu is not a boolean"
+// @Failure 400 {object} model.SimpleMsg "gpu is not a boolean, or an arg is refused"
 // @Failure 404 {object} model.SimpleMsg "AI model, artifact or runtime profile not found"
 // @Failure 422 {object} model.SimpleMsg "The artifact cannot be run with the runtime"
 // @Security BearerAuth
@@ -158,7 +159,7 @@ func (h *Handler) RestGetModelCompose(c echo.Context) error {
 		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Runtime profile not found")})
 	}
 
-	rendered, err := compose.Render(m, artifact, runtime, compose.Options{GPU: gpu})
+	rendered, err := compose.Render(m, artifact, runtime, compose.Options{GPU: gpu, Args: c.QueryParams()["arg"]})
 	if err != nil {
 		log.Warn().Err(err).Str("modelId", modelID).Str("artifactId", artifactID).Str("runtimeId", runtimeID).
 			Msg("Failed to render compose file")

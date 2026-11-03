@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -236,11 +237,19 @@ func TestNodeDeploymentRefusals(t *testing.T) {
 	}{
 		"k8s target": {`{"type":"app","targets":[{"kind":"k8s","nsId":"etri","k8sClusterId":"c1"}],"app":{"name":"web"}}`,
 			http.StatusUnprocessableEntity},
-		"bad env name":     {`{"type":"app",` + target + `,"app":{"name":"web","env":{"lower":"x"}}}`, http.StatusBadRequest},
-		"newline in env":   {`{"type":"app",` + target + `,"app":{"name":"web","env":{"A":"x\ny"}}}`, http.StatusBadRequest},
-		"malformed":        {`{"type":`, http.StatusBadRequest},
-		"unknown app":      {`{"type":"app",` + target + `,"app":{"name":"nope"}}`, http.StatusNotFound},
-		"unknown model":    {`{"type":"inference",` + target + `,"inference":{"modelId":"nope","artifactId":"x"}}`, http.StatusNotFound},
+		"bad env name":   {`{"type":"app",` + target + `,"app":{"name":"web","env":{"lower":"x"}}}`, http.StatusBadRequest},
+		"newline in env": {`{"type":"app",` + target + `,"app":{"name":"web","env":{"A":"x\ny"}}}`, http.StatusBadRequest},
+		"malformed":      {`{"type":`, http.StatusBadRequest},
+		"unknown app":    {`{"type":"app",` + target + `,"app":{"name":"nope"}}`, http.StatusNotFound},
+		"unknown model":  {`{"type":"inference",` + target + `,"inference":{"modelId":"nope","artifactId":"x"}}`, http.StatusNotFound},
+		"too many args": {`{"type":"inference",` + target + `,"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","args":[` +
+			strings.TrimSuffix(strings.Repeat(`"x",`, 33), ",") + `]}}`, http.StatusBadRequest},
+		"newline in arg": {`{"type":"inference",` + target + `,"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","args":["a\nb"]}}`,
+			http.StatusBadRequest},
+		"--model in args": {`{"type":"inference",` + target + `,"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","args":["--model","x/y"]}}`,
+			http.StatusBadRequest},
+		"args on ollama": {`{"type":"inference",` + target + `,"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","args":["--verbose"]}}`,
+			http.StatusBadRequest},
 		"runtime mismatch": {`{"type":"inference",` + target + `,"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","runtimeId":"vllm"}}`, http.StatusUnprocessableEntity},
 	} {
 		rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", tc.body)
@@ -250,6 +259,38 @@ func TestNodeDeploymentRefusals(t *testing.T) {
 	}
 	if runner.count() != 0 {
 		t.Errorf("%d runs for refused requests", runner.count())
+	}
+}
+
+func TestNodeDeploymentArgsReachTheRecordAndTheCompose(t *testing.T) {
+	s, _, _ := newNodeDeployServer(t, true)
+	body := `{"type":"inference","targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"}],` +
+		`"inference":{"modelId":"ministral-3-8b","artifactId":"hf-fp8","gpu":true,"args":["--max-model-len","32768"]}}`
+	rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d: %s", rec.Code, rec.Body.String())
+	}
+	var created model.NodeDeployment
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	rec = sendNodeJSON(s, http.MethodGet, "/aiapp/deployments/"+created.ID, "")
+	var d model.NodeDeployment
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := d.Request.Inference.Args; !reflect.DeepEqual(got, []string{"--max-model-len", "32768"}) {
+		t.Errorf("recorded args = %q", got)
+	}
+	want := `command: ["--model", "mistralai/Ministral-3-8B-Instruct-2512", "--port", "8000", "--max-model-len", "32768"]`
+	if !strings.Contains(d.Nodes[0].Compose, want) {
+		t.Errorf("node compose lacks %q:\n%s", want, d.Nodes[0].Compose)
+	}
+
+	ollama := `{"type":"inference","targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"}],` +
+		`"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","args":["--verbose"]}}`
+	rec = sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", ollama)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "args are not supported by runtime ollama") {
+		t.Errorf("args on ollama = %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

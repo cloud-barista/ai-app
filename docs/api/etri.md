@@ -102,7 +102,8 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments" -d '{
   "type": "inference",
   "targets": [{"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm3"}],
-  "inference": {"modelId": "ministral-3-8b", "artifactId": "hf-fp8", "runtimeId": "vllm", "gpu": true}
+  "inference": {"modelId": "ministral-3-8b", "artifactId": "hf-fp8", "runtimeId": "vllm", "gpu": true,
+                "args": ["--max-model-len", "32768"]}
 }'
 ```
 
@@ -111,6 +112,8 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 - 접근 승인이 필요한 Hugging Face 모델이면 `"env": {"HF_TOKEN": "<토큰>"}` 을 `inference` 안에 넣습니다. 이 값은 배포 기록과
   노드의 `.env` 에 평문으로 남습니다.
 - vm3 처럼 `"gpu": true` 를 주면 노드 스펙을 보지 않고 GPU 를 씁니다. 빼면 스펙의 `acceleratorType` 으로 정합니다(2절).
+- vm3 의 `args` 는 `vllm serve` 뒤에 붙습니다. aws g6.xlarge(L4 24GB)에서 빼고 띄웠더니 기본 최대 길이 262144 에 KV 캐시 34.0 GiB 가
+  필요한데 9.31 GiB 뿐이라는 오류(`estimated maximum model length is 71760`)로 vLLM 이 뜨지 않았습니다.
 - 세 노드를 한 요청에 넣을 수도 있지만(`targets` 여러 개), 모델이 노드마다 달라 위처럼 따로 보냅니다.
 
 ```sh

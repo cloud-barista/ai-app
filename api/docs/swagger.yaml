@@ -1080,6 +1080,20 @@ definitions:
     type: object
   model.NodeInferenceReq:
     properties:
+      args:
+        description: |-
+          Args are appended to the runtime command after the arguments this
+          service sets. For vllm they follow `vllm serve --model <ref> --port
+          <port>` (and --runner pooling for an embedding model), for example
+          ["--max-model-len", "32768"]. At most 32, each 1 to 256 characters
+          without control characters; --model, --port and --host are set by the
+          service and refused. Runtime ollama takes none and refuses them.
+        example:
+        - --max-model-len
+        - "32768"
+        items:
+          type: string
+        type: array
       artifactId:
         description: ArtifactID is an artifact of that model.
         example: hf-bf16
@@ -1937,7 +1951,7 @@ paths:
       description: |-
         Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
 
-        type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
+        type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 
         Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 
@@ -2462,7 +2476,9 @@ paths:
         the OpenAI compatible server with --model set to the artifact ref (and --runner
         pooling for an embedding model); for ollama it runs the server and a one-shot
         container that pulls the model once the server is healthy. HF_TOKEN is left
-        to the environment or a .env file beside the compose file.'
+        to the environment or a .env file beside the compose file. Each arg is appended
+        to the vllm command after those arguments, as inference.args of POST /deployments
+        is; ollama refuses them with 400.'
       operationId: GetModelCompose
       parameters:
       - default: qwen3-vl-8b
@@ -2487,6 +2503,13 @@ paths:
         in: query
         name: gpu
         type: boolean
+      - collectionFormat: multi
+        description: Extra runtime argument, repeated for each, such as arg=--max-model-len&arg=32768
+        in: query
+        items:
+          type: string
+        name: arg
+        type: array
       produces:
       - text/yaml
       - application/json
@@ -2496,7 +2519,7 @@ paths:
           schema:
             type: string
         "400":
-          description: gpu is not a boolean
+          description: gpu is not a boolean, or an arg is refused
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "404":

@@ -352,7 +352,7 @@ Swagger UI: `http://<AI-App 호스트>:8090/aiapp/api/index.html`. 모든 필드
 | POST | `/aiapp/models` | 모델 등록. 같은 `id` 면 바꿔 씀 |
 | GET | `/aiapp/models/{modelId}` | 모델 하나 |
 | DELETE | `/aiapp/models/{modelId}` | 모델 삭제. 이미 떠 있는 추론 서비스는 그대로 |
-| GET | `/aiapp/models/{modelId}/artifacts/{artifactId}/compose` | 노드에 갈 compose 파일 미리 보기 (쿼리 `runtimeId`, `gpu`) |
+| GET | `/aiapp/models/{modelId}/artifacts/{artifactId}/compose` | 노드에 갈 compose 파일 미리 보기 (쿼리 `runtimeId`, `gpu`, 되풀이하는 `arg`) |
 | POST | `/aiapp/apps` | 응용 업로드 (multipart: `name`, `script`, `files` 여러 개, `ports`). 같은 이름이면 다음 버전 |
 | GET | `/aiapp/apps` | 응용 목록 (버전, 파일, 포트) |
 | GET | `/aiapp/apps/{name}` | 응용 하나 (모든 버전) |
@@ -419,6 +419,7 @@ Swagger UI: `http://<AI-App 호스트>:8090/aiapp/api/index.html`. 모든 필드
 | `targets[]` | `kind: node` 와 `nsId`·`infraId`·`nodeId`. 32개까지, 같은 노드는 한 번만. 클라우드·리전·IP·SSH 키는 CB-Tumblebug 노드 정보에서 읽음 |
 | `inference.runtimeId` | 빼면 아티팩트의 첫 런타임 |
 | `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유 |
+| `inference.args` | 런타임 명령 뒤에 붙는 인자. vLLM 이면 서비스가 넣는 `--model`·`--port` 뒤에 붙음. 예 `["--max-model-len", "32768"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, `--model`·`--port`·`--host` 는 `400`. Ollama 는 받지 않아 `400` |
 | `app.version` | 빼거나 `0` 이면 최신 버전 |
 | `app.ports` | 이 배포에서만 업로드 때의 `ports` 를 바꿈 |
 | `inference.env`, `app.env` | 이름 `[A-Z_][A-Z0-9_]*`, 값에 줄바꿈·작은따옴표 불가. 배포 기록과 노드의 `.env` 에 **평문으로** 남으므로 비밀값은 조심 |

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Deployment types of a node deployment request.
@@ -113,6 +115,13 @@ type NodeInferenceReq struct {
 	// .env file beside the compose file. Names match [A-Z_][A-Z0-9_]*;
 	// values hold no line break and no single quote.
 	Env map[string]string `json:"env,omitempty"`
+	// Args are appended to the runtime command after the arguments this
+	// service sets. For vllm they follow `vllm serve --model <ref> --port
+	// <port>` (and --runner pooling for an embedding model), for example
+	// ["--max-model-len", "32768"]. At most 32, each 1 to 256 characters
+	// without control characters; --model, --port and --host are set by the
+	// service and refused. Runtime ollama takes none and refuses them.
+	Args []string `json:"args,omitempty" example:"--max-model-len,32768"`
 }
 
 // NodeAppReq says which uploaded application version to deploy.
@@ -167,6 +176,9 @@ func (r *NodeDeploymentReq) Validate() error {
 			return errRequired("inference.artifactId")
 		}
 		if err := ValidateDeployEnv("inference.env", r.Inference.Env); err != nil {
+			return err
+		}
+		if err := ValidateRuntimeArgs("inference.args", r.Inference.Args); err != nil {
 			return err
 		}
 	case NodeDeployTypeApp:
@@ -244,6 +256,47 @@ func ValidateDeployEnv(field string, env map[string]string) error {
 		}
 		if strings.Contains(value, "'") {
 			return errInvalid(field, fmt.Sprintf("value of %s must not hold a single quote", name))
+		}
+	}
+	return nil
+}
+
+// MaxRuntimeArgs bounds the extra runtime arguments of one inference request.
+const MaxRuntimeArgs = 32
+
+// maxRuntimeArgLen bounds one extra runtime argument, in characters.
+const maxRuntimeArgLen = 256
+
+// builtinRuntimeFlags are the runtime options the rendered command already
+// sets. The runtime parses its options with argparse, which takes a unique
+// prefix of an option name for the option, so a prefix is refused as well.
+var builtinRuntimeFlags = []string{"model", "port", "host"}
+
+// ValidateRuntimeArgs reports why args cannot be appended to the runtime
+// command of a compose file.
+func ValidateRuntimeArgs(field string, args []string) error {
+	if len(args) > MaxRuntimeArgs {
+		return errInvalid(field, fmt.Sprintf("must hold at most %d arguments", MaxRuntimeArgs))
+	}
+	for i, arg := range args {
+		item := fmt.Sprintf("%s[%d]", field, i)
+		if n := utf8.RuneCountInString(arg); n == 0 || n > maxRuntimeArgLen {
+			return errInvalid(item, fmt.Sprintf("must be 1 to %d characters", maxRuntimeArgLen))
+		}
+		if !utf8.ValidString(arg) || strings.IndexFunc(arg, unicode.IsControl) >= 0 {
+			return errInvalid(item, "must not hold a control character or a line break")
+		}
+		if arg == "--" {
+			return errInvalid(item, "must not be --")
+		}
+		if !strings.HasPrefix(arg, "--") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		for _, builtin := range builtinRuntimeFlags {
+			if strings.HasPrefix(builtin, name) {
+				return errInvalid(item, fmt.Sprintf("must not set --%s, which the service sets", builtin))
+			}
 		}
 	}
 	return nil

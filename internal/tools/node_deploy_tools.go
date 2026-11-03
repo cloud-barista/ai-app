@@ -63,6 +63,12 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 				"gpu": map[string]any{"type": "boolean", "description": "Give the runtime every NVIDIA GPU of the node. " +
 					"Omit to take it from the node spec (acceleratorType gpu)"},
 				"env": envProp("Runtime container environment. " + envNote),
+				"args": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": "Extra arguments appended to the runtime command after the ones the service sets, " +
+						"such as [\"--max-model-len\", \"32768\"] for vllm. At most 32, each 1 to 256 characters without control " +
+						"characters; --model, --port and --host are refused. Runtime ollama refuses args",
+				},
 			}, "modelId", "artifactId"),
 			"app": object(map[string]any{
 				"name":    stringProp("Uploaded application name from list_apps"),
