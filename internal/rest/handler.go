@@ -12,6 +12,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/recommend"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
 )
@@ -28,6 +29,8 @@ type Handler struct {
 	apps    *appstore.Store
 	// nodeDeploy deploys onto existing nodes through Semaphore.
 	nodeDeploy *nodedeploy.Service
+	// recommend answers model and application recommendation requests.
+	recommend *recommend.Service
 
 	engine     *engine.Engine
 	engineCard *engine.CardBuilder
@@ -58,6 +61,8 @@ func statusCodeFor(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, mcpclient.ErrUnavailable):
 		return http.StatusServiceUnavailable
+	case errors.Is(err, recommend.ErrNotConfigured):
+		return http.StatusNotImplemented
 	}
 
 	switch tumblebug.StatusCode(err) {
@@ -87,7 +92,7 @@ func messageFor(err error, fallback string) string {
 	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrRuntimeNotFound,
 		compose.ErrIncompatible, compose.ErrInvalidOption,
 		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge,
-		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound, nodedeploy.ErrBusy} {
+		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound, nodedeploy.ErrBusy, recommend.ErrNotConfigured} {
 		if errors.Is(err, own) {
 			return err.Error()
 		}

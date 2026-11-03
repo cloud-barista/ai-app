@@ -251,3 +251,30 @@ func TestSemaphoreAndStageInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestRecommenderNames(t *testing.T) {
+	t.Setenv("AIAPP_RECOMMENDER_MODEL", "")
+	t.Setenv("AIAPP_RECOMMENDER_APP", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Recommender.Model != "" || cfg.Recommender.App != "" {
+		t.Errorf("recommender = %+v, want both empty by default", cfg.Recommender)
+	}
+
+	t.Setenv("AIAPP_RECOMMENDER_MODEL", " khu ")
+	t.Setenv("AIAPP_RECOMMENDER_APP", "khu-apps")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Recommender.Model != "khu" || cfg.Recommender.App != "khu-apps" {
+		t.Errorf("recommender = %+v, want khu and khu-apps", cfg.Recommender)
+	}
+
+	t.Setenv("AIAPP_RECOMMENDER_APP", "KHU Apps")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AIAPP_RECOMMENDER_APP") {
+		t.Errorf("Load error = %v, want one naming AIAPP_RECOMMENDER_APP", err)
+	}
+}

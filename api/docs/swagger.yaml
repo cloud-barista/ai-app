@@ -1007,6 +1007,243 @@ definitions:
       tool:
         type: string
     type: object
+  recommend.AppCandidate:
+    properties:
+      name:
+        description: Name is an uploaded application (GET /apps).
+        example: open-webui
+        type: string
+      reason:
+        description: Reason says, for a person, why the candidate was picked.
+        example: Chat interface that talks to an OpenAI compatible API
+        type: string
+      score:
+        description: |-
+          Score ranks the candidate: higher is better. The scale is the
+          recommender's own.
+        example: 0.74
+        type: number
+      version:
+        description: Version is a version of that application.
+        example: 1
+        type: integer
+    required:
+    - name
+    - version
+    type: object
+  recommend.AppRecommendReq:
+    properties:
+      gpuCount:
+        description: |-
+          GPUCount is the number of GPUs available on one node. 0 means no GPU;
+          absent means unknown. At most 64.
+        example: 1
+        type: integer
+      gpuMemoryGiB:
+        description: GPUMemoryGiB is the memory of one GPU in GiB (2^30 bytes).
+        example: 24
+        type: number
+      inference:
+        description: |-
+          Inference are the inference services the application is to use, each
+          naming a model of the catalog.
+        items:
+          $ref: '#/definitions/recommend.InferenceRef'
+        type: array
+      maxCandidates:
+        description: |-
+          MaxCandidates bounds the candidates returned, at most 50. 0 leaves it to
+          the recommender.
+        example: 3
+        type: integer
+      maxSizeGiB:
+        description: |-
+          MaxSizeGiB is the largest download, in GiB, the caller accepts for one
+          model artifact or application.
+        example: 20
+        type: number
+      requirements:
+        additionalProperties: {}
+        description: |-
+          Requirements carry anything else the recommender reads. The keys are the
+          recommender's own; the service passes them through unread.
+        type: object
+      targetNodes:
+        description: TargetNodes are the nodes the application is meant to run on,
+          at most 32.
+        items:
+          $ref: '#/definitions/recommend.TargetNode'
+        type: array
+      tasks:
+        description: |-
+          Tasks are what the application is to be used for, such as chat-ui, rag
+          or travel-planner. Uploaded applications carry no tags, so the words are
+          the recommender's own.
+        example:
+        - chat-ui
+        items:
+          type: string
+        type: array
+    type: object
+  recommend.AppRecommendResp:
+    properties:
+      candidates:
+        description: |-
+          Candidates are ordered best first. Empty means no uploaded application
+          fits.
+        items:
+          $ref: '#/definitions/recommend.AppCandidate'
+        type: array
+      recommender:
+        description: |-
+          Recommender is the name of the implementation that answered, as set in
+          AIAPP_RECOMMENDER_APP.
+        example: khu
+        type: string
+    type: object
+  recommend.InferenceRef:
+    properties:
+      artifactId:
+        description: ArtifactID is an artifact of that model. Empty means any.
+        example: hf-bf16
+        type: string
+      modelId:
+        description: ModelID is a model of the model catalog (GET /models).
+        example: qwen3-vl-8b
+        type: string
+      runtimeId:
+        description: RuntimeID is the runtime profile that serves it. Empty means
+          any.
+        example: vllm
+        type: string
+    required:
+    - modelId
+    type: object
+  recommend.ModelCandidate:
+    properties:
+      artifactId:
+        description: ArtifactID is an artifact of that model.
+        example: hf-bf16
+        type: string
+      modelId:
+        description: ModelID is a model of the model catalog (GET /models).
+        example: qwen3-vl-8b
+        type: string
+      reason:
+        description: Reason says, for a person, why the candidate was picked.
+        example: Accepts text and image input and fits one 24 GiB GPU in BF16
+        type: string
+      runtimeId:
+        description: RuntimeID is a runtime profile the artifact lists.
+        example: vllm
+        type: string
+      score:
+        description: |-
+          Score ranks the candidate: higher is better. The scale is the
+          recommender's own.
+        example: 0.82
+        type: number
+    required:
+    - artifactId
+    - modelId
+    - runtimeId
+    type: object
+  recommend.ModelRecommendReq:
+    properties:
+      gpuCount:
+        description: |-
+          GPUCount is the number of GPUs available on one node. 0 means no GPU;
+          absent means unknown. At most 64.
+        example: 1
+        type: integer
+      gpuMemoryGiB:
+        description: GPUMemoryGiB is the memory of one GPU in GiB (2^30 bytes).
+        example: 24
+        type: number
+      inputModalities:
+        description: |-
+          InputModalities are the kinds of input the model must accept, in the
+          words of the catalog inputModalities[]: text or image.
+        example:
+        - text
+        - image
+        items:
+          type: string
+        type: array
+      maxCandidates:
+        description: |-
+          MaxCandidates bounds the candidates returned, at most 50. 0 leaves it to
+          the recommender.
+        example: 3
+        type: integer
+      maxSizeGiB:
+        description: |-
+          MaxSizeGiB is the largest download, in GiB, the caller accepts for one
+          model artifact or application.
+        example: 20
+        type: number
+      requirements:
+        additionalProperties: {}
+        description: |-
+          Requirements carry anything else the recommender reads, such as a cost
+          budget, a latency target or a language. The keys are the recommender's
+          own; the service passes them through unread.
+        type: object
+      runtimeId:
+        description: |-
+          RuntimeID is the runtime profile the caller prefers, as listed by
+          GET /runtimes. It must name an existing profile.
+        example: vllm
+        type: string
+      targetNodes:
+        description: TargetNodes are the nodes the model is meant to run on, at most
+          32.
+        items:
+          $ref: '#/definitions/recommend.TargetNode'
+        type: array
+      tasks:
+        description: |-
+          Tasks are what the model is to be used for, in the words of the catalog
+          tasks[]: chat, vision-chat or embedding.
+        example:
+        - vision-chat
+        items:
+          type: string
+        type: array
+    type: object
+  recommend.ModelRecommendResp:
+    properties:
+      candidates:
+        description: |-
+          Candidates are ordered best first. Empty means nothing in the catalog
+          fits.
+        items:
+          $ref: '#/definitions/recommend.ModelCandidate'
+        type: array
+      recommender:
+        description: |-
+          Recommender is the name of the implementation that answered, as set in
+          AIAPP_RECOMMENDER_MODEL.
+        example: khu
+        type: string
+    type: object
+  recommend.TargetNode:
+    properties:
+      infraId:
+        description: InfraID is the CB-Tumblebug Infra the node belongs to.
+        example: travel
+        type: string
+      nodeId:
+        description: NodeID is the node within the Infra. It needs infraId.
+        example: vm1
+        type: string
+      nsId:
+        description: NsID is the CB-Tumblebug namespace of the Infra.
+        example: etri
+        type: string
+    required:
+    - nsId
+    type: object
 info:
   contact: {}
   description: Keeps an AI model catalog (models, the artifacts each is published
@@ -1863,6 +2100,99 @@ paths:
       summary: Check service readiness
       tags:
       - '[Health] Service Health'
+  /recommendations/apps:
+    post:
+      consumes:
+      - application/json
+      description: 'Ask the configured application recommender which uploaded application
+        versions fit a requirement. Every request field is optional; an empty body
+        asks for any application. The request is validated first, so a malformed request
+        is refused with 400 whether or not a recommender is configured; inference[].modelId
+        must name a model of the catalog. No recommender is built in: until AIAPP_RECOMMENDER_APP
+        names a registered implementation of internal/recommend, a valid request is
+        answered with 501. Candidates are ordered best first, at most maxCandidates
+        of them, and each names an uploaded application and one of its versions, ready
+        for the app field of POST /deployments.'
+      operationId: PostAppRecommendation
+      parameters:
+      - description: What the application is needed for
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/recommend.AppRecommendReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Recommended applications, best first
+          schema:
+            $ref: '#/definitions/recommend.AppRecommendResp'
+        "400":
+          description: Malformed request, a field out of range, or a model not in
+            the catalog
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: The recommender failed or returned a candidate the application
+            store does not hold
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "501":
+          description: No application recommender is configured
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Recommend applications for a requirement
+      tags:
+      - '[Recommendation] Model and Application Recommendation'
+  /recommendations/models:
+    post:
+      consumes:
+      - application/json
+      description: 'Ask the configured model recommender which model artifact and
+        runtime pairings of the catalog fit a requirement. Every request field is
+        optional; an empty body asks for any model. The request is validated first,
+        so a malformed request is refused with 400 whether or not a recommender is
+        configured. No recommender is built in: until AIAPP_RECOMMENDER_MODEL names
+        a registered implementation of internal/recommend, a valid request is answered
+        with 501. Candidates are ordered best first, at most maxCandidates of them,
+        and each names a model, an artifact of it and a runtime the artifact lists,
+        ready for the inference field of POST /deployments.'
+      operationId: PostModelRecommendation
+      parameters:
+      - description: What the model is needed for
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/recommend.ModelRecommendReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Recommended models, best first
+          schema:
+            $ref: '#/definitions/recommend.ModelRecommendResp'
+        "400":
+          description: Malformed request, or a field out of range
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "500":
+          description: The recommender failed or returned a candidate the catalog
+            does not hold
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+        "501":
+          description: No model recommender is configured
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Recommend models for a requirement
+      tags:
+      - '[Recommendation] Model and Application Recommendation'
   /runtimes:
     get:
       description: 'List the built-in inference runtime profiles an inference deployment

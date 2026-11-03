@@ -19,6 +19,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpserver"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/recommend"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -41,12 +42,19 @@ type AppDependencies struct {
 	Apps *appstore.Store
 	// NodeDeploy deploys models and applications onto existing nodes.
 	NodeDeploy *nodedeploy.Service
+	// Recommend answers model and application recommendation requests. Nil
+	// leaves both unconfigured, so a valid request is answered with 501.
+	Recommend *recommend.Service
 }
 
 // NewAppServer builds the AI-App service: catalog, deployment, tools, the MCP
 // server, the console, and proxies to the automation engine and to the partner
 // natural language agent.
 func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
+	recommender := deps.Recommend
+	if recommender == nil {
+		recommender, _ = recommend.Open("", "", recommend.NewCatalog(deps.Models, deps.Apps))
+	}
 	handler := &Handler{
 		archive: deps.Archive,
 		tools:   deps.Tools,
@@ -54,6 +62,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 		apps:    deps.Apps,
 
 		nodeDeploy: deps.NodeDeploy,
+		recommend:  recommender,
 	}
 
 	// The engine and partner agent readiness are open here as their own are
@@ -95,6 +104,12 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.DELETE("/deployments/:id", handler.RestDeleteNodeDeployment)
 	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
 	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
+
+	// Recommendation of models and applications for a requirement. No
+	// recommender is built in; see internal/recommend.
+	rg := g.Group("/recommendations")
+	rg.POST("/models", handler.RestPostModelRecommendation)
+	rg.POST("/apps", handler.RestPostAppRecommendation)
 
 	// The tool surface the agent works through.
 	g.GET("/tools", handler.RestGetTools)

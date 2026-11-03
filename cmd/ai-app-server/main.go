@@ -24,6 +24,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
 	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/recommend"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
 	"github.com/ish-hcc/ai-agent-proto/internal/semaphore"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
@@ -110,6 +111,17 @@ func main() {
 		log.Warn().Msg("AIAPP_SEMAPHORE_URL is not set: deployments onto nodes fail when they reach Semaphore, unless dry run is on")
 	}
 
+	recommender, err := recommend.Open(cfg.Recommender.Model, cfg.Recommender.App,
+		recommend.NewCatalog(modelCatalog, appStore))
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to set up recommenders")
+		os.Exit(1)
+	}
+	if cfg.Recommender.Model == "" || cfg.Recommender.App == "" {
+		log.Info().Str("model", cfg.Recommender.Model).Str("app", cfg.Recommender.App).
+			Msg("A recommender is not configured: its recommendation route answers 501")
+	}
+
 	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
 	tools.RegisterModels(registry, modelCatalog)
 	tools.RegisterApps(registry, appStore)
@@ -139,6 +151,7 @@ func main() {
 		Apps:    appStore,
 
 		NodeDeploy: nodeDeployService,
+		Recommend:  recommender,
 	})
 	rest.MarkReady()
 

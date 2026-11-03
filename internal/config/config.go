@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 )
 
 const envPrefix = "AIAPP"
+
+// recommenderNamePattern is what a recommender name may look like, the same
+// rule internal/recommend registers names under.
+var recommenderNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // DefaultTumblebugBaseURL is where the service looks for CB-Tumblebug when
 // nothing says otherwise.
@@ -47,6 +52,8 @@ type Config struct {
 	Stage StageConfig
 	// NodeDeploy holds where node deployment records are kept.
 	NodeDeploy NodeDeployConfig
+	// Recommender names the model and application recommenders.
+	Recommender RecommenderConfig
 }
 
 // ServerConfig holds the HTTP settings of the AI-App service.
@@ -181,6 +188,17 @@ type NodeDeployConfig struct {
 	StoreFile string
 }
 
+// RecommenderConfig names the implementations of internal/recommend that
+// answer POST /aiapp/recommendations/models and /apps. Empty leaves that route
+// answering 501. Whether a name is registered is checked at startup, where the
+// registry is linked in.
+type RecommenderConfig struct {
+	// Model is the model recommender name.
+	Model string
+	// App is the application recommender name.
+	App string
+}
+
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
 	Dir string
@@ -274,6 +292,8 @@ func Load() (*Config, error) {
 		"semaphore.timeout",
 		"stage.root",
 		"deployment.store_file",
+		"recommender.model",
+		"recommender.app",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
@@ -348,6 +368,10 @@ func Load() (*Config, error) {
 		NodeDeploy: NodeDeployConfig{
 			StoreFile: strings.TrimSpace(v.GetString("deployment.store_file")),
 		},
+		Recommender: RecommenderConfig{
+			Model: strings.TrimSpace(v.GetString("recommender.model")),
+			App:   strings.TrimSpace(v.GetString("recommender.app")),
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -413,6 +437,15 @@ func (c *Config) validate() error {
 	}
 	if !filepath.IsAbs(c.Stage.Root) {
 		return fmt.Errorf("%s_STAGE_ROOT must be an absolute path, got %q", envPrefix, c.Stage.Root)
+	}
+	for _, setting := range []struct{ env, name string }{
+		{"RECOMMENDER_MODEL", c.Recommender.Model},
+		{"RECOMMENDER_APP", c.Recommender.App},
+	} {
+		if setting.name != "" && !recommenderNamePattern.MatchString(setting.name) {
+			return fmt.Errorf("%s_%s must match [a-z0-9][a-z0-9._-]* and be at most 63 characters, got %q",
+				envPrefix, setting.env, setting.name)
+		}
 	}
 	return nil
 }

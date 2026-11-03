@@ -1173,6 +1173,122 @@
                 }
             }
         },
+        "/recommendations/apps": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ask the configured application recommender which uploaded application versions fit a requirement. Every request field is optional; an empty body asks for any application. The request is validated first, so a malformed request is refused with 400 whether or not a recommender is configured; inference[].modelId must name a model of the catalog. No recommender is built in: until AIAPP_RECOMMENDER_APP names a registered implementation of internal/recommend, a valid request is answered with 501. Candidates are ordered best first, at most maxCandidates of them, and each names an uploaded application and one of its versions, ready for the app field of POST /deployments.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Recommendation] Model and Application Recommendation"
+                ],
+                "summary": "Recommend applications for a requirement",
+                "operationId": "PostAppRecommendation",
+                "parameters": [
+                    {
+                        "description": "What the application is needed for",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/recommend.AppRecommendReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Recommended applications, best first",
+                        "schema": {
+                            "$ref": "#/definitions/recommend.AppRecommendResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed request, a field out of range, or a model not in the catalog",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The recommender failed or returned a candidate the application store does not hold",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "501": {
+                        "description": "No application recommender is configured",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/recommendations/models": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ask the configured model recommender which model artifact and runtime pairings of the catalog fit a requirement. Every request field is optional; an empty body asks for any model. The request is validated first, so a malformed request is refused with 400 whether or not a recommender is configured. No recommender is built in: until AIAPP_RECOMMENDER_MODEL names a registered implementation of internal/recommend, a valid request is answered with 501. Candidates are ordered best first, at most maxCandidates of them, and each names a model, an artifact of it and a runtime the artifact lists, ready for the inference field of POST /deployments.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Recommendation] Model and Application Recommendation"
+                ],
+                "summary": "Recommend models for a requirement",
+                "operationId": "PostModelRecommendation",
+                "parameters": [
+                    {
+                        "description": "What the model is needed for",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/recommend.ModelRecommendReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Recommended models, best first",
+                        "schema": {
+                            "$ref": "#/definitions/recommend.ModelRecommendResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed request, or a field out of range",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "500": {
+                        "description": "The recommender failed or returned a candidate the catalog does not hold",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "501": {
+                        "description": "No model recommender is configured",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
         "/runtimes": {
             "get": {
                 "security": [
@@ -2524,6 +2640,267 @@
                 "output": {},
                 "tool": {
                     "type": "string"
+                }
+            }
+        },
+        "recommend.AppCandidate": {
+            "type": "object",
+            "required": [
+                "name",
+                "version"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name is an uploaded application (GET /apps).",
+                    "type": "string",
+                    "example": "open-webui"
+                },
+                "reason": {
+                    "description": "Reason says, for a person, why the candidate was picked.",
+                    "type": "string",
+                    "example": "Chat interface that talks to an OpenAI compatible API"
+                },
+                "score": {
+                    "description": "Score ranks the candidate: higher is better. The scale is the\nrecommender's own.",
+                    "type": "number",
+                    "example": 0.74
+                },
+                "version": {
+                    "description": "Version is a version of that application.",
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "recommend.AppRecommendReq": {
+            "type": "object",
+            "properties": {
+                "gpuCount": {
+                    "description": "GPUCount is the number of GPUs available on one node. 0 means no GPU;\nabsent means unknown. At most 64.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "gpuMemoryGiB": {
+                    "description": "GPUMemoryGiB is the memory of one GPU in GiB (2^30 bytes).",
+                    "type": "number",
+                    "example": 24
+                },
+                "inference": {
+                    "description": "Inference are the inference services the application is to use, each\nnaming a model of the catalog.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recommend.InferenceRef"
+                    }
+                },
+                "maxCandidates": {
+                    "description": "MaxCandidates bounds the candidates returned, at most 50. 0 leaves it to\nthe recommender.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "maxSizeGiB": {
+                    "description": "MaxSizeGiB is the largest download, in GiB, the caller accepts for one\nmodel artifact or application.",
+                    "type": "number",
+                    "example": 20
+                },
+                "requirements": {
+                    "description": "Requirements carry anything else the recommender reads. The keys are the\nrecommender's own; the service passes them through unread.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "targetNodes": {
+                    "description": "TargetNodes are the nodes the application is meant to run on, at most 32.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recommend.TargetNode"
+                    }
+                },
+                "tasks": {
+                    "description": "Tasks are what the application is to be used for, such as chat-ui, rag\nor travel-planner. Uploaded applications carry no tags, so the words are\nthe recommender's own.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "chat-ui"
+                    ]
+                }
+            }
+        },
+        "recommend.AppRecommendResp": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "description": "Candidates are ordered best first. Empty means no uploaded application\nfits.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recommend.AppCandidate"
+                    }
+                },
+                "recommender": {
+                    "description": "Recommender is the name of the implementation that answered, as set in\nAIAPP_RECOMMENDER_APP.",
+                    "type": "string",
+                    "example": "khu"
+                }
+            }
+        },
+        "recommend.InferenceRef": {
+            "type": "object",
+            "required": [
+                "modelId"
+            ],
+            "properties": {
+                "artifactId": {
+                    "description": "ArtifactID is an artifact of that model. Empty means any.",
+                    "type": "string",
+                    "example": "hf-bf16"
+                },
+                "modelId": {
+                    "description": "ModelID is a model of the model catalog (GET /models).",
+                    "type": "string",
+                    "example": "qwen3-vl-8b"
+                },
+                "runtimeId": {
+                    "description": "RuntimeID is the runtime profile that serves it. Empty means any.",
+                    "type": "string",
+                    "example": "vllm"
+                }
+            }
+        },
+        "recommend.ModelCandidate": {
+            "type": "object",
+            "required": [
+                "artifactId",
+                "modelId",
+                "runtimeId"
+            ],
+            "properties": {
+                "artifactId": {
+                    "description": "ArtifactID is an artifact of that model.",
+                    "type": "string",
+                    "example": "hf-bf16"
+                },
+                "modelId": {
+                    "description": "ModelID is a model of the model catalog (GET /models).",
+                    "type": "string",
+                    "example": "qwen3-vl-8b"
+                },
+                "reason": {
+                    "description": "Reason says, for a person, why the candidate was picked.",
+                    "type": "string",
+                    "example": "Accepts text and image input and fits one 24 GiB GPU in BF16"
+                },
+                "runtimeId": {
+                    "description": "RuntimeID is a runtime profile the artifact lists.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "score": {
+                    "description": "Score ranks the candidate: higher is better. The scale is the\nrecommender's own.",
+                    "type": "number",
+                    "example": 0.82
+                }
+            }
+        },
+        "recommend.ModelRecommendReq": {
+            "type": "object",
+            "properties": {
+                "gpuCount": {
+                    "description": "GPUCount is the number of GPUs available on one node. 0 means no GPU;\nabsent means unknown. At most 64.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "gpuMemoryGiB": {
+                    "description": "GPUMemoryGiB is the memory of one GPU in GiB (2^30 bytes).",
+                    "type": "number",
+                    "example": 24
+                },
+                "inputModalities": {
+                    "description": "InputModalities are the kinds of input the model must accept, in the\nwords of the catalog inputModalities[]: text or image.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "text",
+                        "image"
+                    ]
+                },
+                "maxCandidates": {
+                    "description": "MaxCandidates bounds the candidates returned, at most 50. 0 leaves it to\nthe recommender.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "maxSizeGiB": {
+                    "description": "MaxSizeGiB is the largest download, in GiB, the caller accepts for one\nmodel artifact or application.",
+                    "type": "number",
+                    "example": 20
+                },
+                "requirements": {
+                    "description": "Requirements carry anything else the recommender reads, such as a cost\nbudget, a latency target or a language. The keys are the recommender's\nown; the service passes them through unread.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "runtimeId": {
+                    "description": "RuntimeID is the runtime profile the caller prefers, as listed by\nGET /runtimes. It must name an existing profile.",
+                    "type": "string",
+                    "example": "vllm"
+                },
+                "targetNodes": {
+                    "description": "TargetNodes are the nodes the model is meant to run on, at most 32.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recommend.TargetNode"
+                    }
+                },
+                "tasks": {
+                    "description": "Tasks are what the model is to be used for, in the words of the catalog\ntasks[]: chat, vision-chat or embedding.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "vision-chat"
+                    ]
+                }
+            }
+        },
+        "recommend.ModelRecommendResp": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "description": "Candidates are ordered best first. Empty means nothing in the catalog\nfits.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recommend.ModelCandidate"
+                    }
+                },
+                "recommender": {
+                    "description": "Recommender is the name of the implementation that answered, as set in\nAIAPP_RECOMMENDER_MODEL.",
+                    "type": "string",
+                    "example": "khu"
+                }
+            }
+        },
+        "recommend.TargetNode": {
+            "type": "object",
+            "required": [
+                "nsId"
+            ],
+            "properties": {
+                "infraId": {
+                    "description": "InfraID is the CB-Tumblebug Infra the node belongs to.",
+                    "type": "string",
+                    "example": "travel"
+                },
+                "nodeId": {
+                    "description": "NodeID is the node within the Infra. It needs infraId.",
+                    "type": "string",
+                    "example": "vm1"
+                },
+                "nsId": {
+                    "description": "NsID is the CB-Tumblebug namespace of the Infra.",
+                    "type": "string",
+                    "example": "etri"
                 }
             }
         }
