@@ -137,7 +137,7 @@
   .b-gpu { background: var(--ok-soft); color: var(--ok); }
   .b-npu { background: var(--info-soft); color: var(--info); }
   .b-tpu { background: var(--accent-soft); color: var(--accent); }
-  .b-model-service { background: var(--info-soft); color: var(--info); }
+  .b-inference { background: var(--info-soft); color: var(--info); }
   .b-application { background: var(--accent-soft); color: var(--accent); }
   .b-on { background: var(--bad-soft); color: var(--bad); }
   .b-off { background: var(--ok-soft); color: var(--ok); }
@@ -402,7 +402,7 @@
         <h4>배포 기록이 상태의 출처</h4>
         <div class="meta">
           노드마다 상태와 Semaphore 태스크 결과를 배포 기록에 남기고, 태스크 로그는 따로 받습니다.
-          모델 서비스가 답하는지는 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인합니다.
+          추론 서비스가 답하는지는 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인합니다.
         </div>
       </div>
     </div>
@@ -414,7 +414,7 @@
   <h2>모델 카탈로그</h2>
   <p class="lede">
     같은 모델이 출처마다 다른 형태로 배포됩니다(HF 의 safetensors, Ollama 의 GGUF).
-    그래서 <b>포맷·정밀도·호환 엔진은 아티팩트에</b> 있고, 모델 서비스 배포는 모델 하나와 그 아티팩트 하나, 엔진 하나를 고릅니다.
+    그래서 <b>포맷·정밀도·호환 런타임은 아티팩트에</b> 있고, 추론 배포는 모델 하나와 그 아티팩트 하나, 런타임 하나를 고릅니다.
   </p>
 
   <div class="panel">
@@ -423,7 +423,7 @@
       <div class="field"><label>용도 (task)</label><select id="md-f-task"></select></div>
       <div class="field"><label>입력 (modality)</label><select id="md-f-modality"></select></div>
       <div class="field"><label>포맷 (format)</label><select id="md-f-format"></select></div>
-      <div class="field"><label>엔진 (engine)</label><select id="md-f-engine"></select></div>
+      <div class="field"><label>런타임 (runtimeId)</label><select id="md-f-runtimeId"></select></div>
       <div class="field"><label>출처 (source)</label><select id="md-f-source"></select></div>
     </div>
     <div class="row">
@@ -458,11 +458,11 @@
   </div>
 
   <div class="panel">
-    <h3>엔진 프로필 <span class="hint" id="eg-count">조회만 됩니다</span></h3>
+    <h3>런타임 프로필 <span class="hint" id="eg-count">조회만 됩니다</span></h3>
     <div id="eg-list"><div class="spin">부르는 중...</div></div>
     <details class="wire" id="eg-wire"></details>
     <div class="note" style="margin-top:12px">
-      모델 서비스 배포 요청이 오면 아티팩트의 <code>format</code>·<code>engines</code> 와 엔진 프로필이 맞는지 보고,
+      추론 배포 요청이 오면 아티팩트의 <code>format</code>·<code>runtimes</code> 와 런타임 프로필이 맞는지 보고,
       맞으면 compose 파일을 만듭니다. 모델 상세의 "compose 보기" 가 그 파일을 미리 만들어 봅니다.
     </div>
   </div>
@@ -524,7 +524,7 @@
 <section class="page" id="p-deploy">
   <h2>노드 배포와 제어</h2>
   <p class="lede">
-    CB-Tumblebug 이 이미 띄운 노드에 모델 서비스나 올린 응용을 배포합니다. AI-App 이 노드 정보와 SSH 키를 읽고,
+    CB-Tumblebug 이 이미 띄운 노드에 추론 서비스나 올린 응용을 배포합니다. AI-App 이 노드 정보와 SSH 키를 읽고,
     파일을 공유 저장소에 둔 뒤 Semaphore 로 플레이북을 돌립니다.
     dry-run 이 켜져 있으면 조회와 파일 배치까지만 하고 만든 compose 를 돌려줍니다. 부르는 것은 전부 <b>실제 호출</b>입니다.
   </p>
@@ -535,7 +535,7 @@
       <div class="field">
         <label>종류 (type)</label>
         <select id="dp-type" onchange="deployForm()">
-          <option value="model-service">model-service · 모델 서비스</option>
+          <option value="inference">inference · 추론 서비스</option>
           <option value="app">app · 올린 응용</option>
         </select>
       </div>
@@ -548,7 +548,7 @@
       <div class="grid g3">
         <div class="field"><label>모델 (modelId)</label><select id="dp-model" onchange="dpModelChanged()"></select></div>
         <div class="field"><label>아티팩트 (artifactId)</label><select id="dp-artifact" onchange="dpArtifactChanged()"></select></div>
-        <div class="field"><label>엔진 (engine)</label><select id="dp-engine"></select></div>
+        <div class="field"><label>런타임 (runtimeId)</label><select id="dp-runtime"></select></div>
         <div class="field">
           <label>GPU (gpu) · 켜면 GPU 예약, NVIDIA Container Toolkit 설치</label>
           <select id="dp-gpu">
@@ -726,7 +726,7 @@
     <h3>노드별 작업 <span class="hint">같은 노드의 같은 작업 키는 나중 배포가 앞 배포를 바꿉니다</span></h3>
     <div id="mo-nodes"></div>
     <div class="note info" style="margin-top:14px">
-      작업 키는 모델 서비스면 <code>ms-&lt;engine&gt;</code>, 응용이면 <code>app-&lt;name&gt;</code> 이고,
+      작업 키는 추론 서비스면 <code>ms-&lt;runtimeId&gt;</code>, 응용이면 <code>app-&lt;name&gt;</code> 이고,
       노드 폴더 <code>/opt/aiapp/&lt;작업 키&gt;</code> 와 compose 프로젝트 <code>aiapp-&lt;작업 키&gt;</code> 를 정합니다.
       배포 기록에 <code>workKey</code> 가 없으면 요청에서 같은 규칙으로 계산해 <span class="b b-mut">계산</span> 을 붙입니다.
     </div>
@@ -736,7 +736,7 @@
     <h3>서빙 응답과 가속기는 어디서 보나</h3>
     <div class="note">
       예전 화면의 배포(Infra) 단위 서빙 응답 확인과 가속기 판독은 AI-App 에서 빠졌습니다.
-      지금은 모델 서비스가 답하는지를 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인하고,
+      지금은 추론 서비스가 답하는지를 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인하고,
       그 결과가 노드의 단계 상태와 로그로 남습니다. 자동화 엔진의 <code>status</code> 워크플로가 배포 기록과 노드별 마지막 로그 줄을 한 번에 읽습니다.
     </div>
   </div>
@@ -1295,15 +1295,15 @@ const SAMPLE_MODEL = {
   license: 'apache-2.0',
   artifacts: [
     { id: 'ollama-q4km', source: 'ollama', ref: 'qwen3:0.6b', format: 'gguf', precision: 'Q4_K_M',
-      engines: [{ engine: 'ollama' }] }
+      runtimes: [{ runtimeId: 'ollama' }] }
   ]
 };
 
 /* MODELS_ALL is the whole catalog, unfiltered: the deployment form and the
    filter choices are built from it. */
 let MODELS_ALL = [];
-let ENGINES = [];
-const MODEL_FILTERS = ['task', 'modality', 'format', 'engine', 'source'];
+let RUNTIMES = [];
+const MODEL_FILTERS = ['task', 'modality', 'format', 'runtimeId', 'source'];
 
 /* The filter choices are the values the catalog actually holds, so a filter
    that cannot match anything is never offered. */
@@ -1311,7 +1311,7 @@ const FILTER_VALUES = {
   task: (m) => m.tasks || [],
   modality: (m) => m.inputModalities || [],
   format: (m) => (m.artifacts || []).map((a) => a.format),
-  engine: (m) => (m.artifacts || []).flatMap((a) => (a.engines || []).map((e) => e.engine)),
+  runtimeId: (m) => (m.artifacts || []).flatMap((a) => (a.runtimes || []).map((r) => r.runtimeId)),
   source: (m) => (m.artifacts || []).map((a) => a.source)
 };
 
@@ -1328,7 +1328,7 @@ async function ensureModels() {
 
 function loadModelsPage() {
   loadModels();
-  loadEngines();
+  loadRuntimes();
 }
 
 function fillModelFilters() {
@@ -1402,7 +1402,7 @@ async function showModel(id) {
     </div>
     <table style="margin-top:12px">
       <tr><th>아티팩트</th><th>출처 (source)</th><th>ref</th><th>format</th><th>precision</th><th>sizeGiB</th>
-          <th>엔진 (최소 버전)</th><th style="width:300px">compose 미리보기</th></tr>
+          <th>런타임 (최소 버전)</th><th style="width:300px">compose 미리보기</th></tr>
       ${arts.map((a, i) => `<tr>
         <td class="mono" style="font-size:12px"><b>${esc(a.id)}</b></td>
         <td style="font-size:12px">${esc(a.source)}</td>
@@ -1410,11 +1410,11 @@ async function showModel(id) {
         <td><span class="b b-mut">${esc(a.format)}</span></td>
         <td class="mono" style="font-size:12px">${esc(a.precision || '-')}</td>
         <td>${a.sizeGiB ? esc(a.sizeGiB) : '<span class="b b-mut">모름</span>'}</td>
-        <td style="font-size:12px">${(a.engines || []).map((e) =>
-          `<div><span class="mono">${esc(e.engine)}</span>${e.minVersion ? ' ≥ ' + esc(e.minVersion) : ''}</div>`).join('')}</td>
+        <td style="font-size:12px">${(a.runtimes || []).map((r) =>
+          `<div><span class="mono">${esc(r.runtimeId)}</span>${r.minVersion ? ' ≥ ' + esc(r.minVersion) : ''}</div>`).join('')}</td>
         <td><div class="row" style="gap:4px">
-          <select id="md-ce-${i}" style="padding:4px 6px;font-size:12px;min-width:80px">${(a.engines || []).map((e) =>
-            `<option value="${esc(e.engine)}">${esc(e.engine)}</option>`).join('')}</select>
+          <select id="md-ce-${i}" style="padding:4px 6px;font-size:12px;min-width:80px">${(a.runtimes || []).map((r) =>
+            `<option value="${esc(r.runtimeId)}">${esc(r.runtimeId)}</option>`).join('')}</select>
           <select id="md-cg-${i}" style="padding:4px 6px;font-size:12px;width:auto">
             <option value="false">GPU 끔</option><option value="true">GPU 켬</option></select>
           <button class="ghost btn-sm" onclick="previewCompose(${jsq(m.id)}, ${jsq(a.id)}, ${i})">compose 보기</button>
@@ -1430,14 +1430,14 @@ async function showModel(id) {
 }
 
 async function previewCompose(modelId, artifactId, i) {
-  const engine = $('md-ce-' + i).value;
+  const runtimeId = $('md-ce-' + i).value;
   const gpu = $('md-cg-' + i).value;
   const r = await api('GET', `/models/${encodeURIComponent(modelId)}/artifacts/${encodeURIComponent(artifactId)}/compose` +
-    `?engine=${encodeURIComponent(engine)}&gpu=${encodeURIComponent(gpu)}`);
+    `?runtimeId=${encodeURIComponent(runtimeId)}&gpu=${encodeURIComponent(gpu)}`);
   wire($('md-compose-wire'), r);
   $('md-compose-out').innerHTML = r.ok
     ? `<div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">docker-compose.yml ·
-        <span class="mono">${esc(modelId)} / ${esc(artifactId)}</span> · 엔진 <span class="mono">${esc(engine)}</span> · GPU ${gpu === 'true' ? '켬' : '끔'}</div>
+        <span class="mono">${esc(modelId)} / ${esc(artifactId)}</span> · 런타임 <span class="mono">${esc(runtimeId)}</span> · GPU ${gpu === 'true' ? '켬' : '끔'}</div>
        <pre class="json">${esc(r.raw)}</pre>`
     : failNote(r);
 }
@@ -1446,7 +1446,7 @@ async function previewCompose(modelId, artifactId, i) {
 async function deployModel(id) {
   if (!loaded.deploy) { loaded.deploy = true; await loadDeployPage(); }
   show('deploy');
-  $('dp-type').value = 'model-service';
+  $('dp-type').value = 'inference';
   deployForm();
   fillModelSelect();
   $('dp-model').value = id;
@@ -1485,23 +1485,23 @@ async function registerModel() {
   showModel((r.data && r.data.id) || body.id);
 }
 
-async function loadEngines() {
-  const r = await api('GET', '/engines');
+async function loadRuntimes() {
+  const r = await api('GET', '/runtimes');
   wire($('eg-wire'), r);
   if (!r.ok) { $('eg-list').innerHTML = failNote(r); return; }
-  ENGINES = (r.data && r.data.engines) || [];
-  $('eg-count').textContent = ENGINES.length + ' 개 · 조회만 됩니다';
-  $('eg-list').innerHTML = ENGINES.length ? `<table>
+  RUNTIMES = (r.data && r.data.runtimes) || [];
+  $('eg-count').textContent = RUNTIMES.length + ' 개 · 조회만 됩니다';
+  $('eg-list').innerHTML = RUNTIMES.length ? `<table>
     <tr><th style="width:90px">ID</th><th>이미지</th><th style="width:90px">포맷</th><th style="width:70px">포트</th>
         <th style="width:110px">헬스 경로</th><th style="width:110px">API 경로</th></tr>
-    ${ENGINES.map((e) => `<tr>
+    ${RUNTIMES.map((e) => `<tr>
       <td class="mono"><b>${esc(e.id)}</b></td>
       <td class="mono" style="font-size:12px">${esc(e.image)}</td>
       <td>${(e.formats || []).map((f) => `<span class="b b-mut">${esc(f)}</span>`).join(' ')}</td>
       <td class="mono">${esc(e.port)}</td>
       <td class="mono" style="font-size:12px">${esc(e.healthPath || '-')}</td>
       <td class="mono" style="font-size:12px">${esc(e.apiBasePath || '-')}</td>
-    </tr>`).join('')}</table>` : '<div class="empty">엔진 프로필이 없습니다.</div>';
+    </tr>`).join('')}</table>` : '<div class="empty">런타임 프로필이 없습니다.</div>';
 }
 
 /* ---------- 응용 ---------- */
@@ -1665,7 +1665,7 @@ function addTarget(t) {
 }
 
 function deployForm() {
-  const ms = $('dp-type').value === 'model-service';
+  const ms = $('dp-type').value === 'inference';
   $('dp-f-ms').style.display = ms ? '' : 'none';
   $('dp-f-app').style.display = ms ? 'none' : '';
 }
@@ -1693,8 +1693,8 @@ function dpModelChanged() {
 function dpArtifactChanged() {
   const m = MODELS_ALL.find((x) => x.id === $('dp-model').value) || {};
   const a = (m.artifacts || []).find((x) => x.id === $('dp-artifact').value) || {};
-  $('dp-engine').innerHTML = (a.engines || []).map((e, i) =>
-    `<option value="${esc(e.engine)}">${esc(e.engine)}${i === 0 ? ' (비우면 이것)' : ''}</option>`).join('');
+  $('dp-runtime').innerHTML = (a.runtimes || []).map((r, i) =>
+    `<option value="${esc(r.runtimeId)}">${esc(r.runtimeId)}${i === 0 ? ' (비우면 이것)' : ''}</option>`).join('');
 }
 
 function fillAppSelect() {
@@ -1738,13 +1738,13 @@ function buildDeployRequest() {
 
   const type = $('dp-type').value;
   const req = { type, targets };
-  if (type === 'model-service') {
+  if (type === 'inference') {
     const ms = { modelId: $('dp-model').value, artifactId: $('dp-artifact').value };
-    if ($('dp-engine').value) ms.engine = $('dp-engine').value;
+    if ($('dp-runtime').value) ms.runtimeId = $('dp-runtime').value;
     if ($('dp-gpu').value) ms.gpu = $('dp-gpu').value === 'true';
     const env = parseEnv($('dp-ms-env').value, 'env');
     if (Object.keys(env).length) ms.env = env;
-    req.modelService = ms;
+    req.inference = ms;
   } else {
     const app = { name: $('dp-app').value };
     const v = Number($('dp-ver').value);
@@ -1799,9 +1799,9 @@ function toEngineDeploy() {
 /* whatOf names what a deployment request deploys. */
 function whatOf(q) {
   q = q || {};
-  if (q.type === 'model-service') {
-    const m = q.modelService || {};
-    return `${m.modelId || '?'} / ${m.artifactId || '?'}${m.engine ? ' · ' + m.engine : ''}`;
+  if (q.type === 'inference') {
+    const m = q.inference || {};
+    return `${m.modelId || '?'} / ${m.artifactId || '?'}${m.runtimeId ? ' · ' + m.runtimeId : ''}`;
   }
   if (q.type === 'app') {
     const a = q.app || {};
@@ -1895,7 +1895,7 @@ function renderDeploymentDetail(d, r) {
     </div>
     ${d.error ? `<div class="note bad"><b>배포 오류</b> ${esc(d.error)}</div>` : ''}
     ${d.dryRun ? `<div class="note info" style="margin-top:10px"><b>dry-run 입니다.</b>
-      노드 조회와 파일 배치까지만 했고 Semaphore 에는 아무것도 등록하지 않았습니다.${d.type === 'model-service'
+      노드 조회와 파일 배치까지만 했고 Semaphore 에는 아무것도 등록하지 않았습니다.${d.type === 'inference'
       ? ' 만든 compose 는 노드마다 아래에 있습니다.' : ''}</div>` : ''}
     ${nodes.map((n) => renderNodeResult(n, d)).join('')}`;
   $('dp-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -2024,7 +2024,7 @@ function platformNote(r) {
 
 /* ---------- 자동화 엔진 ---------- */
 const WF_DESC = {
-  deploy: '배포 요청(배포 화면과 같은 모양: <code>type</code>, <code>targets</code>, <code>modelService</code> 또는 <code>app</code>)을 받아 모델이나 응용을 읽고(<code>get_model</code>·<code>get_app</code>), 배포를 만들고(<code>create_deployment</code>), 모든 노드가 끝날 때까지 읽습니다(<code>get_deployment</code>). 일부 노드만 성공하면(partial) 실행은 실패입니다.',
+  deploy: '배포 요청(배포 화면과 같은 모양: <code>type</code>, <code>targets</code>, <code>inference</code> 또는 <code>app</code>)을 받아 모델이나 응용을 읽고(<code>get_model</code>·<code>get_app</code>), 배포를 만들고(<code>create_deployment</code>), 모든 노드가 끝날 때까지 읽습니다(<code>get_deployment</code>). 일부 노드만 성공하면(partial) 실행은 실패입니다.',
   heal: 'failed·partial·interrupted·dry-run 인 배포를 그때의 요청으로 한 번 다시 만들고 같은 방식으로 따라갑니다. succeeded 인 배포는 그대로 두고, running 인 배포는 거절합니다.',
   control: '배포의 모든 노드에 CB-Tumblebug 노드 제어(정지·재개·재부팅·종료)를 보냅니다(<code>control_node</code>).',
   status: '배포 기록과 노드마다 마지막 태스크 로그 줄을 읽습니다(<code>get_deployment</code>, <code>get_deployment_logs</code>). 읽기만 합니다.'
@@ -2038,10 +2038,10 @@ function sampleDeployRequest() {
   const m = MODELS_ALL[0] || {};
   const a = (m.artifacts || [])[0] || {};
   return {
-    type: 'model-service',
+    type: 'inference',
     targets: [{ kind: 'node', nsId: 'etri', infraId: 'travel', nodeId: 'vm1' }],
-    modelService: { modelId: m.id || 'qwen3-embedding-0.6b', artifactId: a.id || 'hf-bf16',
-      engine: ((a.engines || [])[0] || {}).engine || 'vllm' }
+    inference: { modelId: m.id || 'qwen3-embedding-0.6b', artifactId: a.id || 'hf-bf16',
+      runtimeId: ((a.runtimes || [])[0] || {}).runtimeId || 'vllm' }
   };
 }
 
@@ -2212,7 +2212,7 @@ function openEngineRun(id) {
 function workKeyOf(n, d) {
   if (n.workKey) return { key: n.workKey, derived: false };
   const q = d.request || {};
-  if (q.type === 'model-service') return { key: 'ms-' + ((q.modelService || {}).engine || '?'), derived: true };
+  if (q.type === 'inference') return { key: 'ms-' + ((q.inference || {}).runtimeId || '?'), derived: true };
   if (q.type === 'app') return { key: 'app-' + ((q.app || {}).name || '?'), derived: true };
   return { key: '-', derived: true };
 }

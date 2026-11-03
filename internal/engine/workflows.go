@@ -206,12 +206,12 @@ func summarizeCatalog(models []model.Model, apps []model.App) *Catalog {
 		entry := CatalogModel{ID: m.ID, Name: m.Name, Tasks: m.Tasks, InputModalities: m.InputModalities,
 			Artifacts: make([]CatalogArtifact, 0, len(m.Artifacts))}
 		for _, a := range m.Artifacts {
-			engines := make([]string, 0, len(a.Engines))
-			for _, compat := range a.Engines {
-				engines = append(engines, compat.Engine)
+			runtimes := make([]string, 0, len(a.Runtimes))
+			for _, compat := range a.Runtimes {
+				runtimes = append(runtimes, compat.RuntimeID)
 			}
 			entry.Artifacts = append(entry.Artifacts, CatalogArtifact{ID: a.ID, Source: a.Source, Ref: a.Ref,
-				Format: a.Format, Precision: a.Precision, SizeGiB: a.SizeGiB, Engines: engines})
+				Format: a.Format, Precision: a.Precision, SizeGiB: a.SizeGiB, Runtimes: runtimes})
 		}
 		out.Models = append(out.Models, entry)
 	}

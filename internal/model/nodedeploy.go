@@ -10,9 +10,9 @@ import (
 
 // Deployment types of a node deployment request.
 const (
-	// NodeDeployTypeModelService runs an inference engine loading one model
+	// NodeDeployTypeInference runs an inference runtime loading one model
 	// artifact, from a compose file rendered by this service.
-	NodeDeployTypeModelService = "model-service"
+	NodeDeployTypeInference = "inference"
 	// NodeDeployTypeApp copies an uploaded application version to the node and
 	// runs its script.
 	NodeDeployTypeApp = "app"
@@ -83,21 +83,21 @@ func (t *NodeDeployTarget) Key() string {
 	return t.NsID + "/" + t.InfraID + "/" + t.NodeID
 }
 
-// NodeModelServiceReq says which model artifact to serve and with which engine.
-type NodeModelServiceReq struct {
+// NodeInferenceReq says which model artifact to serve and with which runtime.
+type NodeInferenceReq struct {
 	// ModelID is a model of the model catalog (GET /models).
 	ModelID string `json:"modelId" validate:"required" example:"qwen3-embedding-0.6b"`
 	// ArtifactID is an artifact of that model.
 	ArtifactID string `json:"artifactId" validate:"required" example:"hf-bf16"`
-	// Engine is an engine profile ID (GET /engines) the artifact lists. Empty
-	// takes the first engine the artifact lists.
-	Engine string `json:"engine,omitempty" example:"vllm"`
-	// GPU reserves every NVIDIA GPU of the node for the engine and installs
+	// RuntimeID is a runtime profile ID (GET /runtimes) the artifact lists.
+	// Empty takes the first runtime the artifact lists.
+	RuntimeID string `json:"runtimeId,omitempty" example:"vllm"`
+	// GPU reserves every NVIDIA GPU of the node for the runtime and installs
 	// the NVIDIA Container Toolkit. Omitted, it is true when the node spec in
 	// CB-Tumblebug has acceleratorType gpu, and false when the spec cannot be
 	// read; the node result says which.
 	GPU *bool `json:"gpu,omitempty" example:"false"`
-	// Env is added to the engine container environment and written to the
+	// Env is added to the runtime container environment and written to the
 	// .env file beside the compose file. Names match [A-Z_][A-Z0-9_]*;
 	// values hold no line break and no single quote.
 	Env map[string]string `json:"env,omitempty"`
@@ -117,16 +117,16 @@ type NodeAppReq struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
-// NodeDeploymentReq deploys a model service or an application onto existing
-// CB-Tumblebug nodes.
+// NodeDeploymentReq deploys an inference service or an application onto
+// existing CB-Tumblebug nodes.
 type NodeDeploymentReq struct {
-	// Type is "model-service" or "app"; the field of the same name below
-	// carries what to deploy.
-	Type string `json:"type" validate:"required" enums:"model-service,app" example:"model-service"`
+	// Type is "inference" or "app"; the field of the same name below carries
+	// what to deploy.
+	Type string `json:"type" validate:"required" enums:"inference,app" example:"inference"`
 	// Targets are the nodes to deploy to, at most 32, each once.
 	Targets []NodeDeployTarget `json:"targets" validate:"required"`
-	// ModelService is required when type is model-service.
-	ModelService *NodeModelServiceReq `json:"modelService,omitempty"`
+	// Inference is required when type is inference.
+	Inference *NodeInferenceReq `json:"inference,omitempty"`
 	// App is required when type is app.
 	App *NodeAppReq `json:"app,omitempty"`
 }
@@ -136,28 +136,28 @@ type NodeDeploymentReq struct {
 // ValidationError.
 func (r *NodeDeploymentReq) Validate() error {
 	switch r.Type {
-	case NodeDeployTypeModelService:
-		if r.ModelService == nil {
-			return errRequired("modelService")
+	case NodeDeployTypeInference:
+		if r.Inference == nil {
+			return errRequired("inference")
 		}
 		if r.App != nil {
-			return errInvalid("app", "must be empty when type is model-service")
+			return errInvalid("app", "must be empty when type is inference")
 		}
-		if r.ModelService.ModelID == "" {
-			return errRequired("modelService.modelId")
+		if r.Inference.ModelID == "" {
+			return errRequired("inference.modelId")
 		}
-		if r.ModelService.ArtifactID == "" {
-			return errRequired("modelService.artifactId")
+		if r.Inference.ArtifactID == "" {
+			return errRequired("inference.artifactId")
 		}
-		if err := ValidateDeployEnv("modelService.env", r.ModelService.Env); err != nil {
+		if err := ValidateDeployEnv("inference.env", r.Inference.Env); err != nil {
 			return err
 		}
 	case NodeDeployTypeApp:
 		if r.App == nil {
 			return errRequired("app")
 		}
-		if r.ModelService != nil {
-			return errInvalid("modelService", "must be empty when type is app")
+		if r.Inference != nil {
+			return errInvalid("inference", "must be empty when type is app")
 		}
 		if err := ValidateAppName(r.App.Name); err != nil {
 			return &ValidationError{Message: "app." + ValidationMessage(err)}
@@ -171,7 +171,7 @@ func (r *NodeDeploymentReq) Validate() error {
 	case "":
 		return errRequired("type")
 	default:
-		return errInvalid("type", "must be model-service or app")
+		return errInvalid("type", "must be inference or app")
 	}
 
 	if len(r.Targets) == 0 {
@@ -235,7 +235,7 @@ type NodeDeployment struct {
 	// node is named after the work key instead; see NodeDeployResult.NodeDir.
 	ID string `json:"id" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
 	// Type is the request type.
-	Type string `json:"type" enums:"model-service,app" example:"model-service"`
+	Type string `json:"type" enums:"inference,app" example:"inference"`
 	// Status is pending, running, succeeded (every node), failed (every node),
 	// partial (some nodes), dry-run (files placed, nothing run) or interrupted
 	// (the service stopped while it ran).
@@ -243,7 +243,7 @@ type NodeDeployment struct {
 	// DryRun is true when the service ran with dry run on: only the node
 	// look-up and file placement were done.
 	DryRun bool `json:"dryRun" example:"false"`
-	// Request is the request as accepted, with the engine and app version
+	// Request is the request as accepted, with the runtime and app version
 	// that were taken filled in.
 	Request NodeDeploymentReq `json:"request"`
 	// Nodes are the per node results, in request order.
@@ -265,7 +265,7 @@ type NodeDeployResult struct {
 	// Node is how the node was reached, as read from CB-Tumblebug. Absent
 	// when the node could not be read. The SSH key is never included.
 	Node *NodeDeployNode `json:"node,omitempty"`
-	// GPU is whether the engine was given the node's GPUs and the NVIDIA
+	// GPU is whether the runtime was given the node's GPUs and the NVIDIA
 	// Container Toolkit was installed.
 	GPU bool `json:"gpu" example:"false"`
 	// GPUSource says where GPU came from: request, spec, or default when the
@@ -277,18 +277,18 @@ type NodeDeployResult struct {
 	// StageDir is the folder the files were placed in on the shared stage
 	// volume: <AIAPP_STAGE_ROOT>/<deployment id>/<csp>-<node id>.
 	StageDir string `json:"stageDir,omitempty" example:"/var/lib/aiapp/stage/3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48/aws-vm1"`
-	// WorkKey names what the deployment occupies on the node: ms-<engine> for
-	// a model service, app-<name> for an application. A later deployment of
+	// WorkKey names what the deployment occupies on the node: ms-<runtime>
+	// for an inference service, app-<name> for an application. A later deployment of
 	// the same work key to the same node replaces this one there.
 	WorkKey string `json:"workKey,omitempty" example:"ms-vllm"`
 	// NodeDir is the folder on the node the files were copied to,
 	// /opt/aiapp/<work key>. Its compose project is aiapp-<work key>.
 	NodeDir string `json:"nodeDir,omitempty" example:"/opt/aiapp/ms-vllm"`
-	// Compose is the rendered docker-compose.yml of a model service.
+	// Compose is the rendered docker-compose.yml of an inference service.
 	Compose string `json:"compose,omitempty"`
-	// ServiceURL is the model service API on the node, built from the public
-	// or private IP the node was reached at, the engine port and its API base
-	// path. Model services only.
+	// ServiceURL is the inference API on the node, built from the public or
+	// private IP the node was reached at, the runtime port and its API base
+	// path. Inference services only.
 	ServiceURL string `json:"serviceUrl,omitempty" example:"http://203.0.113.10:8000/v1"`
 	// Steps are the playbooks run on the node, in order. A step that failed
 	// ends the node.

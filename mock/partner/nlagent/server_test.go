@@ -42,7 +42,7 @@ func fakeEngine(t *testing.T, gotNS *[]string) string {
 		Handle: func(_ context.Context, nsID string, _ json.RawMessage) (any, error) {
 			record(nsID)
 			return engine.Catalog{Models: []engine.CatalogModel{{ID: "qwen3-vl-8b", Artifacts: []engine.CatalogArtifact{
-				{ID: "ollama-gguf", Source: "ollama", Ref: "qwen3-vl:8b", Format: "gguf", Engines: []string{"ollama"}}}}},
+				{ID: "ollama-gguf", Source: "ollama", Ref: "qwen3-vl:8b", Format: "gguf", Runtimes: []string{"ollama"}}}}},
 				Apps: []engine.CatalogApp{{Name: "open-webui", Versions: []int{1}, Latest: 1}}}, nil
 		},
 	})
@@ -83,8 +83,8 @@ func (f *fakeLLM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Input: json.RawMessage(`{"modality":"image"}`)}}
 	case 2:
 		resp.Content = []llm.Block{{Type: llm.BlockToolUse, ID: "t2", Name: engine.ToolDeploy,
-			Input: json.RawMessage(`{"type":"model-service","targets":[{"kind":"node","nsId":"etri","infraId":"travel",` +
-				`"nodeId":"vm2"}],"modelService":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf"}}`)}}
+			Input: json.RawMessage(`{"type":"inference","targets":[{"kind":"node","nsId":"etri","infraId":"travel",` +
+				`"nodeId":"vm2"}],"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf"}}`)}}
 	default:
 		resp.StopReason = "end_turn"
 		resp.Content = []llm.Block{llm.TextBlock("Planned, blocked by dry run.")}

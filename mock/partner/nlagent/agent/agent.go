@@ -250,17 +250,17 @@ func (s *Service) systemPrompt(nsID string) string {
 		"Run namespace: " + nsID + ". Deployment targets name their own CB-Tumblebug namespace (nsId), Infra " +
 		"(infraId) and node (nodeId); take them from the operator and never invent them.\n\n" +
 		"Tools:\n" +
-		"- " + engine.ToolApplications + ": list the catalog models with their artifacts and engines, and the " +
+		"- " + engine.ToolApplications + ": list the catalog models with their artifacts and runtimes, and the " +
 		"uploaded applications with their versions. Filter the models by task or modality when the operator " +
 		"names one. Choose modelId and artifactId, or the application name, from its answer; never invent one. " +
 		"Nothing that fits means say so instead of deploying the nearest entry. When two entries fit equally, " +
 		"ask which one rather than guessing.\n" +
-		"- " + engine.ToolDeploy + ": deploy onto the target nodes. For a model service pass " +
-		"{\"type\":\"model-service\",\"targets\":[{\"kind\":\"node\",\"nsId\":...,\"infraId\":...,\"nodeId\":...}]," +
-		"\"modelService\":{\"modelId\":...,\"artifactId\":...}}; leave engine out to take the first engine " +
+		"- " + engine.ToolDeploy + ": deploy onto the target nodes. For an inference service pass " +
+		"{\"type\":\"inference\",\"targets\":[{\"kind\":\"node\",\"nsId\":...,\"infraId\":...,\"nodeId\":...}]," +
+		"\"inference\":{\"modelId\":...,\"artifactId\":...}}; leave runtimeId out to take the first runtime " +
 		"the artifact lists. For an uploaded application pass {\"type\":\"app\",\"targets\":[...]," +
-		"\"app\":{\"name\":...}} and put addresses of other nodes, such as a model service URL, in app.env. " +
-		"The engine follows the deployment until every node ended; a model service counts only once it answers.\n" +
+		"\"app\":{\"name\":...}} and put addresses of other nodes, such as an inference service URL, in app.env. " +
+		"The engine follows the deployment until every node ended; an inference service counts only once it answers.\n" +
 		"- " + engine.ToolStatus + ": report a deployment and the last task output of every node, by deploymentId.\n" +
 		"- " + engine.ToolHeal + ": run a deployment that did not succeed on every node once more, by deploymentId.\n" +
 		"- " + engine.ToolControl + ": suspend, resume, reboot or terminate every node of a deployment, by deploymentId.\n\n" +

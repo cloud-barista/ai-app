@@ -20,8 +20,8 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 )
 
-// ErrIncompatible is returned when an artifact cannot be run with an engine.
-var ErrIncompatible = errors.New("artifact is not compatible with the engine")
+// ErrIncompatible is returned when an artifact cannot be run with a runtime.
+var ErrIncompatible = errors.New("artifact is not compatible with the runtime")
 
 // ErrInvalidOption is returned when a render option cannot be written into a
 // compose file.
@@ -45,7 +45,7 @@ const ollamaPullService = "model-pull"
 // for the pull to finish as well. vLLM loads the model before /health answers
 // and has none.
 func CompletionServices(engineID string) []string {
-	if engineID == model.EngineOllama {
+	if engineID == model.RuntimeOllama {
 		return []string{ollamaPullService}
 	}
 	return nil
@@ -70,7 +70,7 @@ type envVar struct {
 type view struct {
 	Model    *model.Model
 	Artifact *model.Artifact
-	Engine   *model.EngineProfile
+	Engine   *model.RuntimeProfile
 	GPU      bool
 	Args     []string
 	Env      []envVar
@@ -78,25 +78,25 @@ type view struct {
 
 // Render builds the docker-compose.yml for artifact of m run with engine.
 //
-// It refuses the pairing unless the artifact lists the engine and the engine
+// It refuses the pairing unless the artifact lists the runtime and the runtime
 // loads the artifact format.
-func Render(m *model.Model, artifact *model.Artifact, engine *model.EngineProfile, opts Options) (string, error) {
-	if !artifact.SupportsEngine(engine.ID) {
-		return "", fmt.Errorf("%w: artifact %s/%s does not list engine %s", ErrIncompatible, m.ID, artifact.ID, engine.ID)
+func Render(m *model.Model, artifact *model.Artifact, engine *model.RuntimeProfile, opts Options) (string, error) {
+	if !artifact.SupportsRuntime(engine.ID) {
+		return "", fmt.Errorf("%w: artifact %s/%s does not list runtime %s", ErrIncompatible, m.ID, artifact.ID, engine.ID)
 	}
 	if !engine.LoadsFormat(artifact.Format) {
-		return "", fmt.Errorf("%w: engine %s does not load format %s", ErrIncompatible, engine.ID, artifact.Format)
+		return "", fmt.Errorf("%w: runtime %s does not load format %s", ErrIncompatible, engine.ID, artifact.Format)
 	}
 
 	tmpl, ok := templates[engine.ID]
 	if !ok {
-		return "", fmt.Errorf("%w: no compose template for engine %s", ErrIncompatible, engine.ID)
+		return "", fmt.Errorf("%w: no compose template for runtime %s", ErrIncompatible, engine.ID)
 	}
 
 	v := view{Model: m, Artifact: artifact, Engine: engine, GPU: opts.GPU}
 	defaults := map[string]string{}
 	switch engine.ID {
-	case model.EngineVLLM:
+	case model.RuntimeVLLM:
 		v.Args = vllmArgs(m, artifact, engine)
 		defaults[hfTokenEnv] = "${" + hfTokenEnv + ":-}"
 	}
@@ -119,7 +119,7 @@ func Render(m *model.Model, artifact *model.Artifact, engine *model.EngineProfil
 // from the architecture by default, and an embedding model built on a causal
 // language model architecture (Qwen3-Embedding is Qwen3ForCausalLM) would
 // otherwise come up as a text generator.
-func vllmArgs(m *model.Model, artifact *model.Artifact, engine *model.EngineProfile) []string {
+func vllmArgs(m *model.Model, artifact *model.Artifact, engine *model.RuntimeProfile) []string {
 	args := []string{"--model", artifact.Ref, "--port", fmt.Sprint(engine.Port)}
 	if m.HasTask("embedding") {
 		args = append(args, "--runner", "pooling")
@@ -253,7 +253,7 @@ var templates = func() map[string]*template.Template {
 		return t
 	}
 	return map[string]*template.Template{
-		model.EngineVLLM:   parse(model.EngineVLLM, vllmTemplate),
-		model.EngineOllama: parse(model.EngineOllama, ollamaTemplate),
+		model.RuntimeVLLM:   parse(model.RuntimeVLLM, vllmTemplate),
+		model.RuntimeOllama: parse(model.RuntimeOllama, ollamaTemplate),
 	}
 }()

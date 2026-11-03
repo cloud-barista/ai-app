@@ -78,16 +78,16 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.DELETE("/apps/:name", handler.RestDeleteAppBundle)
 
 	// AI model catalog: models, the artifacts each is published as, and the
-	// inference engine profiles those artifacts run on.
+	// inference runtime profiles those artifacts run on.
 	g.GET("/models", handler.RestGetAllModels)
 	g.POST("/models", handler.RestPostModel)
 	g.GET("/models/:modelId", handler.RestGetModel)
 	g.DELETE("/models/:modelId", handler.RestDeleteModel)
 	g.GET("/models/:modelId/artifacts/:artifactId/compose", handler.RestGetModelCompose)
-	g.GET("/engines", handler.RestGetAllEngineProfiles)
-	g.GET("/engines/:engineId", handler.RestGetEngineProfile)
+	g.GET("/runtimes", handler.RestGetAllRuntimeProfiles)
+	g.GET("/runtimes/:runtimeId", handler.RestGetRuntimeProfile)
 
-	// Deployment of model services and applications onto nodes CB-Tumblebug
+	// Deployment of inference services and applications onto nodes CB-Tumblebug
 	// already runs, and control of those nodes.
 	g.POST("/deployments", handler.RestPostNodeDeployment)
 	g.GET("/deployments", handler.RestGetAllNodeDeployments)

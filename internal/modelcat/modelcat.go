@@ -1,5 +1,5 @@
 // Package modelcat stores the AI model catalog: models, the artifacts each is
-// published as, and the inference engines those artifacts run on.
+// published as, and the inference runtimes those artifacts run on.
 //
 // Models are held in memory and, when a file path is given, written to one JSON
 // file after every change so that a restart keeps what was registered.
@@ -37,16 +37,16 @@ var ErrArtifactNotFound = errors.New("model artifact not found")
 // Filter narrows a model listing. Every set field must match; empty fields
 // match anything. Comparison ignores case.
 //
-// Task and Modality are properties of the model. Format, Engine and Source are
-// properties of an artifact, and a model passes only when one artifact matches
-// all three of them at once: a model with an HF artifact for vLLM and a GGUF
-// artifact for Ollama does not pass format=gguf&engine=vllm.
+// Task and Modality are properties of the model. Format, RuntimeID and Source
+// are properties of an artifact, and a model passes only when one artifact
+// matches all three of them at once: a model with an HF artifact for vLLM and a
+// GGUF artifact for Ollama does not pass format=gguf&runtimeId=vllm.
 type Filter struct {
-	Task     string
-	Modality string
-	Format   string
-	Engine   string
-	Source   string
+	Task      string
+	Modality  string
+	Format    string
+	RuntimeID string
+	Source    string
 }
 
 // Store holds registered models, keyed by ID.
@@ -238,7 +238,7 @@ func (f Filter) matches(m *model.Model) bool {
 	if f.Modality != "" && !containsFold(m.InputModalities, f.Modality) {
 		return false
 	}
-	if f.Format == "" && f.Engine == "" && f.Source == "" {
+	if f.Format == "" && f.RuntimeID == "" && f.Source == "" {
 		return true
 	}
 	for i := range m.Artifacts {
@@ -256,8 +256,8 @@ func (f Filter) matchesArtifact(a *model.Artifact) bool {
 	if f.Source != "" && !strings.EqualFold(a.Source, f.Source) {
 		return false
 	}
-	if f.Engine != "" && !slices.ContainsFunc(a.Engines, func(c model.EngineCompat) bool {
-		return strings.EqualFold(c.Engine, f.Engine)
+	if f.RuntimeID != "" && !slices.ContainsFunc(a.Runtimes, func(c model.RuntimeCompat) bool {
+		return strings.EqualFold(c.RuntimeID, f.RuntimeID)
 	}) {
 		return false
 	}
@@ -275,7 +275,7 @@ func clone(m model.Model) model.Model {
 	m.InputModalities = slices.Clone(m.InputModalities)
 	artifacts := make([]model.Artifact, len(m.Artifacts))
 	for i, a := range m.Artifacts {
-		a.Engines = slices.Clone(a.Engines)
+		a.Runtimes = slices.Clone(a.Runtimes)
 		artifacts[i] = a
 	}
 	m.Artifacts = artifacts

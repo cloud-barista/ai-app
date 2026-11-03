@@ -135,9 +135,9 @@ func (f *fakeApp) registry() *tools.Registry {
 	qwen := model.Model{ID: modelID, Name: "Qwen3-VL-8B-Instruct", Tasks: []string{"vision-chat"},
 		InputModalities: []string{"text", "image"}, Artifacts: []model.Artifact{
 			{ID: "hf-bf16", Source: "huggingface", Ref: "Qwen/Qwen3-VL-8B-Instruct", Format: "hf",
-				Engines: []model.EngineCompat{{Engine: "vllm"}}},
+				Runtimes: []model.RuntimeCompat{{RuntimeID: "vllm"}}},
 			{ID: artifactID, Source: "ollama", Ref: "qwen3-vl:8b", Format: "gguf",
-				Engines: []model.EngineCompat{{Engine: "ollama"}}},
+				Runtimes: []model.RuntimeCompat{{RuntimeID: "ollama"}}},
 		}}
 	webui := model.App{Name: appName, Versions: []model.AppVersion{
 		{Version: 1, Script: "docker compose up -d", Files: []model.AppFile{{Name: "docker-compose.yml"}}},
@@ -277,8 +277,8 @@ func target(nodeID string) model.NodeDeployTarget {
 }
 
 func modelRequest(nodes ...string) DeployInput {
-	req := DeployInput{Type: model.NodeDeployTypeModelService,
-		ModelService: &model.NodeModelServiceReq{ModelID: modelID, ArtifactID: artifactID, Engine: "ollama"}}
+	req := DeployInput{Type: model.NodeDeployTypeInference,
+		Inference: &model.NodeInferenceReq{ModelID: modelID, ArtifactID: artifactID, RuntimeID: "ollama"}}
 	for _, n := range nodes {
 		req.Targets = append(req.Targets, target(n))
 	}
@@ -339,7 +339,7 @@ func expectShape(t *testing.T, run *Run, want string) {
 	}
 }
 
-func TestDeployModelServiceDryRunBlocksCreateAndHoldsWait(t *testing.T) {
+func TestDeployInferenceDryRunBlocksCreateAndHoldsWait(t *testing.T) {
 	fake := &fakeApp{dryRun: true}
 	e, _ := newEngine(t, fake)
 
@@ -349,7 +349,7 @@ func TestDeployModelServiceDryRunBlocksCreateAndHoldsWait(t *testing.T) {
 	if run.Status != RunBlocked || !run.DryRun || !strings.Contains(run.Message, "1 later steps wait") {
 		t.Errorf("run status = %s dryRun = %t message %q, want blocked under dry run", run.Status, run.DryRun, run.Message)
 	}
-	if got := run.Steps[0].Message; got != "artifact ollama-gguf: ollama qwen3-vl:8b (gguf), engines ollama" {
+	if got := run.Steps[0].Message; got != "artifact ollama-gguf: ollama qwen3-vl:8b (gguf), runtimes ollama" {
 		t.Errorf("read step message = %q", got)
 	}
 	created := run.Steps[1]
@@ -366,7 +366,7 @@ func TestDeployModelServiceDryRunBlocksCreateAndHoldsWait(t *testing.T) {
 	if fake.count("get_deployment") != 0 {
 		t.Errorf("the deployment was followed under dry run: %v", fake.calledTools())
 	}
-	if len(fake.requests) != 1 || fake.requests[0].ModelService.ArtifactID != artifactID ||
+	if len(fake.requests) != 1 || fake.requests[0].Inference.ArtifactID != artifactID ||
 		fake.requests[0].Targets[0].NodeID != "vm2" {
 		t.Errorf("create_deployment input = %+v, want the request as given", fake.requests)
 	}
@@ -452,7 +452,7 @@ func TestDeployUnknownArtifactSkipsEveryLaterStep(t *testing.T) {
 	fake := &fakeApp{}
 	e, _ := newEngine(t, fake)
 	req := modelRequest("vm1")
-	req.ModelService.ArtifactID = "gguf-q8"
+	req.Inference.ArtifactID = "gguf-q8"
 
 	run := execute(t, e, WorkflowDeploy, req)
 
@@ -629,7 +629,7 @@ func TestExecuteRejectsBadRequests(t *testing.T) {
 		"no type":       {WorkflowDeploy, `{"targets":[{"kind":"node","nsId":"a","infraId":"b","nodeId":"c"}]}`, ErrInvalidInput},
 		"no targets":    {WorkflowDeploy, `{"type":"app","app":{"name":"open-webui"}}`, ErrInvalidInput},
 		"k8s target":    {WorkflowDeploy, `{"type":"app","app":{"name":"open-webui"},"targets":[{"kind":"k8s","nsId":"a"}]}`, ErrInvalidInput},
-		"no artifact":   {WorkflowDeploy, `{"type":"model-service","modelService":{"modelId":"m"},"targets":[{"kind":"node","nsId":"a","infraId":"b","nodeId":"c"}]}`, ErrInvalidInput},
+		"no artifact":   {WorkflowDeploy, `{"type":"inference","inference":{"modelId":"m"},"targets":[{"kind":"node","nsId":"a","infraId":"b","nodeId":"c"}]}`, ErrInvalidInput},
 		"malformed":     {WorkflowHeal, `{"deploymentId":`, ErrInvalidInput},
 		"no deployment": {WorkflowStatus, `{}`, ErrInvalidInput},
 	}
@@ -724,7 +724,7 @@ func TestEngineMCPPublishesWorkflowAndCatalogToolsWithGrades(t *testing.T) {
 		}
 		if tool.Name == ToolDeploy {
 			schema, _ := json.Marshal(tool.InputSchema)
-			for _, field := range []string{`"required":["type","targets"]`, `"modelService"`, `"app"`, `"artifactId"`} {
+			for _, field := range []string{`"required":["type","targets"]`, `"inference"`, `"app"`, `"artifactId"`} {
 				if !strings.Contains(string(schema), field) {
 					t.Errorf("%s input schema misses %s: %s", ToolDeploy, field, schema)
 				}
@@ -766,7 +766,7 @@ func TestListApplicationsSummarizesModelsAndApps(t *testing.T) {
 	}
 	catalog := out.(*Catalog)
 	if len(catalog.Models) != 1 || catalog.Models[0].ID != modelID || len(catalog.Models[0].Artifacts) != 2 ||
-		catalog.Models[0].Artifacts[1].ID != artifactID || catalog.Models[0].Artifacts[1].Engines[0] != "ollama" {
+		catalog.Models[0].Artifacts[1].ID != artifactID || catalog.Models[0].Artifacts[1].Runtimes[0] != "ollama" {
 		t.Errorf("models = %+v", catalog.Models)
 	}
 	if len(catalog.Apps) != 1 || catalog.Apps[0].Name != appName || catalog.Apps[0].Latest != 2 ||

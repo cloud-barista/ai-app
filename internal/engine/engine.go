@@ -164,7 +164,7 @@ func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQu
 	}
 	filter := map[string]string{}
 	for name, value := range map[string]string{
-		"task": in.Task, "modality": in.Modality, "format": in.Format, "engine": in.Engine, "source": in.Source,
+		"task": in.Task, "modality": in.Modality, "format": in.Format, "runtimeId": in.RuntimeID, "source": in.Source,
 	} {
 		if value = strings.TrimSpace(value); value != "" {
 			filter[name] = value

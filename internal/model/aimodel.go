@@ -6,14 +6,14 @@ import (
 	"slices"
 )
 
-// catalogIDPattern is what a model, artifact or engine identifier may look
+// catalogIDPattern is what a model, artifact or runtime identifier may look
 // like. Identifiers are placed in URL paths and, later, in directory names on a
 // shared volume, so they are kept to characters that need no escaping in
 // either.
 var catalogIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // artifactRefPattern is what an artifact reference may look like. The reference
-// is handed to an inference engine on its command line inside a generated
+// is handed to an inference runtime on its command line inside a generated
 // compose file, so whitespace, quotes and shell or compose metacharacters are
 // refused rather than escaped.
 var artifactRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$`)
@@ -46,13 +46,13 @@ type Model struct {
 	ContextLength int `json:"contextLength,omitempty" example:"262144"`
 	// License is the license identifier of the weights. Empty means unknown.
 	License string `json:"license,omitempty" example:"apache-2.0"`
-	// Artifacts are the published forms of the model that an engine can load.
+	// Artifacts are the published forms of the model that a runtime can load.
 	// At least one is required.
 	Artifacts []Artifact `json:"artifacts" validate:"required"`
 }
 
 // Artifact is one published form of a model: where it comes from, in which
-// file format and precision, and which inference engines load it.
+// file format and precision, and which inference runtimes load it.
 type Artifact struct {
 	// ID identifies the artifact within its model, with the same character
 	// rules as a model ID.
@@ -63,7 +63,7 @@ type Artifact struct {
 	// Ref is the name of the artifact at its source: a Hugging Face repository
 	// id, an Ollama model tag, or an image reference.
 	Ref string `json:"ref" validate:"required" example:"Qwen/Qwen3-VL-8B-Instruct"`
-	// Format is the file format the engine loads: hf for Hugging Face
+	// Format is the file format the runtime loads: hf for Hugging Face
 	// safetensors, gguf for GGUF. Filter with ?format=.
 	Format string `json:"format" validate:"required" example:"hf"`
 	// Precision is the precision or quantization exactly as the source states
@@ -73,17 +73,17 @@ type Artifact struct {
 	// SizeGiB is the download size in GiB (2^30 bytes). Zero or absent means
 	// unknown.
 	SizeGiB float64 `json:"sizeGiB,omitempty" example:"16.3"`
-	// Engines are the inference engines known to load this artifact. Each
-	// engine must be listed explicitly: the same file format may load in one
-	// engine version and not in another. Filter with ?engine=.
-	Engines []EngineCompat `json:"engines" validate:"required"`
+	// Runtimes are the inference runtimes known to load this artifact. Each
+	// runtime must be listed explicitly: the same file format may load in one
+	// runtime version and not in another. Filter with ?runtimeId=.
+	Runtimes []RuntimeCompat `json:"runtimes" validate:"required"`
 }
 
-// EngineCompat names one inference engine an artifact runs on.
-type EngineCompat struct {
-	// Engine is the engine profile ID, as listed by GET /engines.
-	Engine string `json:"engine" validate:"required" example:"vllm"`
-	// MinVersion is the oldest engine version known to load the artifact.
+// RuntimeCompat names one inference runtime an artifact runs on.
+type RuntimeCompat struct {
+	// RuntimeID is the runtime profile ID, as listed by GET /runtimes.
+	RuntimeID string `json:"runtimeId" validate:"required" example:"vllm"`
+	// MinVersion is the oldest runtime version known to load the artifact.
 	// Empty means not recorded.
 	MinVersion string `json:"minVersion,omitempty" example:"0.11.0"`
 }
@@ -148,12 +148,12 @@ func (a *Artifact) validate(field string) error {
 		return errRequired(field + ".format")
 	case a.SizeGiB < 0:
 		return errInvalid(field+".sizeGiB", "must not be negative")
-	case len(a.Engines) == 0:
-		return errInvalid(field+".engines", "must name at least one engine")
+	case len(a.Runtimes) == 0:
+		return errInvalid(field+".runtimes", "must name at least one runtime")
 	}
-	for i, engine := range a.Engines {
-		if engine.Engine == "" {
-			return errRequired(fmt.Sprintf("%s.engines[%d].engine", field, i))
+	for i, runtime := range a.Runtimes {
+		if runtime.RuntimeID == "" {
+			return errRequired(fmt.Sprintf("%s.runtimes[%d].runtimeId", field, i))
 		}
 	}
 	return nil
@@ -174,10 +174,10 @@ func (m *Model) HasTask(task string) bool {
 	return slices.Contains(m.Tasks, task)
 }
 
-// SupportsEngine reports whether the artifact names engine as compatible.
-func (a *Artifact) SupportsEngine(engine string) bool {
-	for _, compat := range a.Engines {
-		if compat.Engine == engine {
+// SupportsRuntime reports whether the artifact names runtimeID as compatible.
+func (a *Artifact) SupportsRuntime(runtimeID string) bool {
+	for _, compat := range a.Runtimes {
+		if compat.RuntimeID == runtimeID {
 			return true
 		}
 	}

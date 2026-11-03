@@ -45,7 +45,7 @@ func builtinModels() []model.Model {
 					Ref:       "Qwen/Qwen3-Embedding-0.6B",
 					Format:    model.FormatHF,
 					Precision: "BF16",
-					Engines:   []model.EngineCompat{{Engine: model.EngineVLLM}},
+					Runtimes:  []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
 				},
 			},
 		},
@@ -65,7 +65,7 @@ func builtinModels() []model.Model {
 					Ref:       "Qwen/Qwen3-VL-8B-Instruct",
 					Format:    model.FormatHF,
 					Precision: "BF16",
-					Engines:   []model.EngineCompat{{Engine: model.EngineVLLM}},
+					Runtimes:  []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
 				},
 				{
 					// ollama.com lists this tag at 6.2GB. That is a rounded
@@ -73,11 +73,11 @@ func builtinModels() []model.Model {
 					// value with precision it never had, so sizeGiB stays
 					// unknown. The quantization is not stated on the tag
 					// page either, so precision stays empty.
-					ID:      "ollama-gguf",
-					Source:  "ollama",
-					Ref:     "qwen3-vl:8b",
-					Format:  model.FormatGGUF,
-					Engines: []model.EngineCompat{{Engine: model.EngineOllama}},
+					ID:       "ollama-gguf",
+					Source:   "ollama",
+					Ref:      "qwen3-vl:8b",
+					Format:   model.FormatGGUF,
+					Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeOllama}},
 				},
 			},
 		},
@@ -100,7 +100,7 @@ func builtinModels() []model.Model {
 					Ref:       "mistralai/Ministral-3-8B-Instruct-2512",
 					Format:    model.FormatHF,
 					Precision: "FP8",
-					Engines:   []model.EngineCompat{{Engine: model.EngineVLLM}},
+					Runtimes:  []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
 				},
 			},
 		},

@@ -2,13 +2,13 @@ package model
 
 import "slices"
 
-// Engine profile IDs built into this service.
+// Runtime profile IDs built into this service.
 const (
-	EngineVLLM   = "vllm"
-	EngineOllama = "ollama"
+	RuntimeVLLM   = "vllm"
+	RuntimeOllama = "ollama"
 )
 
-// Artifact formats the built-in engine profiles load.
+// Artifact formats the built-in runtime profiles load.
 const (
 	// FormatHF is a Hugging Face repository of safetensors weights.
 	FormatHF = "hf"
@@ -16,36 +16,37 @@ const (
 	FormatGGUF = "gguf"
 )
 
-// EngineProfile is an inference engine a model service can be run with: the
-// container image, the artifact formats it loads, and how it is reached.
+// RuntimeProfile is an inference runtime an inference deployment can be run
+// with: the container image, the artifact formats it loads, and how it is
+// reached.
 //
-// Profiles are built in and read only. A model service is deployed by pairing
-// an artifact with a profile, and the pairing is refused unless the artifact
-// names the engine and the engine loads the artifact format.
-type EngineProfile struct {
-	// ID is the engine identifier artifacts refer to in engines[].engine.
+// Profiles are built in and read only. An inference deployment pairs an
+// artifact with a profile, and the pairing is refused unless the artifact
+// names the runtime and the runtime loads the artifact format.
+type RuntimeProfile struct {
+	// ID is the runtime identifier artifacts refer to in runtimes[].runtimeId.
 	ID string `json:"id" validate:"required" example:"vllm"`
 	// Image is the container image, pinned to a release tag.
 	Image string `json:"image" validate:"required" example:"vllm/vllm-openai:v0.32.0"`
-	// Formats are the artifact formats this engine loads.
+	// Formats are the artifact formats this runtime loads.
 	Formats []string `json:"formats" validate:"required" example:"hf"`
-	// Port is the TCP port the engine serves its API on, inside the container
+	// Port is the TCP port the runtime serves its API on, inside the container
 	// and on the node.
 	Port int `json:"port" validate:"required" example:"8000"`
-	// HealthPath answers 200 once the engine is up.
+	// HealthPath answers 200 once the runtime is up.
 	HealthPath string `json:"healthPath,omitempty" example:"/health"`
 	// APIBasePath is the path of the OpenAI compatible API, appended to
-	// http://<node>:<port> by whoever calls the model service.
+	// http://<node>:<port> by whoever calls the inference service.
 	APIBasePath string `json:"apiBasePath,omitempty" example:"/v1"`
 }
 
-// EngineProfileListResp is the engine profile listing body.
-type EngineProfileListResp struct {
-	Engines []EngineProfile `json:"engines"`
+// RuntimeProfileListResp is the runtime profile listing body.
+type RuntimeProfileListResp struct {
+	Runtimes []RuntimeProfile `json:"runtimes"`
 }
 
-// Validate reports why an EngineProfile is not usable.
-func (e *EngineProfile) Validate() error {
+// Validate reports why an RuntimeProfile is not usable.
+func (e *RuntimeProfile) Validate() error {
 	switch {
 	case e.ID == "":
 		return errRequired("id")
@@ -64,7 +65,7 @@ func (e *EngineProfile) Validate() error {
 	return validateURLPath("apiBasePath", e.APIBasePath)
 }
 
-// LoadsFormat reports whether the engine loads artifacts of format.
-func (e *EngineProfile) LoadsFormat(format string) bool {
+// LoadsFormat reports whether the runtime loads artifacts of format.
+func (e *RuntimeProfile) LoadsFormat(format string) bool {
 	return slices.Contains(e.Formats, format)
 }

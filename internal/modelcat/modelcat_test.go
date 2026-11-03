@@ -59,10 +59,10 @@ func TestFilter(t *testing.T) {
 		{"task embedding", Filter{Task: "embedding"}, []string{"qwen3-embedding-0.6b"}},
 		{"format gguf", Filter{Format: "gguf"}, []string{"qwen3-vl-8b"}},
 		{"source ollama", Filter{Source: "ollama"}, []string{"qwen3-vl-8b"}},
-		{"engine vllm", Filter{Engine: "vllm"}, []string{"ministral-3-8b", "qwen3-embedding-0.6b", "qwen3-vl-8b"}},
+		{"runtime vllm", Filter{RuntimeID: "vllm"}, []string{"ministral-3-8b", "qwen3-embedding-0.6b", "qwen3-vl-8b"}},
 		// qwen3-vl-8b has a GGUF artifact and a vLLM artifact, but no single
 		// artifact that is both.
-		{"one artifact must match every artifact field", Filter{Format: "gguf", Engine: "vllm"}, nil},
+		{"one artifact must match every artifact field", Filter{Format: "gguf", RuntimeID: "vllm"}, nil},
 		{"model and artifact fields together", Filter{Modality: "image", Format: "hf"}, []string{"ministral-3-8b", "qwen3-vl-8b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestFileKeepsChangesAndIsNotSeededAgain(t *testing.T) {
 		Name: "Added",
 		Artifacts: []model.Artifact{{
 			ID: "a", Source: "huggingface", Ref: "org/added", Format: model.FormatHF,
-			Engines: []model.EngineCompat{{Engine: model.EngineVLLM}},
+			Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
 		}},
 	}
 	if _, err := store.Register(ctx, added); err != nil {
@@ -128,11 +128,11 @@ func TestStoreReturnsCopies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	m.Artifacts[0].Engines[0].Engine = "changed"
+	m.Artifacts[0].Runtimes[0].RuntimeID = "changed"
 	m.Tasks[0] = "changed"
 
 	again, _ := store.Get(ctx, "qwen3-vl-8b")
-	if again.Artifacts[0].Engines[0].Engine != model.EngineVLLM || again.Tasks[0] != "vision-chat" {
+	if again.Artifacts[0].Runtimes[0].RuntimeID != model.RuntimeVLLM || again.Tasks[0] != "vision-chat" {
 		t.Errorf("stored model changed through a returned copy: %+v", again)
 	}
 }
@@ -149,8 +149,8 @@ func TestNotFound(t *testing.T) {
 	if _, _, err := store.Artifact(ctx, "qwen3-vl-8b", "nope"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("Artifact error = %v, want ErrArtifactNotFound", err)
 	}
-	if _, err := Engine("tgi"); !errors.Is(err, ErrEngineNotFound) {
-		t.Errorf("Engine error = %v, want ErrEngineNotFound", err)
+	if _, err := Runtime("tgi"); !errors.Is(err, ErrRuntimeNotFound) {
+		t.Errorf("Runtime error = %v, want ErrRuntimeNotFound", err)
 	}
 }
 
@@ -162,8 +162,8 @@ func TestRegisterRejectsInvalidModel(t *testing.T) {
 	}
 }
 
-func TestBuiltinEnginesAreValid(t *testing.T) {
-	engines := Engines()
+func TestBuiltinRuntimesAreValid(t *testing.T) {
+	engines := Runtimes()
 	if len(engines) != 2 {
 		t.Fatalf("engines = %d, want 2", len(engines))
 	}
@@ -174,11 +174,11 @@ func TestBuiltinEnginesAreValid(t *testing.T) {
 	}
 }
 
-func TestSeedArtifactsRunOnTheirEngines(t *testing.T) {
+func TestSeedArtifactsRunOnTheirRuntimes(t *testing.T) {
 	for _, m := range builtinModels() {
 		for _, a := range m.Artifacts {
-			for _, compat := range a.Engines {
-				engine, err := Engine(compat.Engine)
+			for _, compat := range a.Runtimes {
+				engine, err := Runtime(compat.RuntimeID)
 				if err != nil {
 					t.Fatalf("%s/%s: %v", m.ID, a.ID, err)
 				}

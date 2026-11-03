@@ -28,9 +28,9 @@ func artifactOf(t *testing.T, modelID, artifactID string) (*model.Model, *model.
 	return m, a
 }
 
-func engineOf(t *testing.T, engineID string) *model.EngineProfile {
+func engineOf(t *testing.T, engineID string) *model.RuntimeProfile {
 	t.Helper()
-	engine, err := modelcat.Engine(engineID)
+	engine, err := modelcat.Runtime(engineID)
 	if err != nil {
 		t.Fatalf("Engine: %v", err)
 	}
@@ -64,18 +64,18 @@ func TestRenderSeedCombinationsPassComposeConfig(t *testing.T) {
 		wantNot                       []string
 	}{
 		{
-			"qwen3-embedding-0.6b", "hf-bf16", model.EngineVLLM, true,
+			"qwen3-embedding-0.6b", "hf-bf16", model.RuntimeVLLM, true,
 			[]string{`"--model", "Qwen/Qwen3-Embedding-0.6B"`, `"--runner", "pooling"`, "driver: nvidia",
 				`"HF_TOKEN": "${HF_TOKEN:-}"`, `"vllm/vllm-openai:v0.32.0"`, `"8000:8000"`},
 			nil,
 		},
 		{
-			"ministral-3-8b", "hf-fp8", model.EngineVLLM, false,
+			"ministral-3-8b", "hf-fp8", model.RuntimeVLLM, false,
 			[]string{`"--model", "mistralai/Ministral-3-8B-Instruct-2512"`},
 			[]string{"--runner", "driver: nvidia"},
 		},
 		{
-			"qwen3-vl-8b", "ollama-gguf", model.EngineOllama, true,
+			"qwen3-vl-8b", "ollama-gguf", model.RuntimeOllama, true,
 			[]string{`"pull", "qwen3-vl:8b"`, "condition: service_healthy", "driver: nvidia", `"11434:11434"`},
 			[]string{"HF_TOKEN"},
 		},
@@ -103,7 +103,7 @@ func TestRenderSeedCombinationsPassComposeConfig(t *testing.T) {
 
 func TestRenderEnvIsQuotedAndNotInterpolated(t *testing.T) {
 	m, a := artifactOf(t, "qwen3-vl-8b", "hf-bf16")
-	rendered, err := Render(m, a, engineOf(t, model.EngineVLLM), Options{Env: map[string]string{
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Env: map[string]string{
 		"HF_TOKEN":     "literal",
 		"ODD_VALUE":    `a "quoted" $HOME: value # not a comment`,
 		"VLLM_LOGGING": "DEBUG",
@@ -124,24 +124,24 @@ func TestRenderRefusesIncompatiblePairs(t *testing.T) {
 	_, gguf := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
 
 	// The artifact does not list the engine.
-	if _, err := Render(vl, hf, engineOf(t, model.EngineOllama), Options{}); !errors.Is(err, ErrIncompatible) {
+	if _, err := Render(vl, hf, engineOf(t, model.RuntimeOllama), Options{}); !errors.Is(err, ErrIncompatible) {
 		t.Errorf("hf on ollama: error = %v, want ErrIncompatible", err)
 	}
-	if _, err := Render(vl, gguf, engineOf(t, model.EngineVLLM), Options{}); !errors.Is(err, ErrIncompatible) {
+	if _, err := Render(vl, gguf, engineOf(t, model.RuntimeVLLM), Options{}); !errors.Is(err, ErrIncompatible) {
 		t.Errorf("gguf on vllm: error = %v, want ErrIncompatible", err)
 	}
 
 	// The artifact lists the engine, but the engine does not load the format.
 	listed := *gguf
-	listed.Engines = []model.EngineCompat{{Engine: model.EngineVLLM}}
-	if _, err := Render(vl, &listed, engineOf(t, model.EngineVLLM), Options{}); !errors.Is(err, ErrIncompatible) {
+	listed.Runtimes = []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}}
+	if _, err := Render(vl, &listed, engineOf(t, model.RuntimeVLLM), Options{}); !errors.Is(err, ErrIncompatible) {
 		t.Errorf("gguf listed for vllm: error = %v, want ErrIncompatible", err)
 	}
 }
 
 func TestRenderRefusesBadEnvName(t *testing.T) {
 	m, a := artifactOf(t, "qwen3-vl-8b", "hf-bf16")
-	_, err := Render(m, a, engineOf(t, model.EngineVLLM), Options{Env: map[string]string{"BAD NAME": "x"}})
+	_, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Env: map[string]string{"BAD NAME": "x"}})
 	if !errors.Is(err, ErrInvalidOption) {
 		t.Errorf("error = %v, want ErrInvalidOption", err)
 	}
@@ -149,11 +149,11 @@ func TestRenderRefusesBadEnvName(t *testing.T) {
 
 func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
 	m, a := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
-	rendered, err := Render(m, a, engineOf(t, model.EngineOllama), Options{})
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeOllama), Options{})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	services := CompletionServices(model.EngineOllama)
+	services := CompletionServices(model.RuntimeOllama)
 	if len(services) == 0 {
 		t.Fatal("ollama has no completion service; the pull would not be waited for")
 	}
@@ -162,7 +162,7 @@ func TestCompletionServicesAreInTheRenderedFile(t *testing.T) {
 			t.Errorf("service %q is not in the rendered ollama file", name)
 		}
 	}
-	if got := CompletionServices(model.EngineVLLM); len(got) != 0 {
+	if got := CompletionServices(model.RuntimeVLLM); len(got) != 0 {
 		t.Errorf("vllm completion services = %v, want none", got)
 	}
 }

@@ -66,7 +66,7 @@ func TestModelRoutes(t *testing.T) {
 	}
 
 	const added = `{"id":"added","name":"Added","artifacts":[{"id":"a","source":"huggingface",` +
-		`"ref":"org/added","format":"hf","engines":[{"engine":"vllm"}]}]}`
+		`"ref":"org/added","format":"hf","runtimes":[{"runtimeId":"vllm"}]}]}`
 	if rec := postJSON(s, "/aiapp/models", added); rec.Code != http.StatusOK {
 		t.Fatalf("POST /models = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -90,19 +90,19 @@ func TestModelRoutes(t *testing.T) {
 	}
 }
 
-func TestEngineProfileRoutes(t *testing.T) {
+func TestRuntimeProfileRoutes(t *testing.T) {
 	s := newModelServer(t, "")
 
-	rec := do(s, http.MethodGet, "/aiapp/engines", "")
-	var resp model.EngineProfileListResp
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || len(resp.Engines) != 2 {
-		t.Errorf("GET /engines = %d: %s", rec.Code, rec.Body.String())
+	rec := do(s, http.MethodGet, "/aiapp/runtimes", "")
+	var resp model.RuntimeProfileListResp
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || len(resp.Runtimes) != 2 {
+		t.Errorf("GET /runtimes = %d: %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(s, http.MethodGet, "/aiapp/engines/vllm", ""); rec.Code != http.StatusOK {
-		t.Errorf("GET /engines/vllm = %d", rec.Code)
+	if rec := do(s, http.MethodGet, "/aiapp/runtimes/vllm", ""); rec.Code != http.StatusOK {
+		t.Errorf("GET /runtimes/vllm = %d", rec.Code)
 	}
-	if rec := do(s, http.MethodGet, "/aiapp/engines/tgi", ""); rec.Code != http.StatusNotFound {
-		t.Errorf("GET /engines/tgi = %d, want 404", rec.Code)
+	if rec := do(s, http.MethodGet, "/aiapp/runtimes/tgi", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /runtimes/tgi = %d, want 404", rec.Code)
 	}
 }
 
@@ -124,8 +124,8 @@ func TestModelComposeRoute(t *testing.T) {
 		path string
 		want int
 	}{
-		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?engine=ollama", http.StatusUnprocessableEntity},
-		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?engine=tgi", http.StatusNotFound},
+		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?runtimeId=ollama", http.StatusUnprocessableEntity},
+		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?runtimeId=tgi", http.StatusNotFound},
 		{"/aiapp/models/qwen3-vl-8b/artifacts/nope/compose", http.StatusNotFound},
 		{"/aiapp/models/nope/artifacts/hf-bf16/compose", http.StatusNotFound},
 		{"/aiapp/models/qwen3-vl-8b/artifacts/hf-bf16/compose?gpu=maybe", http.StatusBadRequest},

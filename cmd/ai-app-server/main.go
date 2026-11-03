@@ -39,7 +39,7 @@ const nodeDeployShutdownTimeout = 70 * time.Second
 
 // @title AI-MCMP AI-App Service (Prototype)
 // @version 0.1.0
-// @description Keeps an AI model catalog (models, the artifacts each is published as, and the inference engine profiles they run on), registers AI applications as a name, files and a script with versions, deploys a model service or an application onto nodes CB-Tumblebug already runs through Semaphore, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
+// @description Keeps an AI model catalog (models, the artifacts each is published as, and the inference runtime profiles they run on), registers AI applications as a name, files and a script with versions, deploys an inference service or an application onto nodes CB-Tumblebug already runs through Semaphore, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /aiapp

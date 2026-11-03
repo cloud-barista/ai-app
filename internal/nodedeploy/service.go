@@ -1,4 +1,4 @@
-// Package nodedeploy deploys a model service or an uploaded application onto
+// Package nodedeploy deploys an inference service or an uploaded application onto
 // nodes CB-Tumblebug already runs.
 //
 // For each node it reads the node and its SSH key from CB-Tumblebug, places the
@@ -8,7 +8,7 @@
 //
 // On the node, a deployment lands in the folder and compose project of its
 // work key (see placement), not of its deployment ID, so that deploying the
-// same model service engine or application again replaces the previous one.
+// same inference runtime or application again replaces the previous one.
 //
 // With dry run on, only the look-up and the file placement are done, and
 // nothing is registered in Semaphore.
@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -136,7 +137,7 @@ func (s *Service) DryRun() bool { return s.opts.DryRun }
 type plan struct {
 	model    *model.Model
 	artifact *model.Artifact
-	engine   *model.EngineProfile
+	runtime  *model.RuntimeProfile
 	// appDir is the application version folder in the application store.
 	appDir string
 	// place is where the deployment lands on every node.
@@ -146,7 +147,7 @@ type plan struct {
 // Create accepts a deployment request.
 //
 // The request is checked and resolved against the model catalog or the
-// application store first, so that an unknown model, an incompatible engine
+// application store first, so that an unknown model, an incompatible runtime
 // or a missing application fails here. With dry run on, the deployment is
 // carried out before Create returns and the finished record is returned.
 // Otherwise the record is returned pending and the deployment goes on in the
@@ -191,8 +192,8 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 	return s.Get(ctx, id)
 }
 
-// resolve finds the model, artifact and engine, or the application version,
-// of req, and fills in the engine and version it took.
+// resolve finds the model, artifact and runtime, or the application version,
+// of req, and fills in the runtime and version it took.
 func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*plan, error) {
 	if req.Type == model.NodeDeployTypeApp {
 		version := req.App.Version
@@ -220,32 +221,32 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 		return &plan{appDir: dir, place: place}, nil
 	}
 
-	ms := *req.ModelService
-	m, artifact, err := s.models.Artifact(ctx, ms.ModelID, ms.ArtifactID)
+	inf := *req.Inference
+	m, artifact, err := s.models.Artifact(ctx, inf.ModelID, inf.ArtifactID)
 	if err != nil {
 		return nil, err
 	}
-	if ms.Engine == "" {
-		if len(artifact.Engines) == 0 {
-			return nil, fmt.Errorf("%w: artifact %s/%s lists no engine", compose.ErrIncompatible, m.ID, artifact.ID)
+	if inf.RuntimeID == "" {
+		if len(artifact.Runtimes) == 0 {
+			return nil, fmt.Errorf("%w: artifact %s/%s lists no runtime", compose.ErrIncompatible, m.ID, artifact.ID)
 		}
-		ms.Engine = artifact.Engines[0].Engine
+		inf.RuntimeID = artifact.Runtimes[0].RuntimeID
 	}
-	engine, err := modelcat.Engine(ms.Engine)
+	runtime, err := modelcat.Runtime(inf.RuntimeID)
 	if err != nil {
 		return nil, err
 	}
 	// A render up front refuses an incompatible pairing or env before the
 	// request is accepted. The GPU block is decided per node later.
-	if _, err := compose.Render(m, artifact, engine, compose.Options{Env: ms.Env}); err != nil {
+	if _, err := compose.Render(m, artifact, runtime, compose.Options{Env: inf.Env}); err != nil {
 		return nil, err
 	}
-	req.ModelService = &ms
+	req.Inference = &inf
 	place, err := placementFor(req)
 	if err != nil {
 		return nil, err
 	}
-	return &plan{model: m, artifact: artifact, engine: engine, place: place}, nil
+	return &plan{model: m, artifact: artifact, runtime: runtime, place: place}, nil
 }
 
 // execute runs every node of a deployment and records the outcome.
@@ -392,7 +393,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		return
 	}
 	if rendered != "" {
-		serviceURL := fmt.Sprintf("http://%s:%d%s", access.Host, p.engine.Port, p.engine.APIBasePath)
+		serviceURL := fmt.Sprintf("http://%s:%d%s", access.Host, p.runtime.Port, p.runtime.APIBasePath)
 		s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 			n.Compose = rendered
 			n.ServiceURL = serviceURL
@@ -415,10 +416,10 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		"stage_dir": dir, "deployment_id": id,
 		"work_key": p.place.WorkKey, "node_dir": p.place.NodeDir, "compose_project": p.place.Project,
 	}
-	if req.Type == model.NodeDeployTypeModelService {
+	if req.Type == model.NodeDeployTypeInference {
 		vars := copyVars(common)
-		vars["health_url"] = healthURL(p.engine)
-		if services := compose.CompletionServices(p.engine.ID); len(services) > 0 {
+		vars["health_url"] = healthURL(p.runtime)
+		if services := compose.CompletionServices(p.runtime.ID); len(services) > 0 {
 			vars["wait_services"] = services
 		}
 		steps = append(steps, withPlaybook(base, PlaybookComposeUp, vars))
@@ -484,8 +485,8 @@ func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphor
 // spec whether its accelerator is a GPU. A spec that cannot be read means no
 // GPU, and the returned note says why.
 func (s *Service) decideGPU(ctx context.Context, req *model.NodeDeploymentReq, node *tumblebug.Node) (bool, string, string) {
-	if req.ModelService != nil && req.ModelService.GPU != nil {
-		return *req.ModelService.GPU, gpuFromRequest, ""
+	if req.Inference != nil && req.Inference.GPU != nil {
+		return *req.Inference.GPU, gpuFromRequest, ""
 	}
 	if node.SpecID == "" {
 		return false, gpuFromDefault, "gpu taken as false: the node has no specId"
@@ -499,7 +500,7 @@ func (s *Service) decideGPU(ctx context.Context, req *model.NodeDeploymentReq, n
 }
 
 // stage places the files of one node and returns the rendered compose file of
-// a model service.
+// an inference service.
 func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, gpu bool) (string, error) {
 	if !filepath.IsAbs(s.opts.StageRoot) {
 		return "", fmt.Errorf("stage root %q is not an absolute path", s.opts.StageRoot)
@@ -521,26 +522,26 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 		return "", writeManifest(dir)
 	}
 
-	rendered, err := compose.Render(p.model, p.artifact, p.engine, compose.Options{GPU: gpu, Env: req.ModelService.Env})
+	rendered, err := compose.Render(p.model, p.artifact, p.runtime, compose.Options{GPU: gpu, Env: req.Inference.Env})
 	if err != nil {
 		return "", err
 	}
 	if err := writeStageFile(filepath.Join(dir, ComposeFile), []byte(rendered), stageFilePerm); err != nil {
 		return "", err
 	}
-	if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.ModelService.Env), stageFilePerm); err != nil {
+	if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.Inference.Env), stageFilePerm); err != nil {
 		return "", err
 	}
 	return rendered, writeManifest(dir)
 }
 
-// healthURL is the engine health endpoint as seen from the node itself.
-func healthURL(engine *model.EngineProfile) string {
-	path := engine.HealthPath
+// healthURL is the runtime health endpoint as seen from the node itself.
+func healthURL(runtime *model.RuntimeProfile) string {
+	path := runtime.HealthPath
 	if path == "" {
 		path = "/"
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d%s", engine.Port, path)
+	return fmt.Sprintf("http://127.0.0.1:%d%s", runtime.Port, path)
 }
 
 func withPlaybook(base semaphore.RunSpec, playbook string, vars map[string]any) semaphore.RunSpec {
@@ -602,11 +603,41 @@ func (s *Service) Get(ctx context.Context, id string) (*model.NodeDeployment, er
 	return d, nil
 }
 
-// List reads every deployment, newest first, without task output.
-func (s *Service) List(ctx context.Context) []model.NodeDeployment {
-	list := s.store.List()
-	for i := range list {
-		withoutOutput(&list[i])
+// ListFilter narrows a deployment listing. Every set field must match
+// exactly; empty fields match anything.
+type ListFilter struct {
+	// Type is the deployment type, inference or app.
+	Type string
+	// NsID matches a deployment when any of its targets is in the namespace.
+	NsID string
+	// Status is the deployment status.
+	Status string
+}
+
+func (f ListFilter) matches(d *model.NodeDeployment) bool {
+	if f.Type != "" && d.Type != f.Type {
+		return false
+	}
+	if f.Status != "" && d.Status != f.Status {
+		return false
+	}
+	if f.NsID != "" && !slices.ContainsFunc(d.Request.Targets, func(t model.NodeDeployTarget) bool {
+		return t.NsID == f.NsID
+	}) {
+		return false
+	}
+	return true
+}
+
+// List reads the deployments filter matches, newest first, without task output.
+func (s *Service) List(ctx context.Context, filter ListFilter) []model.NodeDeployment {
+	list := make([]model.NodeDeployment, 0)
+	for _, d := range s.store.List() {
+		if !filter.matches(&d) {
+			continue
+		}
+		withoutOutput(&d)
+		list = append(list, d)
 	}
 	return list
 }

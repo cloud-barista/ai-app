@@ -12,9 +12,9 @@ func validModel() Model {
 		Tasks: []string{"vision-chat"}, InputModalities: []string{"text", "image"},
 		Artifacts: []Artifact{
 			{ID: "hf-bf16", Source: "huggingface", Ref: "Qwen/Qwen3-VL-8B-Instruct", Format: FormatHF,
-				Engines: []EngineCompat{{Engine: EngineVLLM}}},
+				Runtimes: []RuntimeCompat{{RuntimeID: RuntimeVLLM}}},
 			{ID: "ollama-gguf", Source: "ollama", Ref: "qwen3-vl:8b", Format: FormatGGUF,
-				Engines: []EngineCompat{{Engine: EngineOllama}}},
+				Runtimes: []RuntimeCompat{{RuntimeID: RuntimeOllama}}},
 		},
 	}
 }
@@ -43,8 +43,8 @@ func TestModelValidate(t *testing.T) {
 		{"ref with dollar", func(m *Model) { m.Artifacts[0].Ref = "a$b" }, "artifacts[0].ref must match"},
 		{"artifact without format", func(m *Model) { m.Artifacts[0].Format = "" }, "artifacts[0].format required"},
 		{"negative size", func(m *Model) { m.Artifacts[0].SizeGiB = -1 }, "artifacts[0].sizeGiB must not be negative"},
-		{"artifact without engines", func(m *Model) { m.Artifacts[0].Engines = nil }, "artifacts[0].engines must name"},
-		{"engine without name", func(m *Model) { m.Artifacts[0].Engines = []EngineCompat{{}} }, "artifacts[0].engines[0].engine required"},
+		{"artifact without runtimes", func(m *Model) { m.Artifacts[0].Runtimes = nil }, "artifacts[0].runtimes must name"},
+		{"runtime without id", func(m *Model) { m.Artifacts[0].Runtimes = []RuntimeCompat{{}} }, "artifacts[0].runtimes[0].runtimeId required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,21 +64,21 @@ func TestModelValidate(t *testing.T) {
 	}
 }
 
-func TestEngineProfileValidate(t *testing.T) {
-	valid := func() EngineProfile {
-		return EngineProfile{ID: "vllm", Image: "vllm/vllm-openai:v0.32.0", Formats: []string{FormatHF},
+func TestRuntimeProfileValidate(t *testing.T) {
+	valid := func() RuntimeProfile {
+		return RuntimeProfile{ID: "vllm", Image: "vllm/vllm-openai:v0.32.0", Formats: []string{FormatHF},
 			Port: 8000, HealthPath: "/health", APIBasePath: "/v1"}
 	}
 	cases := []struct {
 		name    string
-		mutate  func(*EngineProfile)
+		mutate  func(*RuntimeProfile)
 		wantErr string
 	}{
-		{"valid", func(e *EngineProfile) {}, ""},
-		{"no image", func(e *EngineProfile) { e.Image = "" }, "image required"},
-		{"no formats", func(e *EngineProfile) { e.Formats = nil }, "formats must name"},
-		{"bad port", func(e *EngineProfile) { e.Port = 0 }, "port must be between"},
-		{"relative health path", func(e *EngineProfile) { e.HealthPath = "health" }, "healthPath must start with /"},
+		{"valid", func(e *RuntimeProfile) {}, ""},
+		{"no image", func(e *RuntimeProfile) { e.Image = "" }, "image required"},
+		{"no formats", func(e *RuntimeProfile) { e.Formats = nil }, "formats must name"},
+		{"bad port", func(e *RuntimeProfile) { e.Port = 0 }, "port must be between"},
+		{"relative health path", func(e *RuntimeProfile) { e.HealthPath = "health" }, "healthPath must start with /"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

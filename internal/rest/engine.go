@@ -22,7 +22,7 @@ const workflowBodyLimit = 64 << 10
 // @ID PostEngineWorkflow
 // @Summary Run an automation engine workflow
 // @Description Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.
-// @Description deploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, modelService | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. A model service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.
+// @Description deploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, inference | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. An inference service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.
 // @Description heal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A succeeded deployment is left alone, a running one is refused.
 // @Description control takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).
 // @Description status takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).

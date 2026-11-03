@@ -159,6 +159,25 @@ func TestNodeDeploymentRoutes(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), created.ID) {
 		t.Errorf("GET list = %d: %s", rec.Code, rec.Body.String())
 	}
+	for query, want := range map[string]bool{
+		"?type=app":                         true,
+		"?type=inference":                   false,
+		"?nsId=etri":                        true,
+		"?nsId=other":                       false,
+		"?status=succeeded":                 true,
+		"?status=failed":                    false,
+		"?type=app&nsId=etri&status=failed": false,
+	} {
+		rec = sendNodeJSON(s, http.MethodGet, "/aiapp/deployments"+query, "")
+		var list model.NodeDeploymentListResp
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &list) != nil {
+			t.Errorf("GET list%s = %d: %s", query, rec.Code, rec.Body.String())
+			continue
+		}
+		if got := len(list.Deployments) == 1 && list.Deployments[0].ID == created.ID; got != want || (!want && len(list.Deployments) != 0) {
+			t.Errorf("GET list%s = %s, want listed %v", query, rec.Body.String(), want)
+		}
+	}
 
 	rec = sendNodeJSON(s, http.MethodPost, "/aiapp/deployments/"+created.ID+"/control", `{"action":"reboot"}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"done"`) || strings.Join(*controls, ",") != "reboot" {
@@ -190,12 +209,12 @@ func TestNodeDeploymentRefusals(t *testing.T) {
 	}{
 		"k8s target": {`{"type":"app","targets":[{"kind":"k8s","nsId":"etri","k8sClusterId":"c1"}],"app":{"name":"web"}}`,
 			http.StatusUnprocessableEntity},
-		"bad env name":    {`{"type":"app",` + target + `,"app":{"name":"web","env":{"lower":"x"}}}`, http.StatusBadRequest},
-		"newline in env":  {`{"type":"app",` + target + `,"app":{"name":"web","env":{"A":"x\ny"}}}`, http.StatusBadRequest},
-		"malformed":       {`{"type":`, http.StatusBadRequest},
-		"unknown app":     {`{"type":"app",` + target + `,"app":{"name":"nope"}}`, http.StatusNotFound},
-		"unknown model":   {`{"type":"model-service",` + target + `,"modelService":{"modelId":"nope","artifactId":"x"}}`, http.StatusNotFound},
-		"engine mismatch": {`{"type":"model-service",` + target + `,"modelService":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","engine":"vllm"}}`, http.StatusUnprocessableEntity},
+		"bad env name":     {`{"type":"app",` + target + `,"app":{"name":"web","env":{"lower":"x"}}}`, http.StatusBadRequest},
+		"newline in env":   {`{"type":"app",` + target + `,"app":{"name":"web","env":{"A":"x\ny"}}}`, http.StatusBadRequest},
+		"malformed":        {`{"type":`, http.StatusBadRequest},
+		"unknown app":      {`{"type":"app",` + target + `,"app":{"name":"nope"}}`, http.StatusNotFound},
+		"unknown model":    {`{"type":"inference",` + target + `,"inference":{"modelId":"nope","artifactId":"x"}}`, http.StatusNotFound},
+		"runtime mismatch": {`{"type":"inference",` + target + `,"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","runtimeId":"vllm"}}`, http.StatusUnprocessableEntity},
 	} {
 		rec := sendNodeJSON(s, http.MethodPost, "/aiapp/deployments", tc.body)
 		if rec.Code != tc.want {

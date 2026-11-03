@@ -21,7 +21,7 @@ const (
 	EnvFile = ".env"
 	// ScriptFile is the application script, run by copy-and-run.yml.
 	ScriptFile = ".aiapp-run.sh"
-	// ComposeFile is the compose file of a model service.
+	// ComposeFile is the compose file of an inference service.
 	ComposeFile = "docker-compose.yml"
 	// ManifestFile lists the other files of the stage folder, one name per
 	// line. It is copied to the node with them, and the next deployment of

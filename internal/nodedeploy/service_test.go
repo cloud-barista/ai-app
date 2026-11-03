@@ -162,7 +162,7 @@ func newFixture(t *testing.T, dryRun bool) *fixture {
 		ID: "tiny", Name: "Tiny", Tasks: []string{"embedding"},
 		Artifacts: []model.Artifact{{
 			ID: "gguf", Source: "ollama", Ref: "all-minilm:22m", Format: model.FormatGGUF,
-			Engines: []model.EngineCompat{{Engine: model.EngineOllama}},
+			Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeOllama}},
 		}},
 	}); err != nil {
 		t.Fatal(err)
@@ -209,8 +209,8 @@ func target(node string) model.NodeDeployTarget {
 
 func modelReq(nodes ...string) model.NodeDeploymentReq {
 	req := model.NodeDeploymentReq{
-		Type:         model.NodeDeployTypeModelService,
-		ModelService: &model.NodeModelServiceReq{ModelID: "tiny", ArtifactID: "gguf", Env: map[string]string{"OLLAMA_KEEP_ALIVE": "24h"}},
+		Type:      model.NodeDeployTypeInference,
+		Inference: &model.NodeInferenceReq{ModelID: "tiny", ArtifactID: "gguf", Env: map[string]string{"OLLAMA_KEEP_ALIVE": "24h"}},
 	}
 	for _, n := range nodes {
 		req.Targets = append(req.Targets, target(n))
@@ -254,7 +254,7 @@ func assertNoKey(t *testing.T, what string, data []byte) {
 	}
 }
 
-func TestModelServiceDeploymentSucceeds(t *testing.T) {
+func TestInferenceDeploymentSucceeds(t *testing.T) {
 	f := newFixture(t, false)
 	created, err := f.svc.Create(context.Background(), modelReq("vm1", "vm2"))
 	if err != nil {
@@ -266,8 +266,8 @@ func TestModelServiceDeploymentSucceeds(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(created.ID) {
 		t.Errorf("id = %q, want a version 4 UUID", created.ID)
 	}
-	if created.Request.ModelService.Engine != model.EngineOllama {
-		t.Errorf("engine = %q, want the artifact's first engine filled in", created.Request.ModelService.Engine)
+	if created.Request.Inference.RuntimeID != model.RuntimeOllama {
+		t.Errorf("engine = %q, want the artifact's first engine filled in", created.Request.Inference.RuntimeID)
 	}
 
 	d := waitFinished(t, f.svc, created.ID)
@@ -459,7 +459,7 @@ func TestRequestedGPUOverridesTheSpec(t *testing.T) {
 	f := newFixture(t, false)
 	req := modelReq("vm1")
 	no := false
-	req.ModelService.GPU = &no
+	req.Inference.GPU = &no
 	created, err := f.svc.Create(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
@@ -524,13 +524,13 @@ func TestRequestsRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 
 	cases := map[string]func(*model.NodeDeploymentReq){
-		"lower case env name":  func(r *model.NodeDeploymentReq) { r.ModelService.Env = map[string]string{"bad": "x"} },
-		"env value with \\n":   func(r *model.NodeDeploymentReq) { r.ModelService.Env = map[string]string{"A": "x\ny"} },
-		"env value with quote": func(r *model.NodeDeploymentReq) { r.ModelService.Env = map[string]string{"A": "it's"} },
+		"lower case env name":  func(r *model.NodeDeploymentReq) { r.Inference.Env = map[string]string{"bad": "x"} },
+		"env value with \\n":   func(r *model.NodeDeploymentReq) { r.Inference.Env = map[string]string{"A": "x\ny"} },
+		"env value with quote": func(r *model.NodeDeploymentReq) { r.Inference.Env = map[string]string{"A": "it's"} },
 		"no targets":           func(r *model.NodeDeploymentReq) { r.Targets = nil },
 		"duplicate target":     func(r *model.NodeDeploymentReq) { r.Targets = append(r.Targets, r.Targets[0]) },
 		"path in node id":      func(r *model.NodeDeploymentReq) { r.Targets[0].NodeID = "../x" },
-		"no model service":     func(r *model.NodeDeploymentReq) { r.ModelService = nil },
+		"no model service":     func(r *model.NodeDeploymentReq) { r.Inference = nil },
 		"unknown type":         func(r *model.NodeDeploymentReq) { r.Type = "vm" },
 	}
 	for name, mutate := range cases {
@@ -542,12 +542,12 @@ func TestRequestsRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 
 	unknown := modelReq("vm1")
-	unknown.ModelService.ModelID = "nope"
+	unknown.Inference.ModelID = "nope"
 	if _, err := f.svc.Create(context.Background(), unknown); !errors.Is(err, modelcat.ErrNotFound) {
 		t.Errorf("unknown model = %v", err)
 	}
 	wrongEngine := modelReq("vm1")
-	wrongEngine.ModelService.Engine = model.EngineVLLM
+	wrongEngine.Inference.RuntimeID = model.RuntimeVLLM
 	if _, err := f.svc.Create(context.Background(), wrongEngine); err == nil {
 		t.Error("an engine the artifact does not list was accepted")
 	}
@@ -562,7 +562,7 @@ func TestRequestsRefusedBeforeAnythingRuns(t *testing.T) {
 		t.Errorf("missing version = %v", err)
 	}
 
-	if f.runner.count() != 0 || len(f.svc.List(context.Background())) != 0 {
+	if f.runner.count() != 0 || len(f.svc.List(context.Background(), ListFilter{})) != 0 {
 		t.Error("a refused request left a run or a record")
 	}
 	if entries, _ := os.ReadDir(f.stage); len(entries) != 0 {
@@ -758,7 +758,7 @@ func TestRedeployLandsInTheSameNodeFolderAndProject(t *testing.T) {
 		ID: "tiny-hf", Name: "Tiny HF", Tasks: []string{"embedding"},
 		Artifacts: []model.Artifact{{
 			ID: "hf", Source: "huggingface", Ref: "org/tiny", Format: model.FormatHF,
-			Engines: []model.EngineCompat{{Engine: model.EngineVLLM}},
+			Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
 		}},
 	}); err != nil {
 		t.Fatal(err)
@@ -769,7 +769,7 @@ func TestRedeployLandsInTheSameNodeFolderAndProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	vllm := modelReq("vm1")
-	vllm.ModelService = &model.NodeModelServiceReq{ModelID: "tiny-hf", ArtifactID: "hf"}
+	vllm.Inference = &model.NodeInferenceReq{ModelID: "tiny-hf", ArtifactID: "hf"}
 	api := appReq("vm1")
 	api.App.Name = "api"
 
@@ -834,7 +834,7 @@ func TestAppNameComposeCannotTakeIsRefused(t *testing.T) {
 	if _, err := f.svc.Create(context.Background(), req); !errors.Is(err, model.ErrValidation) {
 		t.Errorf("app name with a dot = %v, want a validation error", err)
 	}
-	if f.runner.count() != 0 || len(f.svc.List(context.Background())) != 0 {
+	if f.runner.count() != 0 || len(f.svc.List(context.Background(), ListFilter{})) != 0 {
 		t.Error("a refused request left a run or a record")
 	}
 }

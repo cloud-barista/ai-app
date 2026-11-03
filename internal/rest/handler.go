@@ -42,7 +42,7 @@ func statusCodeFor(err error) int {
 	case errors.Is(err, model.ErrValidation):
 		return http.StatusBadRequest
 	case errors.Is(err, modelcat.ErrNotFound), errors.Is(err, modelcat.ErrArtifactNotFound),
-		errors.Is(err, modelcat.ErrEngineNotFound):
+		errors.Is(err, modelcat.ErrRuntimeNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, appstore.ErrNotFound), errors.Is(err, appstore.ErrVersionNotFound):
 		return http.StatusNotFound
@@ -82,7 +82,7 @@ func messageFor(err error, fallback string) string {
 	// The model catalog, compose and application store errors name only
 	// identifiers the caller sent, the reason a pairing does not fit and the
 	// upload bound.
-	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrEngineNotFound,
+	for _, own := range []error{modelcat.ErrNotFound, modelcat.ErrArtifactNotFound, modelcat.ErrRuntimeNotFound,
 		compose.ErrIncompatible, compose.ErrInvalidOption,
 		appstore.ErrNotFound, appstore.ErrVersionNotFound, appstore.ErrTooLarge,
 		model.ErrUnsupportedTarget, nodedeploy.ErrNotFound} {

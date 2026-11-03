@@ -41,25 +41,25 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 	return Tool{
 		Name:  "create_deployment",
 		Grade: GradeWrite,
-		Description: "Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs; no VM " +
-			"is created. type model-service renders a compose file for a model artifact and an engine (see list_models, " +
-			"list_engines) and starts it; type app copies an uploaded application version (see list_apps) and runs its " +
+		Description: "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs; " +
+			"no VM is created. type inference renders a compose file for a model artifact and a runtime (see " +
+			"list_models, list_runtimes) and starts it; type app copies an uploaded application version (see list_apps) and runs its " +
 			"script. Each node is reached with its own SSH key through Semaphore: docker is installed when missing, then " +
 			"the service is started. Returns the deployment record at once with status pending; follow it with " +
 			"get_deployment until it is succeeded, failed or partial, and read the task output with get_deployment_logs. " +
 			"With dry run on, only the files are placed, nothing runs, and the record comes back with status dry-run.",
 		InputSchema: object(map[string]any{
-			"type": enumProp("What to deploy", model.NodeDeployTypeModelService, model.NodeDeployTypeApp),
+			"type": enumProp("What to deploy", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"targets": map[string]any{
 				"type": "array", "description": "Nodes to deploy to, each once, at most 32", "items": target,
 			},
-			"modelService": object(map[string]any{
+			"inference": object(map[string]any{
 				"modelId":    stringProp("Model id from list_models"),
 				"artifactId": stringProp("Artifact id of that model"),
-				"engine":     stringProp("Engine profile id the artifact lists. Omit for its first engine"),
-				"gpu": map[string]any{"type": "boolean", "description": "Give the engine every NVIDIA GPU of the node. " +
+				"runtimeId":  stringProp("Runtime profile id from list_runtimes that the artifact lists. Omit for its first runtime"),
+				"gpu": map[string]any{"type": "boolean", "description": "Give the runtime every NVIDIA GPU of the node. " +
 					"Omit to take it from the node spec (acceleratorType gpu)"},
-				"env": envProp("Engine container environment. " + envNote),
+				"env": envProp("Runtime container environment. " + envNote),
 			}, "modelId", "artifactId"),
 			"app": object(map[string]any{
 				"name":    stringProp("Uploaded application name from list_apps"),
@@ -96,7 +96,7 @@ func getDeploymentTool(svc *nodedeploy.Service) Tool {
 		Grade: GradeRead,
 		Description: "Read one deployment made by create_deployment: its status (pending, running, succeeded, failed, " +
 			"partial, dry-run, interrupted) and for every node its status, address, whether it got the GPU, the " +
-			"rendered compose and service URL of a model service, and each playbook run with its status. Task output " +
+			"rendered compose and service URL of an inference service, and each playbook run with its status. Task output " +
 			"is left out; read it with get_deployment_logs.",
 		InputSchema: object(map[string]any{
 			"id": stringProp("Deployment id returned by create_deployment"),
@@ -115,11 +115,28 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 	return Tool{
 		Name:  "list_node_deployments",
 		Grade: GradeRead,
-		Description: "List every deployment made by create_deployment, newest first, with the status of every node. " +
-			"Task output is left out.",
-		InputSchema: object(map[string]any{}),
+		Description: "List the deployments made by create_deployment, newest first, with the status of every node. " +
+			"Every filter is optional and matched exactly; nsId matches a deployment when any of its targets is in " +
+			"that namespace. Task output is left out.",
+		InputSchema: object(map[string]any{
+			"type":   enumProp("Deployment type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
+			"nsId":   stringProp("CB-Tumblebug namespace of any target"),
+			"status": stringProp("Deployment status: pending, running, succeeded, failed, partial, dry-run or interrupted"),
+		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
-			return model.NodeDeploymentListResp{Deployments: svc.List(ctx)}, nil
+			var filter nodedeploy.ListFilter
+			if len(input) > 0 {
+				var raw struct {
+					Type   string `json:"type"`
+					NsID   string `json:"nsId"`
+					Status string `json:"status"`
+				}
+				if err := decode(input, &raw); err != nil {
+					return nil, err
+				}
+				filter = nodedeploy.ListFilter(raw)
+			}
+			return model.NodeDeploymentListResp{Deployments: svc.List(ctx, filter)}, nil
 		},
 	}
 }

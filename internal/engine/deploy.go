@@ -13,9 +13,9 @@ import (
 // waitStepName names the step that follows a deployment until it ends.
 const waitStepName = "wait for the deployment to end"
 
-// Deploy deploys a model service or an uploaded application onto existing
+// Deploy deploys an inference service or an uploaded application onto existing
 // nodes. It reads what the request names, creates the deployment and follows
-// it until every node ended. The model service health is checked by the
+// it until every node ended. The inference service health is checked by the
 // compose-up playbook inside the deployment, so the wait step reports it.
 //
 // A deployment the dry-run gate holds is recorded as blocked and the wait as
@@ -72,7 +72,7 @@ func (r *runner) readTarget(ctx context.Context, in DeployInput) bool {
 		return true
 	}
 
-	ms := in.ModelService
+	ms := in.Inference
 	var m model.Model
 	step, ok := r.call(ctx, "read model "+ms.ModelID, toolGetModel, map[string]string{"modelId": ms.ModelID}, &m)
 	if !ok {
@@ -84,12 +84,12 @@ func (r *runner) readTarget(ctx context.Context, in DeployInput) bool {
 			ids = append(ids, artifact.ID)
 			continue
 		}
-		engines := make([]string, 0, len(artifact.Engines))
-		for _, compat := range artifact.Engines {
-			engines = append(engines, compat.Engine)
+		runtimes := make([]string, 0, len(artifact.Runtimes))
+		for _, compat := range artifact.Runtimes {
+			runtimes = append(runtimes, compat.RuntimeID)
 		}
-		step.Message = fmt.Sprintf("artifact %s: %s %s (%s), engines %s",
-			artifact.ID, artifact.Source, artifact.Ref, artifact.Format, strings.Join(engines, ", "))
+		step.Message = fmt.Sprintf("artifact %s: %s %s (%s), runtimes %s",
+			artifact.ID, artifact.Source, artifact.Ref, artifact.Format, strings.Join(runtimes, ", "))
 		return true
 	}
 	r.fail(step, fmt.Sprintf("model %s has no artifact %s; it has %s", ms.ModelID, ms.ArtifactID, strings.Join(ids, ", ")))

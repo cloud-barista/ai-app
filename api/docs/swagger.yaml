@@ -312,17 +312,9 @@ definitions:
     type: object
   model.Artifact:
     properties:
-      engines:
-        description: |-
-          Engines are the inference engines known to load this artifact. Each
-          engine must be listed explicitly: the same file format may load in one
-          engine version and not in another. Filter with ?engine=.
-        items:
-          $ref: '#/definitions/model.EngineCompat'
-        type: array
       format:
         description: |-
-          Format is the file format the engine loads: hf for Hugging Face
+          Format is the file format the runtime loads: hf for Hugging Face
           safetensors, gguf for GGUF. Filter with ?format=.
         example: hf
         type: string
@@ -345,6 +337,14 @@ definitions:
           id, an Ollama model tag, or an image reference.
         example: Qwen/Qwen3-VL-8B-Instruct
         type: string
+      runtimes:
+        description: |-
+          Runtimes are the inference runtimes known to load this artifact. Each
+          runtime must be listed explicitly: the same file format may load in one
+          runtime version and not in another. Filter with ?runtimeId=.
+        items:
+          $ref: '#/definitions/model.RuntimeCompat'
+        type: array
       sizeGiB:
         description: |-
           SizeGiB is the download size in GiB (2^30 bytes). Zero or absent means
@@ -358,78 +358,17 @@ definitions:
         example: huggingface
         type: string
     required:
-    - engines
     - format
     - id
     - ref
+    - runtimes
     - source
-    type: object
-  model.EngineCompat:
-    properties:
-      engine:
-        description: Engine is the engine profile ID, as listed by GET /engines.
-        example: vllm
-        type: string
-      minVersion:
-        description: |-
-          MinVersion is the oldest engine version known to load the artifact.
-          Empty means not recorded.
-        example: 0.11.0
-        type: string
-    required:
-    - engine
-    type: object
-  model.EngineProfile:
-    properties:
-      apiBasePath:
-        description: |-
-          APIBasePath is the path of the OpenAI compatible API, appended to
-          http://<node>:<port> by whoever calls the model service.
-        example: /v1
-        type: string
-      formats:
-        description: Formats are the artifact formats this engine loads.
-        example:
-        - hf
-        items:
-          type: string
-        type: array
-      healthPath:
-        description: HealthPath answers 200 once the engine is up.
-        example: /health
-        type: string
-      id:
-        description: ID is the engine identifier artifacts refer to in engines[].engine.
-        example: vllm
-        type: string
-      image:
-        description: Image is the container image, pinned to a release tag.
-        example: vllm/vllm-openai:v0.32.0
-        type: string
-      port:
-        description: |-
-          Port is the TCP port the engine serves its API on, inside the container
-          and on the node.
-        example: 8000
-        type: integer
-    required:
-    - formats
-    - id
-    - image
-    - port
-    type: object
-  model.EngineProfileListResp:
-    properties:
-      engines:
-        items:
-          $ref: '#/definitions/model.EngineProfile'
-        type: array
     type: object
   model.Model:
     properties:
       artifacts:
         description: |-
-          Artifacts are the published forms of the model that an engine can load.
+          Artifacts are the published forms of the model that a runtime can load.
           At least one is required.
         items:
           $ref: '#/definitions/model.Artifact'
@@ -615,7 +554,7 @@ definitions:
   model.NodeDeployResult:
     properties:
       compose:
-        description: Compose is the rendered docker-compose.yml of a model service.
+        description: Compose is the rendered docker-compose.yml of an inference service.
         type: string
       error:
         description: Error is why the node failed.
@@ -626,7 +565,7 @@ definitions:
         type: string
       gpu:
         description: |-
-          GPU is whether the engine was given the node's GPUs and the NVIDIA
+          GPU is whether the runtime was given the node's GPUs and the NVIDIA
           Container Toolkit was installed.
         example: false
         type: boolean
@@ -661,9 +600,9 @@ definitions:
         type: array
       serviceUrl:
         description: |-
-          ServiceURL is the model service API on the node, built from the public
-          or private IP the node was reached at, the engine port and its API base
-          path. Model services only.
+          ServiceURL is the inference API on the node, built from the public or
+          private IP the node was reached at, the runtime port and its API base
+          path. Inference services only.
         example: http://203.0.113.10:8000/v1
         type: string
       stageDir:
@@ -700,8 +639,8 @@ definitions:
         description: Target is the target as requested.
       workKey:
         description: |-
-          WorkKey names what the deployment occupies on the node: ms-<engine> for
-          a model service, app-<name> for an application. A later deployment of
+          WorkKey names what the deployment occupies on the node: ms-<runtime>
+          for an inference service, app-<name> for an application. A later deployment of
           the same work key to the same node replaces this one there.
         example: ms-vllm
         type: string
@@ -815,7 +754,7 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.NodeDeploymentReq'
         description: |-
-          Request is the request as accepted, with the engine and app version
+          Request is the request as accepted, with the runtime and app version
           that were taken filled in.
       status:
         description: |-
@@ -835,9 +774,9 @@ definitions:
       type:
         description: Type is the request type.
         enum:
-        - model-service
+        - inference
         - app
-        example: model-service
+        example: inference
         type: string
     type: object
   model.NodeDeploymentListResp:
@@ -868,10 +807,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.NodeAppReq'
         description: App is required when type is app.
-      modelService:
+      inference:
         allOf:
-        - $ref: '#/definitions/model.NodeModelServiceReq'
-        description: ModelService is required when type is model-service.
+        - $ref: '#/definitions/model.NodeInferenceReq'
+        description: Inference is required when type is inference.
       targets:
         description: Targets are the nodes to deploy to, at most 32, each once.
         items:
@@ -879,40 +818,34 @@ definitions:
         type: array
       type:
         description: |-
-          Type is "model-service" or "app"; the field of the same name below
-          carries what to deploy.
+          Type is "inference" or "app"; the field of the same name below carries
+          what to deploy.
         enum:
-        - model-service
+        - inference
         - app
-        example: model-service
+        example: inference
         type: string
     required:
     - targets
     - type
     type: object
-  model.NodeModelServiceReq:
+  model.NodeInferenceReq:
     properties:
       artifactId:
         description: ArtifactID is an artifact of that model.
         example: hf-bf16
         type: string
-      engine:
-        description: |-
-          Engine is an engine profile ID (GET /engines) the artifact lists. Empty
-          takes the first engine the artifact lists.
-        example: vllm
-        type: string
       env:
         additionalProperties:
           type: string
         description: |-
-          Env is added to the engine container environment and written to the
+          Env is added to the runtime container environment and written to the
           .env file beside the compose file. Names match [A-Z_][A-Z0-9_]*;
           values hold no line break and no single quote.
         type: object
       gpu:
         description: |-
-          GPU reserves every NVIDIA GPU of the node for the engine and installs
+          GPU reserves every NVIDIA GPU of the node for the runtime and installs
           the NVIDIA Container Toolkit. Omitted, it is true when the node spec in
           CB-Tumblebug has acceleratorType gpu, and false when the spec cannot be
           read; the node result says which.
@@ -922,9 +855,76 @@ definitions:
         description: ModelID is a model of the model catalog (GET /models).
         example: qwen3-embedding-0.6b
         type: string
+      runtimeId:
+        description: |-
+          RuntimeID is a runtime profile ID (GET /runtimes) the artifact lists.
+          Empty takes the first runtime the artifact lists.
+        example: vllm
+        type: string
     required:
     - artifactId
     - modelId
+    type: object
+  model.RuntimeCompat:
+    properties:
+      minVersion:
+        description: |-
+          MinVersion is the oldest runtime version known to load the artifact.
+          Empty means not recorded.
+        example: 0.11.0
+        type: string
+      runtimeId:
+        description: RuntimeID is the runtime profile ID, as listed by GET /runtimes.
+        example: vllm
+        type: string
+    required:
+    - runtimeId
+    type: object
+  model.RuntimeProfile:
+    properties:
+      apiBasePath:
+        description: |-
+          APIBasePath is the path of the OpenAI compatible API, appended to
+          http://<node>:<port> by whoever calls the inference service.
+        example: /v1
+        type: string
+      formats:
+        description: Formats are the artifact formats this runtime loads.
+        example:
+        - hf
+        items:
+          type: string
+        type: array
+      healthPath:
+        description: HealthPath answers 200 once the runtime is up.
+        example: /health
+        type: string
+      id:
+        description: ID is the runtime identifier artifacts refer to in runtimes[].runtimeId.
+        example: vllm
+        type: string
+      image:
+        description: Image is the container image, pinned to a release tag.
+        example: vllm/vllm-openai:v0.32.0
+        type: string
+      port:
+        description: |-
+          Port is the TCP port the runtime serves its API on, inside the container
+          and on the node.
+        example: 8000
+        type: integer
+    required:
+    - formats
+    - id
+    - image
+    - port
+    type: object
+  model.RuntimeProfileListResp:
+    properties:
+      runtimes:
+        items:
+          $ref: '#/definitions/model.RuntimeProfile'
+        type: array
     type: object
   model.SimpleMsg:
     properties:
@@ -989,11 +989,12 @@ definitions:
 info:
   contact: {}
   description: Keeps an AI model catalog (models, the artifacts each is published
-    as, and the inference engine profiles they run on), registers AI applications
-    as a name, files and a script with versions, deploys a model service or an application
-    onto nodes CB-Tumblebug already runs through Semaphore, publishes the same capabilities
-    as MCP tools and archives every deploy and control call. Automation engine routes
-    and the partner natural language agent routes are forwarded to their own processes.
+    as, and the inference runtime profiles they run on), registers AI applications
+    as a name, files and a script with versions, deploys an inference service or an
+    application onto nodes CB-Tumblebug already runs through Semaphore, publishes
+    the same capabilities as MCP tools and archives every deploy and control call.
+    Automation engine routes and the partner natural language agent routes are forwarded
+    to their own processes.
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
@@ -1238,11 +1239,37 @@ paths:
       - '[Archive] Deploy and Control Archive'
   /deployments:
     get:
-      description: List every deployment made through POST /deployments, newest first,
-        with the status of every node. Task output is left out; read it with GET /deployments/{id}/logs.
+      description: List the deployments made through POST /deployments, newest first,
+        with the status of every node. Each filter is optional and matched exactly;
+        all given filters must match. nsId matches a deployment when any of its targets
+        is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs.
         Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory
         otherwise.
       operationId: GetAllNodeDeployments
+      parameters:
+      - description: Deployment type
+        enum:
+        - inference
+        - app
+        in: query
+        name: type
+        type: string
+      - description: CB-Tumblebug namespace of any target
+        in: query
+        name: nsId
+        type: string
+      - description: Deployment status
+        enum:
+        - pending
+        - running
+        - succeeded
+        - failed
+        - partial
+        - dry-run
+        - interrupted
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -1259,15 +1286,15 @@ paths:
       consumes:
       - application/json
       description: |-
-        Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
+        Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
 
-        type model-service needs modelService: modelId and artifactId from GET /models, and optionally engine (an engine profile the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the engine profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
+        type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 
         Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 
-        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<engine> for a model service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
+        For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 
-        The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+        The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
       operationId: PostNodeDeployment
       parameters:
       - description: What to deploy and where
@@ -1292,11 +1319,11 @@ paths:
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "404":
-          description: Model, artifact, engine profile or application not found
+          description: Model, artifact, runtime profile or application not found
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "422":
-          description: A k8s target, or an artifact the engine cannot run
+          description: A k8s target, or an artifact the runtime cannot run
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
@@ -1314,7 +1341,7 @@ paths:
         failed, partial, dry-run, interrupted), and for every node its status, how
         it was reached (csp, region, zone, host, port, user, specId; never the key),
         whether it got the GPU and why, the stage folder, the rendered compose and
-        service URL of a model service, and every playbook run with its Semaphore
+        service URL of an inference service, and every playbook run with its Semaphore
         task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.'
       operationId: GetNodeDeployment
       parameters:
@@ -1500,7 +1527,7 @@ paths:
       - application/json
       description: |-
         Run one fixed workflow as ordered AI-App tool calls, without a model, and archive the run.
-        deploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, modelService | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. A model service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.
+        deploy takes the node deployment request of POST /deployments (model.NodeDeploymentReq: {type, targets, inference | app}); it reads the model (get_model) or the application (get_app), creates the deployment (create_deployment) and reads it (get_deployment) until every node ended. An inference service is checked to answer by the compose-up playbook inside the deployment. A deployment that succeeded on some nodes only (partial) fails the run.
         heal takes {deploymentId}; a deployment that is failed, partial, interrupted or a dry run is created once more from the request it was made with, and followed the same way. A succeeded deployment is left alone, a running one is refused.
         control takes {deploymentId, action} with action suspend, resume, reboot or terminate (control_node).
         status takes {deploymentId} and reports the deployment record and the last task output lines of every node (get_deployment, get_deployment_logs).
@@ -1557,58 +1584,11 @@ paths:
       summary: Run an automation engine workflow
       tags:
       - '[Engine] AI Application Automation Engine'
-  /engines:
-    get:
-      description: 'List the built-in inference engine profiles a model service can
-        run with: the pinned container image, the artifact formats each loads, and
-        the port, health path and OpenAI compatible API path it serves. Profiles are
-        read only. An artifact runs on an engine when the artifact lists the engine
-        id and the engine lists the artifact format'
-      operationId: GetAllEngineProfiles
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Engine profile list, ordered by id
-          schema:
-            $ref: '#/definitions/model.EngineProfileListResp'
-      security:
-      - BearerAuth: []
-      summary: List inference engine profiles
-      tags:
-      - '[Model] Inference Engine Profiles'
-  /engines/{engineId}:
-    get:
-      description: Read one built-in inference engine profile
-      operationId: GetEngineProfile
-      parameters:
-      - default: vllm
-        description: Engine profile ID
-        in: path
-        name: engineId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Engine profile
-          schema:
-            $ref: '#/definitions/model.EngineProfile'
-        "404":
-          description: Engine profile not found
-          schema:
-            $ref: '#/definitions/model.SimpleMsg'
-      security:
-      - BearerAuth: []
-      summary: Get an inference engine profile
-      tags:
-      - '[Model] Inference Engine Profiles'
   /models:
     get:
       description: 'List the AI models in the model catalog with every artifact each
         is published as. Each filter is optional and compared without regard to case;
-        all given filters must match. task and modality match the model. format, engine
+        all given filters must match. task and modality match the model. format, runtimeId
         and source match an artifact, and a model is listed only when one of its artifacts
         matches all three of them at once. Values are returned as the source states
         them: an absent contextLength, sizeGiB or precision means unknown, not zero.
@@ -1627,9 +1607,9 @@ paths:
         in: query
         name: format
         type: string
-      - description: Engine profile ID an artifact runs on, as listed by GET /engines
+      - description: Runtime profile ID an artifact runs on, as listed by GET /runtimes
         in: query
-        name: engine
+        name: runtimeId
         type: string
       - description: Artifact source, such as huggingface or ollama
         in: query
@@ -1653,9 +1633,9 @@ paths:
       description: Register an AI model, or replace the model of the same id with
         this record. A model needs an id, a name and at least one artifact; each artifact
         needs an id unique within the model, a source, a ref, a format and at least
-        one compatible engine. Engines are not checked against the engine profiles
-        here; a pairing that does not fit is refused when a compose file is rendered
-        for it.
+        one compatible runtime in runtimes[]. Runtimes are not checked against the
+        runtime profiles here; a pairing that does not fit is refused when a compose
+        file is rendered for it.
       operationId: PostModel
       parameters:
       - description: AI model metadata
@@ -1686,8 +1666,8 @@ paths:
       - '[Model] AI Model Catalog'
   /models/{modelId}:
     delete:
-      description: Remove an AI model from the catalog. Model services already running
-        are untouched
+      description: Remove an AI model from the catalog. Inference services already
+        running are untouched
       operationId: DeleteModel
       parameters:
       - description: AI model ID
@@ -1744,8 +1724,8 @@ paths:
   /models/{modelId}/artifacts/{artifactId}/compose:
     get:
       description: 'Render the docker-compose.yml that runs one artifact of a model
-        with one engine profile, without deploying anything. The pairing is refused
-        with 422 unless the artifact lists the engine and the engine loads the artifact
+        with one runtime profile, without deploying anything. The pairing is refused
+        with 422 unless the artifact lists the runtime and the runtime loads the artifact
         format. The file starts with one `docker compose up -d`: for vllm it runs
         the OpenAI compatible server with --model set to the artifact ref (and --runner
         pooling for an embedding model); for ollama it runs the server and a one-shot
@@ -1765,13 +1745,13 @@ paths:
         name: artifactId
         required: true
         type: string
-      - description: Engine profile ID. Defaults to the first engine the artifact
+      - description: Runtime profile ID. Defaults to the first runtime the artifact
           lists
         in: query
-        name: engine
+        name: runtimeId
         type: string
       - default: false
-        description: Reserve every NVIDIA GPU of the node for the engine
+        description: Reserve every NVIDIA GPU of the node for the runtime
         in: query
         name: gpu
         type: boolean
@@ -1788,16 +1768,16 @@ paths:
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "404":
-          description: AI model, artifact or engine profile not found
+          description: AI model, artifact or runtime profile not found
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "422":
-          description: The artifact cannot be run with the engine
+          description: The artifact cannot be run with the runtime
           schema:
             $ref: '#/definitions/model.SimpleMsg'
       security:
       - BearerAuth: []
-      summary: Preview the compose file of a model service
+      summary: Preview the compose file of an inference service
       tags:
       - '[Model] AI Model Catalog'
   /readyz:
@@ -1819,6 +1799,53 @@ paths:
       summary: Check service readiness
       tags:
       - '[Health] Service Health'
+  /runtimes:
+    get:
+      description: 'List the built-in inference runtime profiles an inference deployment
+        can run with: the pinned container image, the artifact formats each loads,
+        and the port, health path and OpenAI compatible API path it serves. Profiles
+        are read only. An artifact runs on a runtime when the artifact lists the runtime
+        id in runtimes[].runtimeId and the runtime lists the artifact format'
+      operationId: GetAllRuntimeProfiles
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Runtime profile list, ordered by id
+          schema:
+            $ref: '#/definitions/model.RuntimeProfileListResp'
+      security:
+      - BearerAuth: []
+      summary: List inference runtime profiles
+      tags:
+      - '[Model] Inference Runtime Profiles'
+  /runtimes/{runtimeId}:
+    get:
+      description: Read one built-in inference runtime profile
+      operationId: GetRuntimeProfile
+      parameters:
+      - default: vllm
+        description: Runtime profile ID
+        in: path
+        name: runtimeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Runtime profile
+          schema:
+            $ref: '#/definitions/model.RuntimeProfile'
+        "404":
+          description: Runtime profile not found
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
+      security:
+      - BearerAuth: []
+      summary: Get an inference runtime profile
+      tags:
+      - '[Model] Inference Runtime Profiles'
   /tools:
     get:
       description: List every tool the agent may call, with its risk grade and whether

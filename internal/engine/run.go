@@ -77,8 +77,8 @@ type RunListResp struct {
 	Runs []Run `json:"runs"`
 }
 
-// DeployInput is the node deployment request create_deployment takes: a
-// model service or an uploaded application, onto nodes CB-Tumblebug already
+// DeployInput is the node deployment request create_deployment takes: an
+// inference service or an uploaded application, onto nodes CB-Tumblebug already
 // runs.
 type DeployInput = model.NodeDeploymentReq
 
@@ -103,11 +103,11 @@ type StatusInput struct {
 // CatalogQuery asks for the models and the uploaded applications. Every
 // filter is optional and narrows the models only, as list_models does.
 type CatalogQuery struct {
-	Task     string `json:"task,omitempty" example:"vision-chat"`
-	Modality string `json:"modality,omitempty" example:"image"`
-	Format   string `json:"format,omitempty" example:"gguf"`
-	Engine   string `json:"engine,omitempty" example:"ollama"`
-	Source   string `json:"source,omitempty" example:"ollama"`
+	Task      string `json:"task,omitempty" example:"vision-chat"`
+	Modality  string `json:"modality,omitempty" example:"image"`
+	Format    string `json:"format,omitempty" example:"gguf"`
+	RuntimeID string `json:"runtimeId,omitempty" example:"ollama"`
+	Source    string `json:"source,omitempty" example:"ollama"`
 }
 
 // Catalog is the short form of the models and the uploaded applications a
@@ -117,7 +117,7 @@ type Catalog struct {
 	Apps   []CatalogApp   `json:"apps"`
 }
 
-// CatalogModel is one model with the artifacts a model-service request can
+// CatalogModel is one model with the artifacts an inference request can
 // name.
 type CatalogModel struct {
 	ID              string            `json:"id" example:"qwen3-vl-8b"`
@@ -127,7 +127,7 @@ type CatalogModel struct {
 	Artifacts       []CatalogArtifact `json:"artifacts"`
 }
 
-// CatalogArtifact is one artifact of a model and the engines it runs on.
+// CatalogArtifact is one artifact of a model and the runtimes it runs on.
 type CatalogArtifact struct {
 	ID        string  `json:"id" example:"ollama-gguf"`
 	Source    string  `json:"source" example:"ollama"`
@@ -135,9 +135,9 @@ type CatalogArtifact struct {
 	Format    string  `json:"format" example:"gguf"`
 	Precision string  `json:"precision,omitempty"`
 	SizeGiB   float64 `json:"sizeGiB,omitempty"`
-	// Engines are the engine profile ids, the first being the one taken when
-	// a request names none.
-	Engines []string `json:"engines"`
+	// Runtimes are the runtime profile ids, the first being the one taken
+	// when a request names none.
+	Runtimes []string `json:"runtimes"`
 }
 
 // CatalogApp is one uploaded application and its version numbers.

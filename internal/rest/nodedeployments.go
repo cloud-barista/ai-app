@@ -7,20 +7,21 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
 )
 
 // RestPostNodeDeployment godoc
 // @ID PostNodeDeployment
 // @Summary Deploy onto existing nodes
-// @Description Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
+// @Description Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
 // @Description
-// @Description type model-service needs modelService: modelId and artifactId from GET /models, and optionally engine (an engine profile the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the engine profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
+// @Description type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first) and gpu. A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 // @Description
 // @Description Each target is {kind: node, nsId, infraId, nodeId}. The cloud, region, zone, address and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 // @Description
-// @Description For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (model service, which waits for the engine health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<engine> for a model service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
+// @Description For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself) or copy-and-run (app, which runs the app script from the folder the files are copied to). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 // @Description
-// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, engine or app is 404, and an artifact the engine cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
 // @Tags [Deployment] Node Deployment
 // @Accept json
 // @Produce json
@@ -28,8 +29,8 @@ import (
 // @Success 200 {object} model.NodeDeployment "Dry run: the files were placed and nothing was run"
 // @Success 202 {object} model.NodeDeployment "Accepted; the deployment goes on in the background"
 // @Failure 400 {object} model.SimpleMsg "Malformed request"
-// @Failure 404 {object} model.SimpleMsg "Model, artifact, engine profile or application not found"
-// @Failure 422 {object} model.SimpleMsg "A k8s target, or an artifact the engine cannot run"
+// @Failure 404 {object} model.SimpleMsg "Model, artifact, runtime profile or application not found"
+// @Failure 422 {object} model.SimpleMsg "A k8s target, or an artifact the runtime cannot run"
 // @Failure 500 {object} model.SimpleMsg "The record could not be written"
 // @Security BearerAuth
 // @Router /deployments [post]
@@ -55,21 +56,29 @@ func (h *Handler) RestPostNodeDeployment(c echo.Context) error {
 // RestGetAllNodeDeployments godoc
 // @ID GetAllNodeDeployments
 // @Summary List deployments onto nodes
-// @Description List every deployment made through POST /deployments, newest first, with the status of every node. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise.
+// @Description List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise.
 // @Tags [Deployment] Node Deployment
 // @Produce json
+// @Param type query string false "Deployment type" Enums(inference, app)
+// @Param nsId query string false "CB-Tumblebug namespace of any target"
+// @Param status query string false "Deployment status" Enums(pending, running, succeeded, failed, partial, dry-run, interrupted)
 // @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first"
 // @Security BearerAuth
 // @Router /deployments [get]
 func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
 	ctx := c.Request().Context()
-	return c.JSON(http.StatusOK, model.NodeDeploymentListResp{Deployments: h.nodeDeploy.List(ctx)})
+	filter := nodedeploy.ListFilter{
+		Type:   c.QueryParam("type"),
+		NsID:   c.QueryParam("nsId"),
+		Status: c.QueryParam("status"),
+	}
+	return c.JSON(http.StatusOK, model.NodeDeploymentListResp{Deployments: h.nodeDeploy.List(ctx, filter)})
 }
 
 // RestGetNodeDeployment godoc
 // @ID GetNodeDeployment
 // @Summary Get a deployment onto nodes
-// @Description Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of a model service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
+// @Description Read one deployment: its status (pending, running, succeeded, failed, partial, dry-run, interrupted), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"

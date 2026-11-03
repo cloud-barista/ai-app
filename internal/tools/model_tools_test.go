@@ -26,7 +26,7 @@ func newModelRegistry(t *testing.T) *Registry {
 
 func TestModelToolsAreRead(t *testing.T) {
 	registry := newModelRegistry(t)
-	for _, name := range []string{"list_models", "get_model", "list_engines"} {
+	for _, name := range []string{"list_models", "get_model", "list_runtimes"} {
 		if grade := registry.Grade(name); grade != GradeRead {
 			t.Errorf("%s grade = %q, want read", name, grade)
 		}
@@ -44,7 +44,7 @@ func TestListModelsFilters(t *testing.T) {
 		{`{}`, 3},
 		{`{"modality":"image"}`, 2},
 		{`{"format":"gguf"}`, 1},
-		{`{"format":"gguf","engine":"vllm"}`, 0},
+		{`{"format":"gguf","runtimeId":"vllm"}`, 0},
 	} {
 		out, err := registry.Call(ctx, "default", "list_models", json.RawMessage(tc.input))
 		if err != nil {
@@ -71,11 +71,11 @@ func TestGetModelAndListEngines(t *testing.T) {
 		t.Errorf("get_model unknown error = %v, want ErrNotFound", err)
 	}
 
-	out, err = registry.Call(ctx, "default", "list_engines", nil)
+	out, err = registry.Call(ctx, "default", "list_runtimes", nil)
 	if err != nil {
-		t.Fatalf("list_engines: %v", err)
+		t.Fatalf("list_runtimes: %v", err)
 	}
-	if got := len(out.(model.EngineProfileListResp).Engines); got != 2 {
-		t.Errorf("list_engines = %d engines, want 2", got)
+	if got := len(out.(model.RuntimeProfileListResp).Runtimes); got != 2 {
+		t.Errorf("list_runtimes = %d runtimes, want 2", got)
 	}
 }

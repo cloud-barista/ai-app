@@ -34,12 +34,12 @@ func NewRegistry(e *Engine) *tools.Registry {
 	registry.Add(tools.Tool{
 		Name:  ToolDeploy,
 		Grade: tools.GradeWrite,
-		Description: "Deploy a model service or an uploaded AI application onto nodes CB-Tumblebug already runs; no " +
-			"VM is created. type model-service serves one artifact of a catalog model with an engine; type app " +
+		Description: "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already " +
+			"runs; no VM is created. type inference serves one artifact of a catalog model with a runtime; type app " +
 			"copies an uploaded application version and runs its script. Use " + ToolApplications + " to pick " +
 			"modelId and artifactId, or the app name. The run reads the model or application, creates the " +
-			"deployment, and follows it until every node ended; a model service counts as succeeded only once its " +
-			"engine answered on the node. A deployment that succeeded on some nodes only fails the run. Returns " +
+			"deployment, and follows it until every node ended; an inference service counts as succeeded only once " +
+			"its runtime answered on the node. A deployment that succeeded on some nodes only fails the run. Returns " +
 			"the run with every step; the create step output carries the deployment id." + gateNote,
 		InputSchema: deployRequestSchema(),
 		Handle:      workflowHandler(e, WorkflowDeploy),
@@ -76,15 +76,15 @@ func NewRegistry(e *Engine) *tools.Registry {
 		Name:  ToolApplications,
 		Grade: tools.GradeRead,
 		Description: "Look up what can be deployed: the catalog models, each with its artifacts (id, source, ref, " +
-			"format, precision, size and the engines it runs on, the first being the default), and the uploaded " +
+			"format, precision, size and the runtimes it runs on, the first being the default), and the uploaded " +
 			"applications with their version numbers. Every filter is optional, ignores case and narrows the " +
 			"models only. Runs no workflow and changes nothing.",
 		InputSchema: object(map[string]any{
-			"task":     stringProp("Model task, such as chat, vision-chat or embedding"),
-			"modality": stringProp("Input modality the model accepts, such as text or image"),
-			"format":   stringProp("Artifact file format: hf or gguf"),
-			"engine":   stringProp("Engine profile id an artifact runs on, such as vllm or ollama"),
-			"source":   stringProp("Artifact source, such as huggingface or ollama"),
+			"task":      stringProp("Model task, such as chat, vision-chat or embedding"),
+			"modality":  stringProp("Input modality the model accepts, such as text or image"),
+			"format":    stringProp("Artifact file format: hf or gguf"),
+			"runtimeId": stringProp("Runtime profile id an artifact runs on, such as vllm or ollama"),
+			"source":    stringProp("Artifact source, such as huggingface or ollama"),
 		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var in CatalogQuery
@@ -109,17 +109,17 @@ func deployRequestSchema() map[string]any {
 	}, "kind", "nsId", "infraId", "nodeId")
 	return object(map[string]any{
 		"type": enumProp("What to deploy; the field of the same name carries it",
-			model.NodeDeployTypeModelService, model.NodeDeployTypeApp),
+			model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 		"targets": map[string]any{
 			"type": "array", "description": "Nodes to deploy to, each once, at most 32", "items": target,
 		},
-		"modelService": object(map[string]any{
+		"inference": object(map[string]any{
 			"modelId":    stringProp("Model id from " + ToolApplications),
 			"artifactId": stringProp("Artifact id of that model"),
-			"engine":     stringProp("Engine profile id the artifact lists. Omit for its first engine"),
-			"gpu": map[string]any{"type": "boolean", "description": "Give the engine every NVIDIA GPU of the node. " +
+			"runtimeId":  stringProp("Runtime profile id the artifact lists. Omit for its first runtime"),
+			"gpu": map[string]any{"type": "boolean", "description": "Give the runtime every NVIDIA GPU of the node. " +
 				"Omit to take it from the node spec"},
-			"env": envProp("Engine container environment. " + envNote),
+			"env": envProp("Runtime container environment. " + envNote),
 		}, "modelId", "artifactId"),
 		"app": object(map[string]any{
 			"name":    stringProp("Uploaded application name from " + ToolApplications),

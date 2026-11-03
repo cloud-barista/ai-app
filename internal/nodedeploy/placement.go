@@ -15,22 +15,23 @@ const NodeRoot = "/opt/aiapp"
 
 // Prefixes of a work key, and of the compose project named after it.
 const (
-	workKeyModelService = "ms-"
-	workKeyApp          = "app-"
-	composeProjectBase  = "aiapp-"
+	workKeyInference   = "ms-"
+	workKeyApp         = "app-"
+	composeProjectBase = "aiapp-"
 )
 
 // composeProjectPattern is what docker compose accepts as a project name.
 var composeProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-// placement is where a deployment lands on a node. A node holds one model
-// service per engine and one copy of each application: deploying the same
+// placement is where a deployment lands on a node. A node holds one inference
+// service per runtime and one copy of each application: deploying the same
 // work key again replaces what the previous deployment left there, in the same
 // folder and the same compose project, so that the old containers give up
 // their ports instead of keeping them.
 type placement struct {
-	// WorkKey is ms-<engine> for a model service and app-<name> for an
-	// application.
+	// WorkKey is ms-<runtime> for an inference service and app-<name> for an
+	// application. The ms- prefix predates the inference type name and is
+	// kept so that nodes deployed before keep their folder and project.
 	WorkKey string
 	// NodeDir is <NodeRoot>/<work key> on the node.
 	NodeDir string
@@ -43,8 +44,8 @@ type placement struct {
 func placementFor(req *model.NodeDeploymentReq) (placement, error) {
 	var key string
 	switch req.Type {
-	case model.NodeDeployTypeModelService:
-		key = workKeyModelService + req.ModelService.Engine
+	case model.NodeDeployTypeInference:
+		key = workKeyInference + req.Inference.RuntimeID
 	case model.NodeDeployTypeApp:
 		key = workKeyApp + req.App.Name
 	default:
