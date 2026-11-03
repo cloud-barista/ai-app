@@ -153,5 +153,5 @@
 
     - name: Fail when a container is not stable
       ansible.builtin.fail:
-        msg: "Containers of {{ compose_project }} are not stable:\n{{ stable_result.stdout }}"
+        msg: "A container of {{ compose_project }} restarted or exited with an error. Every container, the bad ones with their last log lines:\n{{ stable_result.stdout }}"
       when: stable_result.rc == 3
