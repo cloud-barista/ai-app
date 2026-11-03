@@ -2,7 +2,9 @@ package sources
 
 import (
 	"context"
+	"html"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -13,10 +15,25 @@ import (
 // ollamaManifestType is the manifest media type the Ollama registry serves.
 const ollamaManifestType = "application/vnd.docker.distribution.manifest.v2+json"
 
-// Ollama lists the Ollama library and reads each model's manifest and config
-// from the Ollama registry.
+// ollamaWorkers is how many manifest and config reads run at once.
+const ollamaWorkers = 8
+
+// The library page lists each model as an <li> holding a link to
+// /library/<name>, then capability spans (text-indigo-600: tools, thinking,
+// vision, embedding ...) and size spans (text-blue-600: 0.6b, 8b ...).
+var (
+	ollamaItem = regexp.MustCompile(`(?s)<li\b[^>]*>\s*<a href="/library/([A-Za-z0-9._-]+)"(.*?)</li>`)
+	ollamaSpan = regexp.MustCompile(`<span\s[^>]*class="[^"]*\btext-(indigo|blue)-600\b[^"]*"[^>]*>([^<]*)</span>`)
+)
+
+// Ollama lists the Ollama library page and reads each size tag's manifest
+// and config from the Ollama registry.
+//
+// The JSON listing at ollama.com/api/tags names only about 25 models, most
+// of them cloud models with no weights in the registry; the library page
+// names the downloadable ones.
 type Ollama struct {
-	// LibraryURL is the address of the library listing, without a trailing
+	// LibraryURL is the address of the library page, without a trailing
 	// slash.
 	LibraryURL string
 	// RegistryURL is the address of the model registry, without a trailing
@@ -32,11 +49,11 @@ func NewOllama() *Ollama {
 // Name implements catalogsync.Source.
 func (s *Ollama) Name() string { return model.OriginOllama }
 
-type ollamaTags struct {
-	Models []struct {
-		Name         string   `json:"name"`
-		Capabilities []string `json:"capabilities"`
-	} `json:"models"`
+// ollamaEntry is one model on the library page.
+type ollamaEntry struct {
+	name         string
+	capabilities []string
+	sizes        []string
 }
 
 type ollamaManifest struct {
@@ -56,45 +73,117 @@ type ollamaConfig struct {
 	FileType    string `json:"file_type"`
 }
 
-// Fetch implements catalogsync.Source. It reads the first opt.Limit library
-// models in listing order. A model whose manifest or config cannot be read,
-// such as a cloud-only model with no weights in the registry, is left out.
+// ollamaTag is what the registry states about one tag of a model.
+type ollamaTag struct {
+	artifact   model.Artifact
+	family     string
+	parameters string
+}
+
+// Fetch implements catalogsync.Source. It takes the first opt.Limit models
+// of the library page sorted by popularity, in page order. Each size tag is
+// one artifact; a model with no size tag has the latest tag only. A tag
+// whose manifest or config cannot be read is left out, and so is a model
+// none of whose tags can be read, such as a cloud model.
 func (s *Ollama) Fetch(ctx context.Context, opt catalogsync.Options) ([]model.Model, error) {
-	var tags ollamaTags
-	if err := getJSON(ctx, opt, s.LibraryURL+"/api/tags", "", &tags); err != nil {
+	page, err := getBody(ctx, opt, s.LibraryURL+"/library?sort=popular", "text/html")
+	if err != nil {
 		return nil, err
 	}
-	listed := tags.Models
-	if n := limit(opt); len(listed) > n {
-		listed = listed[:n]
+	entries := parseOllamaLibrary(string(page))
+	if n := limit(opt); len(entries) > n {
+		entries = entries[:n]
 	}
 
-	results := make([]*model.Model, len(listed))
-	forEach(ctx, len(listed), fetchWorkers, func(i int) {
-		results[i] = s.fetchOne(ctx, opt, listed[i].Name, listed[i].Capabilities)
+	type job struct{ entry, tag int }
+	var jobs []job
+	tags := make([][]string, len(entries))
+	for i, e := range entries {
+		tags[i] = e.sizes
+		if len(tags[i]) == 0 {
+			tags[i] = []string{"latest"}
+		}
+		for j := range tags[i] {
+			jobs = append(jobs, job{i, j})
+		}
+	}
+	results := make([][]*ollamaTag, len(entries))
+	for i := range entries {
+		results[i] = make([]*ollamaTag, len(tags[i]))
+	}
+	forEach(ctx, len(jobs), ollamaWorkers, func(k int) {
+		jb := jobs[k]
+		results[jb.entry][jb.tag] = s.fetchTag(ctx, opt, entries[jb.entry].name, tags[jb.entry][jb.tag])
 	})
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	var out []model.Model
-	for _, m := range results {
-		if m != nil {
-			out = append(out, *m)
+	for i, e := range entries {
+		var found []*ollamaTag
+		for _, t := range results[i] {
+			if t != nil {
+				found = append(found, t)
+			}
 		}
+		if len(found) == 0 {
+			continue
+		}
+		task := ollamaTask(e.capabilities)
+		m := model.Model{
+			ID:              catalogsync.ModelID("ollama", e.name),
+			Name:            e.name,
+			Family:          found[0].family,
+			Tasks:           []string{task},
+			InputModalities: modalities(task),
+			Origin:          model.OriginOllama,
+		}
+		// Model.Parameters is one value; it is set only when the model has
+		// one artifact, since each size tag has its own count.
+		if len(found) == 1 {
+			m.Parameters = found[0].parameters
+		}
+		seen := map[string]bool{}
+		for _, t := range found {
+			a := t.artifact
+			a.ID = artifactID(strings.TrimPrefix(a.Ref, e.name+":"), seen)
+			m.Artifacts = append(m.Artifacts, a)
+		}
+		out = append(out, m)
 	}
 	return keepValid(out), nil
 }
 
-func (s *Ollama) fetchOne(ctx context.Context, opt catalogsync.Options, name string, capabilities []string) *model.Model {
-	repo, tag, found := strings.Cut(name, ":")
-	if !found {
-		tag = "latest"
+// parseOllamaLibrary reads the model entries of the library page in page
+// order. A name listed twice is taken once.
+func parseOllamaLibrary(page string) []ollamaEntry {
+	var out []ollamaEntry
+	seen := map[string]bool{}
+	for _, item := range ollamaItem.FindAllStringSubmatch(page, -1) {
+		e := ollamaEntry{name: item[1]}
+		if seen[e.name] {
+			continue
+		}
+		seen[e.name] = true
+		for _, span := range ollamaSpan.FindAllStringSubmatch(item[2], -1) {
+			text := strings.TrimSpace(html.UnescapeString(span[2]))
+			if text == "" {
+				continue
+			}
+			if span[1] == "indigo" {
+				e.capabilities = append(e.capabilities, text)
+			} else if !slices.Contains(e.sizes, text) {
+				e.sizes = append(e.sizes, text)
+			}
+		}
+		out = append(out, e)
 	}
-	if repo == "" || tag == "" {
-		return nil
-	}
-	base := s.RegistryURL + "/v2/library/" + url.PathEscape(repo)
+	return out
+}
+
+func (s *Ollama) fetchTag(ctx context.Context, opt catalogsync.Options, name, tag string) *ollamaTag {
+	base := s.RegistryURL + "/v2/library/" + url.PathEscape(name)
 	var man ollamaManifest
 	if err := getJSON(ctx, opt, base+"/manifests/"+url.PathEscape(tag), ollamaManifestType, &man); err != nil {
 		return nil
@@ -112,9 +201,8 @@ func (s *Ollama) fetchOne(ctx context.Context, opt catalogsync.Options, name str
 		format = model.FormatGGUF
 	}
 	art := model.Artifact{
-		ID:        "ollama",
 		Source:    model.OriginOllama,
-		Ref:       repo + ":" + tag,
+		Ref:       name + ":" + tag,
 		Format:    format,
 		Precision: cfg.FileType,
 		Runtimes:  []model.RuntimeCompat{},
@@ -129,17 +217,7 @@ func (s *Ollama) fetchOne(ctx context.Context, opt catalogsync.Options, name str
 	if format == model.FormatGGUF {
 		art.Runtimes = []model.RuntimeCompat{{RuntimeID: model.RuntimeOllama}}
 	}
-	task := ollamaTask(capabilities)
-	return &model.Model{
-		ID:              catalogsync.ModelID("ollama", name),
-		Name:            name,
-		Family:          cfg.ModelFamily,
-		Parameters:      cfg.ModelType,
-		Tasks:           []string{task},
-		InputModalities: modalities(task),
-		Artifacts:       []model.Artifact{art},
-		Origin:          model.OriginOllama,
-	}
+	return &ollamaTag{artifact: art, family: cfg.ModelFamily, parameters: cfg.ModelType}
 }
 
 // ollamaTask picks one task from the library capabilities: embedding when

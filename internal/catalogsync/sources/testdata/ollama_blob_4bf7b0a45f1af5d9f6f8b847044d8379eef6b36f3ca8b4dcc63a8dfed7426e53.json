@@ -1,0 +1,11 @@
+{
+ "model_format": "gguf",
+ "model_family": "gemma3",
+ "model_families": [
+  "gemma3",
+  "clip"
+ ],
+ "model_type": "3.9B",
+ "file_type": "Q4_K_M",
+ "requires": "0.30.0"
+}

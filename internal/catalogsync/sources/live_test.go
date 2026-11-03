@@ -4,14 +4,15 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
 )
 
-// TestLiveSources hits the real sources with Limit 3. It runs only with
-// AIAPP_LIVE_SOURCES=1:
+// TestLiveSources hits the real sources with Limit 3, or with
+// AIAPP_LIVE_SOURCES_LIMIT when set. It runs only with AIAPP_LIVE_SOURCES=1:
 //
 //	AIAPP_LIVE_SOURCES=1 go test ./internal/catalogsync/sources -run TestLiveSources -v
 func TestLiveSources(t *testing.T) {
@@ -22,12 +23,20 @@ func TestLiveSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	limit := 3
+	if v := os.Getenv("AIAPP_LIVE_SOURCES_LIMIT"); v != "" {
+		if limit, err = strconv.Atoi(v); err != nil || limit <= 0 {
+			t.Fatalf("AIAPP_LIVE_SOURCES_LIMIT=%q is not a positive number", v)
+		}
+	}
 	client := &http.Client{Timeout: 60 * time.Second}
 	for _, src := range srcs {
 		t.Run(src.Name(), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
-			models, err := src.Fetch(ctx, catalogsync.Options{Limit: 3, Client: client})
+			start := time.Now()
+			models, err := src.Fetch(ctx, catalogsync.Options{Limit: limit, Client: client})
+			took := time.Since(start)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,7 +51,7 @@ func TestLiveSources(t *testing.T) {
 				}
 				t.Logf("  %s (%s) tasks=%v artifacts=%d", m.ID, m.Name, m.Tasks, len(m.Artifacts))
 			}
-			t.Logf("%s: %d models, %d artifacts, %d with a runtime", src.Name(), len(models), artifacts, deployable)
+			t.Logf("%s: limit %d, %d models, %d artifacts, %d with a runtime, %s", src.Name(), limit, len(models), artifacts, deployable, took.Round(time.Millisecond))
 			if len(models) == 0 {
 				t.Errorf("%s returned no models", src.Name())
 			}

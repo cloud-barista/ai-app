@@ -80,28 +80,41 @@ func New(names []string) ([]catalogsync.Source, error) {
 
 // getJSON GETs url and decodes a 200 response into out.
 func getJSON(ctx context.Context, opt catalogsync.Options, url, accept string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", userAgent)
 	if accept == "" {
 		accept = "application/json"
 	}
+	body, err := getBody(ctx, opt, url, accept)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("GET %s: decode: %w", url, err)
+	}
+	return nil
+}
+
+// getBody GETs url and returns a 200 response body, at most maxBody bytes.
+func getBody(ctx context.Context, opt catalogsync.Options, url, accept string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", accept)
 	resp, err := opt.HTTPClient().Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-		return fmt.Errorf("GET %s: %s", url, resp.Status)
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(out); err != nil {
-		return fmt.Errorf("GET %s: decode: %w", url, err)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", url, err)
 	}
-	return nil
+	return body, nil
 }
 
 // forEach calls fn for 0..n-1 with at most workers calls at once and stops
