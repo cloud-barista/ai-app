@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts Langflow from docker-compose.yml in this folder. Run it from this
-# folder; .env here may set MODEL_BASE_URL and LANGFLOW_PORT.
+# folder; .env here must set LANGFLOW_SUPERUSER_PASSWORD and may set
+# LANGFLOW_SUPERUSER, MODEL_BASE_URL and LANGFLOW_PORT.
 set -euo pipefail
 
 if [ -f .env ]; then
@@ -8,6 +9,11 @@ if [ -f .env ]; then
 	# shellcheck source=/dev/null
 	. ./.env
 	set +a
+fi
+
+if [ -z "${LANGFLOW_SUPERUSER_PASSWORD:-}" ]; then
+	echo "LANGFLOW_SUPERUSER_PASSWORD is not set: give it in the deployment env" >&2
+	exit 1
 fi
 
 if ! docker compose version >/dev/null 2>&1; then

@@ -4,7 +4,10 @@
 #
 # Settings come from .env beside this file, which the deployment request
 # writes:
-#   MODEL_BASE_URL   OpenAI compatible model server, e.g. http://10.0.0.7:8000/v1.
+#   LANGFLOW_SUPERUSER_PASSWORD  password of the admin account (required:
+#                    Langflow 1.13 refuses to start without it)
+#   LANGFLOW_SUPERUSER  name of the admin account (default admin)
+#   MODEL_BASE_URL   OpenAI compatible model server, e.g. http://203.0.113.7:8000/v1.
 #                    Langflow stores it as the global variable MODEL_BASE_URL,
 #                    which a model component's base URL field can select.
 #   LANGFLOW_PORT    host port of the web interface and API (default 7860)
@@ -16,6 +19,9 @@ services:
       - "${LANGFLOW_PORT:-7860}:7860"
     environment:
       LANGFLOW_CONFIG_DIR: /app/langflow
+      LANGFLOW_AUTO_LOGIN: "false"
+      LANGFLOW_SUPERUSER: "${LANGFLOW_SUPERUSER:-admin}"
+      LANGFLOW_SUPERUSER_PASSWORD: "${LANGFLOW_SUPERUSER_PASSWORD:?set LANGFLOW_SUPERUSER_PASSWORD in the deployment env}"
       MODEL_BASE_URL: "${MODEL_BASE_URL:-}"
       LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT: MODEL_BASE_URL
     volumes:
