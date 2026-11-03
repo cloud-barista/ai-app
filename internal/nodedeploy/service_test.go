@@ -1040,3 +1040,25 @@ func TestSamePlacementOfANodeRunsOneDeploymentAtATime(t *testing.T) {
 		t.Errorf("%d runs, want 4", n)
 	}
 }
+
+func TestGPUCheckEvidenceReadsBothCallbackFormats(t *testing.T) {
+	line := `time=2026-11-03T09:01:48.524Z level=INFO source=types.go:32 msg="inference compute" id=0 library=CUDA description="Tesla T4"`
+	for name, out := range map[string][]string{
+		"json":        {"ok: [node] => {", `    "msg": "aiapp-gpu-check: log: ` + strings.ReplaceAll(line, `"`, `\"`) + `"`, "}"},
+		"yaml single": {"ok: [node] =>", `  msg: 'aiapp-gpu-check: log: ` + line + `'`},
+		"yaml quote":  {"ok: [node] =>", `  msg: 'aiapp-gpu-check: log: it''s ` + line + `'`},
+		"yaml plain":  {"ok: [node] =>", `  msg: aiapp-gpu-check: nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB`},
+	} {
+		got := gpuCheckEvidence([]model.NodeDeployStep{{Playbook: PlaybookComposeUp, Output: out}})
+		want := "log: " + line
+		switch name {
+		case "yaml quote":
+			want = "log: it's " + line
+		case "yaml plain":
+			want = "nvidia-smi: 3499, VLLM::EngineCore, 13524 MiB"
+		}
+		if got != want {
+			t.Errorf("%s: got %q, want %q", name, got, want)
+		}
+	}
+}

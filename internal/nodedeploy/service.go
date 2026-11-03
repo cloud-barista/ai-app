@@ -669,20 +669,44 @@ func gpuCheckEvidence(steps []model.NodeDeployStep) string {
 			continue
 		}
 		for _, line := range steps[i].Output {
-			_, quoted, ok := strings.Cut(line, `"msg": `)
-			if !ok || !strings.Contains(quoted, gpuCheckMarker) {
-				continue
-			}
-			var msg string
-			if err := json.Unmarshal([]byte(strings.TrimSpace(quoted)), &msg); err != nil {
-				continue
-			}
-			if evidence, ok := strings.CutPrefix(msg, gpuCheckMarker); ok {
-				return evidence
+			if msg, ok := debugMsg(line); ok {
+				if evidence, ok := strings.CutPrefix(msg, gpuCheckMarker); ok {
+					return evidence
+				}
 			}
 		}
 	}
 	return ""
+}
+
+// debugMsg reads the msg of an Ansible debug task from one output line. The
+// default callback writes it as JSON (`"msg": "..."`); the YAML callback,
+// which Semaphore v2.12.17 uses, writes it as a YAML scalar (`msg: '...'`,
+// with a quote inside doubled, or unquoted).
+func debugMsg(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if quoted, ok := strings.CutPrefix(trimmed, `"msg": `); ok {
+		var msg string
+		if err := json.Unmarshal([]byte(quoted), &msg); err != nil {
+			return "", false
+		}
+		return msg, true
+	}
+	value, ok := strings.CutPrefix(trimmed, "msg: ")
+	if !ok {
+		return "", false
+	}
+	switch {
+	case len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'':
+		return strings.ReplaceAll(value[1:len(value)-1], "''", "'"), true
+	case len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"':
+		var msg string
+		if err := json.Unmarshal([]byte(value), &msg); err != nil {
+			return "", false
+		}
+		return msg, true
+	}
+	return value, true
 }
 
 func withPlaybook(base semaphore.RunSpec, playbook string, vars map[string]any) semaphore.RunSpec {
