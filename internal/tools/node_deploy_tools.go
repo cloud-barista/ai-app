@@ -39,9 +39,10 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 		"nsId":    stringProp("CB-Tumblebug namespace of the Infra"),
 		"infraId": stringProp("CB-Tumblebug Infra the node belongs to"),
 		"nodeId":  stringProp("Node within the Infra"),
-		"sshUser": stringProp("SSH user to run the playbooks as instead of the one CB-Tumblebug reports, with the key " +
-			"CB-Tumblebug holds. For images where CB-Tumblebug could not create cb-user (no sudo group: RHEL, Rocky, " +
-			"AlmaLinux, Amazon Linux), such as ec2-user on aws. Omit to use the CB-Tumblebug user"),
+		"sshUser": stringProp("SSH user to run the playbooks as, with the key CB-Tumblebug holds. Omit it and the " +
+			"CB-Tumblebug user is tried first; when the node refuses it (CB-Tumblebug could not create cb-user on RHEL, " +
+			"Rocky, AlmaLinux or Amazon Linux images), the image default user such as ec2-user is found and used. " +
+			"Give it to choose the user yourself"),
 	}, "kind", "nsId", "infraId", "nodeId")
 	envNote := "Written to a .env file beside the deployed files. Names match [A-Z_][A-Z0-9_]*; values hold no line break and no single quote."
 	return Tool{

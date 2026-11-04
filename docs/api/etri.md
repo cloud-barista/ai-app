@@ -24,7 +24,7 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 | OS | 아래 "지원하는 배포판" 표의 배포판. `install-docker` 가 `/etc/os-release` 의 `ID` 와 `ID_LIKE` 를 보고 설치 방법을 고름 | 그 밖의 배포판(Amazon Linux 2 포함)이면 노드 `failed`, 로그에 `install-docker supports only ubuntu, debian, rhel, rocky, almalinux, centos, ol, fedora, amzn (Amazon Linux 2023), found <ID> <VERSION_ID>` |
 | docker | 없으면 AI-App 이 아래 표대로 깔고 docker 서비스를 켬. 이미 있는데 compose 플러그인(`docker compose`)이 없으면 노드의 저장소에 있는 `docker-compose-plugin` 이나 `moby-compose`(Azure 이미지)를 깖. dnf 를 쓰는 노드는 둘 다 없으면 compose 플러그인을 GitHub 에서 직접 받아 깖 | apt 를 쓰는 노드에서 둘 다 없으면 `failed`, 로그에 `no apt source offers docker-compose-plugin or moby-compose` |
 | SSH 키 | 노드의 `sshKeyId` 가 가리키는 CB-Tumblebug SSH 키에 **개인키(`privateKey`)가 들어 있어야** 함. CB-Tumblebug 이 키를 만들게 하면 들어 있음. PEM 개인키 블록이어야 함 | 노드 `failed` (키를 읽거나 검사하는 단계에서) |
-| SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎. 노드에 `cb-user` 가 없으면(아래) 배포 요청의 `targets[].sshUser` 로 이미지 기본 사용자를 줌 | playbook 실패 (`cb-user` 가 없으면 접속 단계에서 `error`) |
+| SSH 사용자 | 노드 정보의 사용자(보통 `cb-user`)가 비밀번호 없이 `sudo` 가능. playbook 이 `become` 으로 돎. 노드에 `cb-user` 가 없으면(아래) AI-App 이 이미지 기본 사용자를 찾아 씀. 배포 요청의 `targets[].sshUser` 로 직접 정할 수도 있음 | playbook 실패 (접속되는 사용자가 없으면 접속 단계에서 `error`) |
 | SSH 접속 | Semaphore 가 돌고 있는 호스트에서 노드의 공인 IP(없으면 사설 IP)와 SSH 포트로 닿아야 함 | 태스크 `error` (unreachable) |
 | 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 AI-App 이 서빙 포트를 엶. 없으면 포트를 열지 않고 `notes` 에 남김 | 배포는 `running`, 밖에서 안 닿음 |
 | GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 런타임이 CPU 로 돌고, GPU 를 쓰기로 한 배포는 그 노드가 **`failed`** 가 됨(아래 3-2절) |
@@ -46,7 +46,7 @@ GPU 사용을 직접 정하려면 배포 요청에 `"gpu": true` 를 넣습니�
 
 | CSP | 이미지 | 스펙 | `install-docker` | 배포 | 계정 |
 |---|---|---|---|---|---|
-| aws | RHEL 9.8 (`ami-0938769ffbe276d3b`) | t3.medium | Docker rpm 저장소로 docker 29.9.3, compose 5.7.0 | Open WebUI `running`, 밖에서 HTTP 200 | `sshUser: ec2-user` |
+| aws | RHEL 9.8 (`ami-0938769ffbe276d3b`) | t3.medium | Docker rpm 저장소로 docker 29.9.3, compose 5.7.0 | Open WebUI `running`, 밖에서 HTTP 200 | `sshUser` 없이 자동으로 `ec2-user` (`sshUserSource: fallback`) |
 | aws | Amazon Linux 2023 (`ami-0c051224e18c11f2e`) | t3.medium | 배포판 `docker` 25.0.18, compose 5.7.0 (GitHub, sha256 확인) | Open WebUI `running`, HTTP 200 | `sshUser: ec2-user` |
 | aws | Deep Learning Base OSS Nvidia Driver GPU AMI (Amazon Linux 2023, `ami-0f328602208fc4f93`) | g4dn.xlarge (T4) | compose 5.7.0 추가, nvidia 런타임은 이미지에 있음 | Ollama + Qwen3-VL-8B `running`, GPU 확인 `library=CUDA` Tesla T4 | `sshUser: ec2-user` |
 | azure | AlmaLinux 9 (`almalinux:almalinux-x86_64:9-gen2`) | Standard_B2s | docker 가 없는 상태에서 Docker rpm 저장소로 설치 | Open WebUI `running`, HTTP 200 | `cb-user` (지정 없음) |
@@ -54,9 +54,11 @@ GPU 사용을 직접 정하려면 배포 요청에 `"gpu": true` 를 넣습니�
 CB-Tumblebug(cb-spider)은 aws 에 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로 만듭니다. `sudo` 그룹이 없는 이미지(RHEL,
 Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해, 노드 정보에는 `cb-user` 가 있는데 노드에는 그 사용자가 없습니다.
 azure 는 VM 을 만들 때 Azure 가 관리자 사용자로 `cb-user` 를 만들어 이 문제가 없습니다(AlmaLinux 9 에서 확인).
-aws 에서는 이미지의 기본 사용자(`ec2-user`)가 같은 키로 접속되므로, 배포 요청의 대상에
-`"sshUser": "ec2-user"` 처럼 줍니다. 키는 그대로 CB-Tumblebug 이 가진 키를 쓰고, 실제로 접속한 사용자는 `nodes[].sshUser` 에 남으며
-같은 배포를 내릴 때도 그 사용자로 접속합니다([README](README.md) 10절).
+aws 에서는 이미지의 기본 사용자(`ec2-user`)가 같은 키로 접속됩니다. AI-App 은 playbook 을 돌리기 전에 CB-Tumblebug 의 키로
+`cb-user` 의 SSH 인증을 해 보고, 노드가 거절하면 이미지 OS 에 맞는 기본 사용자(RHEL·Amazon Linux 는 `ec2-user`)로 바꿔 씁니다.
+그래서 배포 요청에 따로 줄 것이 없습니다. 이때 `nodes[].sshUserSource` 가 `fallback` 이고 `notes` 에 거절된 사용자와 쓴 사용자가 남습니다.
+사용자를 직접 정하려면 대상에 `"sshUser": "ec2-user"` 처럼 주며, 그러면 인증을 시도하지 않습니다. 키는 어느 쪽이든 CB-Tumblebug 이
+가진 키를 쓰고, 실제로 접속한 사용자는 `nodes[].sshUser` 에 남으며 같은 배포를 내릴 때도 그 사용자로 접속합니다([README](README.md) 10절).
 
 azure 마켓플레이스에서 플랜(구매 조건)이 붙은 이미지(예: CIQ 의 Rocky Linux 이미지)는 지금 CB-Tumblebug 으로 만들 수 없습니다.
 VM 생성이 `VMMarketplaceInvalidInput: ... requires Plan information in the request` 로 실패합니다. 플랜이 없는 이미지(AlmaLinux, RHEL 등)를 씁니다.

@@ -93,10 +93,11 @@ type NodeDeployTarget struct {
 	NodeID string `json:"nodeId,omitempty" example:"vm1"`
 	// SSHUser replaces, for this node, the SSH user CB-Tumblebug reports
 	// (nodeUserName) in the Semaphore inventory; the SSH key is still the one
-	// CB-Tumblebug holds for the node. Use it when the login user
-	// CB-Tumblebug creates, cb-user, is missing on the node and the image's
-	// own user (ec2-user on aws, the admin user on azure) accepts the same
-	// key. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the
+	// CB-Tumblebug holds for the node. Without it, the CB-Tumblebug user is
+	// tried with the key before the playbooks run, and when the node refuses
+	// it (CB-Tumblebug could not create cb-user on the image), the image's
+	// default users are tried. Give it to choose the user, and no login is
+	// tried. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the
 	// deployment down uses the user recorded at deploy time.
 	SSHUser string `json:"sshUser,omitempty" example:"ec2-user"`
 	// K8sClusterID is reserved for kind "k8s".
@@ -363,9 +364,18 @@ type NodeDeployResult struct {
 	// when the node could not be read. The SSH key is never included.
 	Node *NodeDeployNode `json:"node,omitempty"`
 	// SSHUser is the SSH user the playbooks ran as on the node: the
-	// target's sshUser when given, and node.user, the one CB-Tumblebug
-	// reports, otherwise. Taking the deployment down runs as the same user.
+	// target's sshUser when given. Otherwise node.user, the one CB-Tumblebug
+	// reports, is tried with the node key before the playbooks run; when the
+	// node refuses it, the default users of the node image (such as ec2-user
+	// on RHEL and Amazon Linux) are tried and the first it accepts is taken.
+	// Taking the deployment down runs as the same user.
 	SSHUser string `json:"sshUser,omitempty" example:"cb-user"`
+	// SSHUserSource says where SSHUser came from: request (targets[].sshUser),
+	// tumblebug (node.user, which the node accepted, or which was kept because
+	// the login could not be tried or every user was refused; notes say which)
+	// or fallback (an image default user, taken after the node refused
+	// node.user; notes name both).
+	SSHUserSource string `json:"sshUserSource,omitempty" enums:"request,tumblebug,fallback" example:"tumblebug"`
 	// GPU is whether the runtime was given the node's GPUs and the NVIDIA
 	// Container Toolkit was installed.
 	GPU bool `json:"gpu" example:"false"`
@@ -437,7 +447,7 @@ type NodeDeployNode struct {
 	Port int `json:"port" example:"22"`
 	// User is the SSH user CB-Tumblebug reports for the node. The
 	// playbooks ran as nodes[].sshUser, which differs when the target
-	// gave sshUser.
+	// gave sshUser or the node refused this user (sshUserSource).
 	User string `json:"user" example:"cb-user"`
 	// SpecID is the node spec in CB-Tumblebug.
 	SpecID string `json:"specId,omitempty" example:"aws+ap-northeast-2+g4dn.xlarge"`

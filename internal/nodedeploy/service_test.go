@@ -34,8 +34,8 @@ const (
 )
 
 // fakeTumblebug answers the node, ssh key, spec, node control and security
-// group routes for nodes vm1 (aws, GPU spec), vm2 (azure, CPU spec, two
-// security groups) and vm3 (gcp, spec that cannot be read), all in namespace
+// group routes for nodes vm1 (aws, GPU spec, RHEL image), vm2 (azure, CPU
+// spec, two security groups, no image) and vm3 (gcp, spec that cannot be read), all in namespace
 // etri, infra travel. Node gone answers 404, node down answers 503, and any
 // other node answers 500 "no Node found" as CB-Tumblebug 0.13.8 does.
 // Security group sg-azure-b already lets in TCP 8000-9000 from anywhere.
@@ -65,6 +65,7 @@ func (f *fakeTumblebug) rulesCalls() []rulesCall {
 func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nodes := map[string]map[string]any{
 		"vm1": {"id": "vm1", "publicIP": "203.0.113.11", "sshKeyId": "key1", "nodeUserName": "cb-user",
+			"imageId": "ami-rhel9", "image": map[string]any{"osType": "Red Hat Enterprise Linux 9"},
 			"specId": "aws+gpu", "securityGroupIds": []string{"sg-aws"}, "connectionConfig": map[string]any{"providerName": "AWS",
 				"regionZoneInfo": map[string]any{"assignedRegion": "ap-northeast-2", "assignedZone": "ap-northeast-2a"}}},
 		"vm2": {"id": "vm2", "privateIP": "198.51.100.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
@@ -211,6 +212,7 @@ type fixture struct {
 	svc     *Service
 	tb      *fakeTumblebug
 	runner  *fakeRunner
+	prober  *fakeProber
 	stage   string
 	archive *archive.Store
 	store   string
@@ -265,11 +267,12 @@ func newFixture(t *testing.T, dryRun bool) *fixture {
 	}
 	stage := filepath.Join(dir, "stage")
 	runner := &fakeRunner{statuses: map[string]string{}}
+	prober := &fakeProber{results: map[string]error{}}
 	svc := NewService(tbClient, runner, models, apps, store, archiveStore, Options{
-		StageRoot: stage, SpecNamespace: "system", DryRun: dryRun, MaxParallel: 2, OpenPorts: true,
+		StageRoot: stage, SpecNamespace: "system", DryRun: dryRun, MaxParallel: 2, OpenPorts: true, SSHProber: prober,
 	})
 	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
-	return &fixture{svc: svc, tb: tb, runner: runner, stage: stage, archive: archiveStore, store: storePath}
+	return &fixture{svc: svc, tb: tb, runner: runner, prober: prober, stage: stage, archive: archiveStore, store: storePath}
 }
 
 func target(node string) model.NodeDeployTarget {

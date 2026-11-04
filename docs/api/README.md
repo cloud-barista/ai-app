@@ -461,7 +461,7 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | 필드 | 규칙 |
 |---|---|
 | `targets[]` | `kind: node` 와 `nsId`·`infraId`·`nodeId`. 32개까지, 같은 노드는 한 번만. 클라우드·리전·IP·SSH 사용자·SSH 키는 CB-Tumblebug 노드 정보에서 읽음 |
-| `targets[].sshUser` | 생략 가능. 1~32자, `[a-z_][a-z0-9_-]*`, 어기면 `400`. 주면 그 노드의 Semaphore 인벤토리에 CB-Tumblebug 의 사용자(`nodeUserName`) 대신 이 사용자를 씀. SSH 키는 그대로 CB-Tumblebug 이 가진 키. 실제로 접속한 사용자는 `nodes[].sshUser` 와 `nodes[].steps[].sshUser`(`GET .../logs` 의 단계에도)에 남고, `nodes[].node.user` 는 CB-Tumblebug 이 알려 준 사용자 그대로. 같은 배포의 `DELETE`(compose-down)도 배포 때 남긴 사용자로 접속함 |
+| `targets[].sshUser` | 생략 가능. 1~32자, `[a-z_][a-z0-9_-]*`, 어기면 `400`. 주면 그 노드의 Semaphore 인벤토리에 CB-Tumblebug 의 사용자(`nodeUserName`) 대신 이 사용자를 쓰고, 아래의 사용자 시도를 하지 않음(`nodes[].sshUserSource: request`). 빼면 AI-App 이 SSH 인증을 해 보고 사용자를 고름(아래). SSH 키는 어느 쪽이든 CB-Tumblebug 이 가진 키. 실제로 접속한 사용자는 `nodes[].sshUser` 와 `nodes[].steps[].sshUser`(`GET .../logs` 의 단계에도)에 남고, `nodes[].node.user` 는 CB-Tumblebug 이 알려 준 사용자 그대로. 같은 배포의 `DELETE`(compose-down)도 배포 때 남긴 사용자로 접속함 |
 | `inference.runtimeId` | 빼면 아티팩트의 첫 런타임 |
 | `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유. `true` 로 정해지면 런타임이 GPU 위에 있는지 확인하고, 아니면 노드가 `failed`(7절 헬스) |
 | `inference.args` | 런타임 명령 뒤에 붙는 인자. vLLM 이면 서비스가 넣는 `--model`·`--port` 와 카탈로그 아티팩트의 `runtimes[].args` 가 먼저 오고 그 뒤에 붙음. 같은 플래그가 되풀이되면 vLLM 은 마지막 값을 써서 요청이 카탈로그 인자를 덮어씀. 예 `["--max-model-len", "16384"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, `--model`·`--port`·`--host` 는 `400`. Ollama 는 받지 않아 `400` |
@@ -469,11 +469,30 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | `app.ports` | 이 배포에서만 업로드 때의 `ports` 를 바꿈 |
 | `inference.env`, `app.env` | 이름 `[A-Z_][A-Z0-9_]*`, 값에 줄바꿈·작은따옴표 불가. 배포 기록과 노드의 `.env` 에 **평문으로** 남으므로 비밀값은 조심 |
 
-`targets[].sshUser` 가 필요한 경우: CB-Tumblebug(cb-spider)은 VM 을 만들 때 로그인 사용자 `cb-user` 를 `useradd -G sudo` 로
-만드는데, `sudo` 그룹이 없는 이미지(RHEL, Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해 노드에 `cb-user` 가
-없습니다. 이미지의 기본 사용자(aws 는 `ec2-user`, azure 는 VM 을 만들 때 정한 관리자 사용자)는 같은 키로 그대로 접속되므로, 그
-사용자를 `sshUser` 로 줍니다. `POST /aiapp/deployments/{id}/control` 은 SSH 가 아니라 CB-Tumblebug 노드 제어 API 로 보내므로
-사용자와 상관없습니다.
+`targets[].sshUser` 를 빼면 AI-App 이 SSH 사용자를 고릅니다. CB-Tumblebug(cb-spider)은 VM 을 만들 때 로그인 사용자 `cb-user` 를
+`useradd -G sudo` 로 만드는데, `sudo` 그룹이 없는 이미지(RHEL, Rocky, AlmaLinux, Amazon Linux 는 `wheel` 을 씀)에서는 이것이 실패해
+노드에 `cb-user` 가 없고, 이미지의 기본 사용자는 같은 키로 접속되기 때문입니다.
+
+1. playbook 을 돌리기 전에 CB-Tumblebug 의 키로 노드에 SSH 공개키 인증만 해 봅니다. 세션을 열거나 명령을 실행하지 않습니다. 한 번에 10초, 노드마다 최대 6번입니다.
+2. CB-Tumblebug 의 사용자가 받아들여지면 그 사용자를 씁니다(`sshUserSource: tumblebug`).
+3. 노드가 그 사용자를 거절하면 노드 이미지의 OS(CB-Tumblebug 노드 정보의 `image.osType`, `image.osDistribution`, 이미지 이름 순으로 봄)에 맞는 기본 사용자를 차례로 시도해 처음 받아들여진 사용자를 씁니다(`sshUserSource: fallback`). `notes` 에 거절된 사용자와 쓴 사용자가 남습니다. `root` 는 시도하지 않습니다.
+4. 모두 거절되면 CB-Tumblebug 의 사용자로 두고 `notes` 에 시도한 사용자를 남깁니다. 이때는 playbook 이 접속 단계에서 실패하므로 `sshUser` 를 줘서 다시 배포합니다.
+5. 노드에 닿지 않으면(연결 거부, 시간 초과: 아직 부팅 중) 정하지 않고 CB-Tumblebug 의 사용자로 두며 `notes` 에 이유를 남깁니다. `install-docker` 가 접속될 때까지 기다리는 것은 전과 같습니다.
+
+| 이미지 OS | 시도하는 기본 사용자 |
+|---|---|
+| Amazon Linux, RHEL, SUSE | `ec2-user` |
+| Rocky | `rocky` |
+| AlmaLinux | `almalinux`, `ec2-user` |
+| CentOS | `centos` |
+| Fedora | `fedora` |
+| Oracle Linux | `opc`, `ec2-user` |
+| Debian | `admin` |
+| Ubuntu | `ubuntu` |
+| 알 수 없음 | `ec2-user`, `ubuntu`, `admin` |
+
+dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내릴 때(`DELETE`)는 다시 고르지 않고 배포 때 남긴 `nodes[].sshUser` 로 접속합니다.
+`POST /aiapp/deployments/{id}/control` 은 SSH 가 아니라 CB-Tumblebug 노드 제어 API 로 보내므로 사용자와 상관없습니다.
 
 ## 11. 알아 둘 것
 

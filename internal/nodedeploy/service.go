@@ -23,8 +23,13 @@
 // which keeps the node folders and the named volumes, and leaves the ports
 // open.
 //
+// Before the playbooks of a node run, when its target gives no sshUser, the
+// SSH user CB-Tumblebug reports is tried with the node key (see decideSSHUser).
+// When the node refuses it, the default users of the node image are tried and
+// the first that logs in is taken.
+//
 // With dry run on, only the look-up and the file placement are done, nothing
-// is registered in Semaphore, and no port is opened.
+// is registered in Semaphore, no SSH login is tried, and no port is opened.
 package nodedeploy
 
 import (
@@ -124,6 +129,9 @@ type Options struct {
 	// of each node whose playbooks succeeded. Off, the ports are only
 	// recorded.
 	OpenPorts bool
+	// SSHProber tries the SSH users of a node before its playbooks run. Nil
+	// takes NewSSHProber.
+	SSHProber SSHProber
 }
 
 // Service deploys onto nodes and keeps the records.
@@ -150,6 +158,9 @@ func NewService(tb Tumblebug, runner Runner, models *modelcat.Store, apps *appst
 	store *Store, archiveStore *archive.Store, opts Options) *Service {
 	if opts.MaxParallel <= 0 {
 		opts.MaxParallel = DefaultMaxParallel
+	}
+	if opts.SSHProber == nil {
+		opts.SSHProber = NewSSHProber(sshProbeTimeout)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
@@ -434,14 +445,14 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 
 	gpu, source, note := s.decideGPU(ctx, req, node)
 	ports := servedPorts(req, p)
-	sshUser := firstNonEmpty(target.SSHUser, access.User)
+	sshUser, sshUserSource := firstNonEmpty(target.SSHUser, access.User), sshUserSourceOf(target)
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 		n.Ports = ports
 		n.Node = &model.NodeDeployNode{
 			CSP: access.CSP, Region: access.Region, Zone: access.Zone,
 			Host: access.Host, Port: access.Port, User: access.User, SpecID: node.SpecID,
 		}
-		n.SSHUser = sshUser
+		n.SSHUser, n.SSHUserSource = sshUser, sshUserSource
 		n.GPU, n.GPUSource = gpu, source
 		if note != "" {
 			n.Notes = append(n.Notes, note)
@@ -468,6 +479,18 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	if s.opts.DryRun {
 		s.finishNode(id, idx, model.NodeDeployDryRun, "")
 		return
+	}
+
+	if target.SSHUser == "" {
+		user, source, userNote := s.decideSSHUser(ctx, access, node, sshUser)
+		sshUser = user
+		s.updateNode(id, idx, func(n *model.NodeDeployResult) {
+			n.SSHUser, n.SSHUserSource = user, source
+			if userNote != "" {
+				n.Notes = append(n.Notes, userNote)
+			}
+		})
+		logger.Info().Str("sshUser", user).Str("sshUserSource", source).Msg("Decided the SSH user")
 	}
 
 	base := semaphore.RunSpec{

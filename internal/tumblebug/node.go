@@ -41,6 +41,18 @@ type Node struct {
 	Region NodeRegion `json:"region"`
 	// SecurityGroupIDs are the security groups of the node, in its namespace.
 	SecurityGroupIDs []string `json:"securityGroupIds"`
+	// ImageID names the image the node was created from.
+	ImageID string `json:"imageId"`
+	// Image says which operating system the image holds.
+	Image NodeImage `json:"image"`
+}
+
+// NodeImage is the part of model.ImageSummary that names the operating system
+// of a node image.
+type NodeImage struct {
+	CSPImageName   string `json:"cspImageName"`
+	OSType         string `json:"osType"`
+	OSDistribution string `json:"osDistribution"`
 }
 
 // NodeConnConfig is the part of model.ConnConfig that says where a node runs.

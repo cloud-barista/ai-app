@@ -857,7 +857,7 @@ definitions:
         description: |-
           User is the SSH user CB-Tumblebug reports for the node. The
           playbooks ran as nodes[].sshUser, which differs when the target
-          gave sshUser.
+          gave sshUser or the node refused this user (sshUserSource).
         example: cb-user
         type: string
       zone:
@@ -972,9 +972,25 @@ definitions:
       sshUser:
         description: |-
           SSHUser is the SSH user the playbooks ran as on the node: the
-          target's sshUser when given, and node.user, the one CB-Tumblebug
-          reports, otherwise. Taking the deployment down runs as the same user.
+          target's sshUser when given. Otherwise node.user, the one CB-Tumblebug
+          reports, is tried with the node key before the playbooks run; when the
+          node refuses it, the default users of the node image (such as ec2-user
+          on RHEL and Amazon Linux) are tried and the first it accepts is taken.
+          Taking the deployment down runs as the same user.
         example: cb-user
+        type: string
+      sshUserSource:
+        description: |-
+          SSHUserSource says where SSHUser came from: request (targets[].sshUser),
+          tumblebug (node.user, which the node accepted, or which was kept because
+          the login could not be tried or every user was refused; notes say which)
+          or fallback (an image default user, taken after the node refused
+          node.user; notes name both).
+        enum:
+        - request
+        - tumblebug
+        - fallback
+        example: tumblebug
         type: string
       stageDir:
         description: |-
@@ -1109,10 +1125,11 @@ definitions:
         description: |-
           SSHUser replaces, for this node, the SSH user CB-Tumblebug reports
           (nodeUserName) in the Semaphore inventory; the SSH key is still the one
-          CB-Tumblebug holds for the node. Use it when the login user
-          CB-Tumblebug creates, cb-user, is missing on the node and the image's
-          own user (ec2-user on aws, the admin user on azure) accepts the same
-          key. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the
+          CB-Tumblebug holds for the node. Without it, the CB-Tumblebug user is
+          tried with the key before the playbooks run, and when the node refuses
+          it (CB-Tumblebug could not create cb-user on the image), the image's
+          default users are tried. Give it to choose the user, and no login is
+          tried. 1 to 32 characters matching [a-z_][a-z0-9_-]*. Taking the
           deployment down uses the user recorded at deploy time.
         example: ec2-user
         type: string
@@ -2167,7 +2184,7 @@ paths:
 
         type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
 
-        Each target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds: CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user (ec2-user on aws, the admin user on azure) accepts the same key. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as. kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
+        Each target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds. Without sshUser, before the playbooks of a node run, the service logs in to the node over SSH with that key (authentication only, no command, 10 seconds per attempt, at most 6 attempts) as the CB-Tumblebug user and keeps it when the node accepts it. CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user accepts the same key. So when the node refuses the CB-Tumblebug user, the default users of the node image (from its osType: ec2-user for Amazon Linux, RHEL and SUSE, rocky, almalinux then ec2-user, centos, fedora, opc then ec2-user for Oracle Linux, admin for Debian, ubuntu; ec2-user, ubuntu and admin for an OS not recognized; never root) are tried in order and the first accepted is used, with a note naming both users. When every user is refused, or the node cannot be reached yet (still booting), the CB-Tumblebug user is kept and a note says so; install-docker then waits for the node as before. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as, and nodes[].sshUserSource where it came from (request, tumblebug or fallback). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
 
         For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
 
@@ -2223,7 +2240,7 @@ paths:
   /deployments/{id}:
     delete:
       description: |-
-        Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans, as the SSH user the node was deployed as (nodes[].sshUser, which is targets[].sshUser when the request gave it). Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.
+        Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans, as the SSH user the node was deployed as (nodes[].sshUser, which is targets[].sshUser when the request gave it, or the image default user the deployment fell back to); no SSH login is tried again. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.
 
         Only the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.
 
