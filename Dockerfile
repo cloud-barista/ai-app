@@ -2,7 +2,7 @@
 #
 # The Go version is pinned to the one in go.mod rather than to "latest", so that
 # a rebuild months from now produces the binary this was verified with.
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
