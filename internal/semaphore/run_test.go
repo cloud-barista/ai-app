@@ -788,3 +788,39 @@ func TestCheckPrivateKey(t *testing.T) {
 		}
 	}
 }
+
+func TestRunReportsProgressWhileTheTaskRuns(t *testing.T) {
+	fake := newFakeSemaphore()
+	fake.statuses = []string{StatusRunning, StatusRunning, StatusSuccess}
+	c := newTestClient(t, fake, 5*time.Second)
+
+	var seen []RunProgress
+	spec := testSpec()
+	spec.Progress = func(p RunProgress) { seen = append(seen, p) }
+	result, err := c.Run(context.Background(), spec)
+	if err != nil || !result.Succeeded() {
+		t.Fatalf("Run = %+v, %v", result, err)
+	}
+	if len(seen) < 2 {
+		t.Fatalf("progress calls = %+v, want one at start and one per running check", seen)
+	}
+	if seen[0].TaskID != result.TaskID || seen[0].Output != nil {
+		t.Errorf("first progress = %+v, want the task without output", seen[0])
+	}
+	running := 0
+	for _, p := range seen {
+		if IsFinished(p.Status) {
+			t.Errorf("progress reported a finished status %q; the result carries it", p.Status)
+		}
+		if p.Status == StatusRunning && p.Output != nil {
+			running++
+			joined := strings.Join(p.Output, "\n")
+			if strings.Contains(joined, testKeyBody) {
+				t.Errorf("progress output holds the key: %q", p.Output)
+			}
+		}
+	}
+	if running == 0 {
+		t.Errorf("progress = %+v, want a running check with the log so far", seen)
+	}
+}

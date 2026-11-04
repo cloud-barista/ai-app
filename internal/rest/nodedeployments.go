@@ -23,7 +23,7 @@ import (
 // @Description
 // @Description Once the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.
 // @Description
-// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}/progress until done is true (or GET /deployments/{id} for the whole record). With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
 // @Tags [Deployment] Node Deployment
 // @Accept json
 // @Produce json
@@ -81,7 +81,7 @@ func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
 // RestGetNodeDeployment godoc
 // @ID GetNodeDeployment
 // @Summary Get a deployment onto nodes
-// @Description Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.
+// @Description Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, its phase (what the service is doing there, as in GET /deployments/{id}/progress), and every playbook run with its Semaphore task ID and status (set when the task starts and followed while it runs) and the Ansible task it is on (currentTask). For polling, GET /deployments/{id}/progress answers the same progress in a shorter body. Task output is left out; read it with GET /deployments/{id}/logs.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"
@@ -100,10 +100,36 @@ func (h *Handler) RestGetNodeDeployment(c echo.Context) error {
 	return c.JSON(http.StatusOK, d)
 }
 
+// RestGetNodeDeploymentProgress godoc
+// @ID GetNodeDeploymentProgress
+// @Summary Get the progress of a deployment
+// @Description Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.
+// @Description
+// @Description done is false while the deployment is pending, deploying or removing, and true otherwise. succeeded is true only when it ended running (the service is up on every node) or dry-run. A finished deployment that is not succeeded is failed, partial (count.succeeded and count.failed tell how many nodes), interrupted (the service restarted while it ran), or removed or remove-failed once taken down.
+// @Description
+// @Description For every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as "Wait until the service answers"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeploymentProgress "Progress of the deployment"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Security BearerAuth
+// @Router /deployments/{id}/progress [get]
+func (h *Handler) RestGetNodeDeploymentProgress(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	p, err := h.nodeDeploy.Progress(ctx, id)
+	if err != nil {
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment lookup failed")})
+	}
+	return c.JSON(http.StatusOK, p)
+}
+
 // RestGetNodeDeploymentLogs godoc
 // @ID GetNodeDeploymentLogs
 // @Summary Get the task output of a deployment
-// @Description Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. A step's output appears when its task ends. The tasks and their logs are also kept in Semaphore under the template of each playbook.
+// @Description Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. While a task runs, its output is the log so far, read from Semaphore every 5 seconds; once it ends, the whole log. The tasks and their logs are also kept in Semaphore under the template of each playbook.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"

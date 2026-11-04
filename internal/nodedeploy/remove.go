@@ -290,12 +290,14 @@ func (s *Service) removeNode(ctx context.Context, id string, idx int, place plac
 	// The check for a later deployment is made again under the lock that
 	// deployments of the work key take before they run, so that one started
 	// meanwhile is not taken down with this one.
+	s.setPhase(id, idx, PhaseWaitingNodeLock)
 	unlock, err := s.locks.lock(ctx, target.Key()+" "+place.WorkKey)
 	if err != nil {
 		fail(fmt.Errorf("waiting for another deployment of %s on the node: %w", place.WorkKey, err))
 		return
 	}
 	defer unlock()
+	s.setPhase(id, idx, PhaseReadingNode)
 	if later := s.laterOn(d, target, place.WorkKey); later != "" {
 		s.finishRemoval(id, idx, model.NodeDeployRemoved, "", replacedNote(later))
 		logger.Info().Str("laterDeploymentId", later).Msg("Left the node to a later deployment")
@@ -362,6 +364,7 @@ func markNodeRemoved(n *model.NodeDeployResult, note string, now time.Time) {
 	n.Status = model.NodeDeployRemoved
 	n.Error = ""
 	n.RemovedAt = &now
+	setPhase(n, PhaseDone, now)
 	addNote(n, note)
 }
 

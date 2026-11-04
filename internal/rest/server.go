@@ -121,6 +121,7 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	g.GET("/deployments/:id", handler.RestGetNodeDeployment)
 	g.DELETE("/deployments/:id", handler.RestDeleteNodeDeployment)
 	g.GET("/deployments/:id/logs", handler.RestGetNodeDeploymentLogs)
+	g.GET("/deployments/:id/progress", handler.RestGetNodeDeploymentProgress)
 	g.POST("/deployments/:id/control", handler.RestPostNodeDeploymentControl)
 
 	// What serves on the nodes now, derived from the deployment records.

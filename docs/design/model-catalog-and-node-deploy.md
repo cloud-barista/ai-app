@@ -259,7 +259,7 @@ dry-run 이면 1·2 까지만 한다(조회와 파일 배치). Semaphore 에 아
 | 모델 | `GET/POST /aiapp/models`, `GET/DELETE /aiapp/models/{modelId}` | 필터 `task`, `modality`, `format`, `runtimeId`, `source` |
 | 런타임 | `GET /aiapp/runtimes`, `GET /aiapp/runtimes/{runtimeId}` | 조회만 |
 | 응용 | `POST /aiapp/apps` (multipart: name, files, script), `GET /aiapp/apps`, `GET /aiapp/apps/{name}`, `DELETE /aiapp/apps/{name}` | 버전 목록 포함 |
-| 배포 | `POST /aiapp/deployments`, `GET /aiapp/deployments`, `GET /aiapp/deployments/{id}`, `GET /aiapp/deployments/{id}/logs` | |
+| 배포 | `POST /aiapp/deployments`, `GET /aiapp/deployments`, `GET /aiapp/deployments/{id}`, `GET /aiapp/deployments/{id}/progress`, `GET /aiapp/deployments/{id}/logs` | `/progress` 는 폴링용 요약: `done`·`succeeded`, 노드별 `phase`·현재 playbook·Ansible 태스크 |
 | 내리기 | `DELETE /aiapp/deployments/{id}` | 노드에서 `docker compose down` |
 | 주소 | `GET /aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소 |
 | 노드 제어 | `POST /aiapp/deployments/{id}/control` | Tumblebug 노드 제어 |

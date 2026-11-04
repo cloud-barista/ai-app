@@ -421,6 +421,19 @@ type NodeDeployResult struct {
 	// PortsError is why some ports could not be opened. The node still
 	// succeeds; the ports can be opened in CB-Tumblebug by hand.
 	PortsError string `json:"portsError,omitempty"`
+	// Phase is what the service is doing on the node: reading-node (the node
+	// and its SSH key are read from CB-Tumblebug), staging (the files are
+	// placed in the stage folder), checking-ssh (the SSH user is tried),
+	// waiting-node-lock (another deployment of the same work key on the node
+	// runs first), install-docker, compose-up, copy-and-run or compose-down
+	// (that playbook runs; steps[] holds its task), opening-ports (the served
+	// ports are opened in the security groups) and done once the node
+	// succeeded. A node that failed keeps the phase it failed in. Absent until
+	// work on the node begins, and for records written before phases were
+	// kept.
+	Phase string `json:"phase,omitempty" enums:"reading-node,staging,checking-ssh,waiting-node-lock,install-docker,compose-up,copy-and-run,compose-down,opening-ports,done" example:"compose-up"`
+	// PhaseStartedAt is when the node entered Phase.
+	PhaseStartedAt *time.Time `json:"phaseStartedAt,omitempty" example:"2026-10-29T12:00:40Z"`
 	// Steps are the playbooks run on the node, in order. A step that failed
 	// ends the node.
 	Steps []NodeDeployStep `json:"steps,omitempty"`
@@ -488,10 +501,19 @@ type NodeDeployStep struct {
 	// Absent when the task never started or AIAPP_SEMAPHORE_UI_URL was not
 	// set when it ran.
 	TaskURL string `json:"taskUrl,omitempty" example:"http://203.0.113.5:3001/project/1/history?t=42"`
-	// Status is the final Semaphore task status: success, error, stopped or
-	// rejected, or empty when the task never started.
+	// Status is the Semaphore task status: waiting, starting, running or
+	// stopping while the task runs (read every 5 seconds), then the final one,
+	// success, error, stopped or rejected. Empty while the task is being
+	// registered and when it never started. TaskID and TaskURL are set as soon
+	// as the task starts.
 	Status string `json:"status" example:"success"`
-	// Output is the task log, one line per entry. It is returned by
+	// CurrentTask is the Ansible task the playbook is on, from the last
+	// TASK [...] line of the log so far, such as "Wait until the service
+	// answers". Once the playbook ended it is the task it stopped on when it
+	// did not succeed, and empty when it succeeded.
+	CurrentTask string `json:"currentTask,omitempty" example:"Wait until the service answers"`
+	// Output is the task log, one line per entry: the log so far while the
+	// task runs, then the whole log. It is returned by
 	// GET /deployments/{id}/logs and left out of the deployment record.
 	Output []string `json:"output,omitempty"`
 	// CleanupErrors name the Semaphore key or inventory of this run that
@@ -522,6 +544,76 @@ type NodeDeployNodeLogs struct {
 	Target NodeDeployTarget `json:"target"`
 	Status string           `json:"status" example:"running"`
 	Steps  []NodeDeployStep `json:"steps"`
+}
+
+// NodeDeploymentProgress is the short progress of one deployment, to poll
+// until Done.
+type NodeDeploymentProgress struct {
+	ID   string `json:"id" example:"3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"`
+	Type string `json:"type" enums:"inference,app" example:"inference"`
+	// Status is the deployment status, as in GET /deployments/{id}.
+	Status string `json:"status" enums:"pending,deploying,running,failed,partial,dry-run,interrupted,removing,removed,remove-failed" example:"deploying"`
+	// Done is false while the service still works on the deployment
+	// (pending, deploying or removing) and true otherwise: polling can stop.
+	Done bool `json:"done" example:"false"`
+	// Succeeded is true when the deployment ended with its service up on
+	// every node (running), or was a dry run (dry-run). Removing never counts
+	// as success: removed is Done without Succeeded.
+	Succeeded bool `json:"succeeded" example:"false"`
+	// Error is why the deployment as a whole stopped, when it did.
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"createdAt" example:"2026-10-29T12:00:00Z"`
+	// FinishedAt is when the last node finished deploying; RemovedAt when
+	// taking it down ended.
+	FinishedAt *time.Time `json:"finishedAt,omitempty" example:"2026-10-29T12:05:00Z"`
+	RemovedAt  *time.Time `json:"removedAt,omitempty"`
+	// ElapsedSeconds runs from createdAt to finishedAt (or removedAt once
+	// taken down), or to now while the deployment is not done.
+	ElapsedSeconds int64 `json:"elapsedSeconds" example:"312"`
+	// Count is how many nodes are in each state.
+	Count NodeProgressCount `json:"count"`
+	// Nodes are the per node progress, in request order.
+	Nodes []NodeProgress `json:"nodes"`
+}
+
+// NodeProgressCount counts the nodes of a deployment by state.
+type NodeProgressCount struct {
+	Total int `json:"total" example:"2"`
+	// InProgress are pending, deploying or removing.
+	InProgress int `json:"inProgress" example:"1"`
+	// Succeeded are running or dry-run, or removed once taken down.
+	Succeeded int `json:"succeeded" example:"1"`
+	// Failed are failed, interrupted or remove-failed.
+	Failed int `json:"failed" example:"0"`
+}
+
+// NodeProgress is the short progress of one node.
+type NodeProgress struct {
+	Target NodeDeployTarget `json:"target"`
+	// Status is the node status, as in GET /deployments/{id}.
+	Status string `json:"status" example:"deploying"`
+	// Done is true once the node is no longer pending, deploying or removing.
+	Done bool `json:"done" example:"false"`
+	// Phase is nodes[].phase of the record: where the node is, or where it
+	// failed.
+	Phase          string     `json:"phase,omitempty" example:"compose-up"`
+	PhaseStartedAt *time.Time `json:"phaseStartedAt,omitempty"`
+	// Step is the last playbook started on the node, without its log.
+	Step *NodeDeployStep `json:"step,omitempty"`
+	// StepsDone counts the playbooks of StepsTotal that succeeded. StepsTotal
+	// is 2 for a deployment (install-docker, then compose-up or
+	// copy-and-run), 1 while or after taking it down (compose-down), and 0
+	// for a dry run.
+	StepsDone  int `json:"stepsDone" example:"1"`
+	StepsTotal int `json:"stepsTotal" example:"2"`
+	// Error is why the node failed.
+	Error string `json:"error,omitempty"`
+	// Host is the address the node was reached at (nodes[].node.host).
+	Host string `json:"host,omitempty" example:"203.0.113.10"`
+	// ServiceURL is the inference API on the node (inference only).
+	ServiceURL string `json:"serviceUrl,omitempty" example:"http://203.0.113.10:8000/v1"`
+	// Ports are the TCP ports the deployment serves on the node.
+	Ports []int `json:"ports,omitempty" example:"8000"`
 }
 
 // NodeControlReq applies a lifecycle action to every node of a deployment.

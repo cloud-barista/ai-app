@@ -27,7 +27,8 @@ AIAPP_URL=http://<AI-App 호스트>:8090/aiapp
 | 응용 목록·상세 | `GET /aiapp/apps`, `GET /aiapp/apps/{name}`, `GET /aiapp/apps/{name}/versions/{version}` |
 | 응용 업로드 | `POST /aiapp/apps` (multipart) |
 | 배포 요청 | `POST /aiapp/deployments` |
-| 배포 진행 | `GET /aiapp/deployments/{id}` 를 끝날 때까지 |
+| 배포 진행·완료 확인 | `GET /aiapp/deployments/{id}/progress` 를 `done` 이 `true` 가 될 때까지 |
+| 배포 기록 전체 | `GET /aiapp/deployments/{id}` |
 | 배포 목록 | `GET /aiapp/deployments?type=&nsId=&status=` |
 | 배포 로그 | `GET /aiapp/deployments/{id}/logs` |
 | 지금 떠 있는 것 | `GET /aiapp/endpoints?nsId=&infraId=&nodeId=&type=` |
@@ -136,10 +137,57 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 }'
 ```
 
-- `202` 이면 받은 것이고 본문은 `pending` 기록입니다. `id` 를 저장해 두고 `GET /aiapp/deployments/{id}` 를 몇 초 간격으로 읽어
-  `status` 가 `pending`·`deploying` 이 아니게 될 때까지 진행을 보여 줍니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수 있습니다.
+- `202` 이면 받은 것이고 본문은 `pending` 기록입니다. `id` 를 저장해 두고 `GET /aiapp/deployments/{id}/progress` 를 몇 초 간격으로
+  읽어 `done` 이 `true` 가 될 때까지 진행을 보여 줍니다. 추론 엔진 배포(`type: inference`)와 응용 배포(`type: app`)가 같은 경로입니다.
+  모델을 처음 받는 노드는 수십 분이 걸릴 수 있습니다.
 - dry-run 이면 `200` 과 끝난 기록(`dry-run`)입니다.
 - 요청 오류는 `400`/`404`/`422` 와 `{"message": "..."}` 입니다. 그 `message` 를 그대로 보여 주면 무엇이 틀렸는지 알 수 있습니다.
+
+### 6-1. 진행과 완료 (`/progress`)
+
+```sh
+curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
+```
+
+진행 중:
+
+```json
+{
+  "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48", "type": "inference", "status": "deploying",
+  "done": false, "succeeded": false, "createdAt": "2026-11-03T12:00:00Z", "elapsedSeconds": 312,
+  "count": {"total": 1, "inProgress": 1, "succeeded": 0, "failed": 0},
+  "nodes": [{
+    "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
+    "status": "deploying", "done": false, "phase": "compose-up", "phaseStartedAt": "2026-11-03T12:01:10Z",
+    "step": {"playbook": "compose-up.yml", "taskId": 42, "status": "running",
+             "currentTask": "Wait until the service answers", "startedAt": "2026-11-03T12:01:10Z"},
+    "stepsDone": 1, "stepsTotal": 2, "host": "203.0.113.10", "serviceUrl": "http://203.0.113.10:8000/v1", "ports": [8000]
+  }]
+}
+```
+
+끝나면 `done: true` 이고, 성공이면 `succeeded: true`·`status: running`·노드 `phase: done`·`stepsDone: 2` 입니다.
+실패면 `succeeded: false` 이고 노드는 실패한 `phase` 에 머물며 `nodes[].error` 에 이유가, `nodes[].step.currentTask` 에
+멈춘 Ansible 태스크가 있습니다.
+
+| 화면에 보여 줄 것 | 필드 |
+|---|---|
+| 끝났는지 (폴링 멈춤) | `done` |
+| 성공했는지 | `succeeded` (`false` 면 `status` 가 `failed`·`partial`·`interrupted` 중 하나) |
+| 노드 몇 개가 어떤 상태인지 | `count.total`·`inProgress`·`succeeded`·`failed` |
+| 노드가 지금 하는 일 | `nodes[].phase` ([README 7-1절](README.md) 의 표: `reading-node` → `staging` → `checking-ssh` → `install-docker` → `compose-up` 또는 `copy-and-run` → `opening-ports` → `done`) |
+| 단계 진행 막대 | `nodes[].stepsDone` / `nodes[].stepsTotal` |
+| 단계 안에서 하는 일 | `nodes[].step.currentTask` (Ansible 태스크 이름, 5초마다 갱신) |
+| 경과 시간 | `elapsedSeconds`, 단계별로는 `nodes[].phaseStartedAt` |
+| 끝난 뒤 쓸 주소 | `nodes[].serviceUrl` (추론), `nodes[].host` + `nodes[].ports` (응용). 응용 URL 은 `GET /aiapp/endpoints` 에도 있습니다 |
+
+내리기(`DELETE`)가 `202` 면 같은 경로를 같은 방법으로 읽습니다. 그때 `phase` 는 `compose-down`, `stepsTotal` 은 1이고, 끝나면
+`status: removed`, `succeeded: false`, `done: true` 입니다.
+
+### 6-2. 배포 기록 전체
+
+`GET /aiapp/deployments/{id}` 는 compose 원문·노트·연 포트까지 든 전체 기록입니다. 노드마다 `phase`·`phaseStartedAt` 이 있고,
+`steps[]` 의 각 단계는 시작되면 바로 `taskId`·`status` 가 채워지며 `currentTask` 가 있습니다.
 
 끝난 기록(줄임):
 
@@ -159,6 +207,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
     "node": {"csp": "aws", "region": "ap-northeast-2", "zone": "ap-northeast-2a", "host": "203.0.113.10",
              "port": 22, "user": "cb-user", "specId": "aws+ap-northeast-2+g4dn.xlarge"},
     "sshUser": "cb-user",
+    "phase": "done", "phaseStartedAt": "2026-11-03T12:05:00Z",
     "gpu": true, "gpuSource": "spec",
     "workKey": "ms-vllm", "nodeDir": "/opt/aiapp/ms-vllm",
     "serviceUrl": "http://203.0.113.10:8000/v1",
@@ -179,7 +228,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 | 전체 상태 | `status` (README 7절의 표) |
 | 노드별 상태와 실패 이유 | `nodes[].status`, `nodes[].error`, `nodes[].notes` |
 | 노드에 접속한 SSH 사용자 | `nodes[].sshUser` (요청에 `targets[].sshUser` 를 주면 그 값, 아니면 CB-Tumblebug 의 `nodes[].node.user`) |
-| 지금 어느 단계인지 | `nodes[].steps[]` 의 마지막 항목 `playbook` |
+| 지금 어느 단계인지 | `nodes[].phase`, 단계 안에서는 `nodes[].steps[]` 마지막 항목의 `currentTask` |
 | Semaphore 화면 링크 | `nodes[].steps[].taskUrl` (AI-App 에 `AIAPP_SEMAPHORE_UI_URL` 이 있을 때만) |
 | 연 포트 | `nodes[].openedPorts[]`, 실패하면 `nodes[].portsError` |
 
@@ -203,7 +252,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/logs"
 }
 ```
 
-- `output` 은 Semaphore 태스크 로그 한 줄씩이고 색 코드는 지웠습니다. 태스크가 끝나야 채워집니다.
+- `output` 은 Semaphore 태스크 로그 한 줄씩이고 색 코드는 지웠습니다. 도는 중인 단계는 그때까지의 로그(5초마다 갱신)이고, 끝나면 전체 로그입니다.
 - `taskUrl` 은 브라우저가 Semaphore 화면을 열 수 있는 곳에서만 쓸모가 있습니다. 열 수 없으면 `output` 만 보여 줍니다.
 
 ## 8. 지금 떠 있는 것 (주소)
@@ -258,5 +307,6 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments/
 | 항목 | 지금 |
 |---|---|
 | 인증 연동 | bearer 토큰 하나. AI-Web 사용자와 기관 구분은 나중 |
-| 배포 진행 알림 | 폴링만 있습니다. 웹훅·이벤트 스트림은 없습니다 |
+| 배포 진행 알림 | 폴링만 있습니다(`GET /aiapp/deployments/{id}/progress`). 웹훅·이벤트 스트림은 없습니다 |
+| 진행률 퍼센트 | 없습니다. 모델 다운로드 바이트 수는 모르고, `stepsDone`/`stepsTotal` 과 `phase` 로만 보여 줍니다 |
 | 추천 | `POST /aiapp/recommendations/*` 는 지금 `501` 입니다. 화면에 넣지 않아도 됩니다 ([khu.md](khu.md)) |

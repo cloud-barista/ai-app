@@ -195,7 +195,7 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 | `00-status.sh` | `GET /readyz`, `GET /status` |
 | `01-catalog.sh` | `GET /runtimes`, `GET /models`, `GET /apps` |
 | `02-upload-app.sh [폴더] [이름] [포트]` | `POST /apps` (기본 `examples/apps/open-webui`, 포트 `3000`) |
-| `03-deploy-inference.sh nsId infraId nodeId [modelId] [artifactId] [runtimeId]` | `POST /deployments` (type inference) 후 끝날 때까지 `GET /deployments/{id}` |
+| `03-deploy-inference.sh nsId infraId nodeId [modelId] [artifactId] [runtimeId]` | `POST /deployments` (type inference) 후 끝날 때까지 `GET /deployments/{id}/progress` 로 노드별 `phase` 를 찍고, 끝나면 기록 |
 | `04-deploy-app.sh nsId infraId nodeId 이름 [KEY=VALUE ...]` | `POST /deployments` (type app) 후 같은 대기 |
 | `05-endpoints.sh [nsId] [infraId] [nodeId]` | `GET /endpoints` |
 | `06-logs.sh 배포ID [줄 수]` | `GET /deployments/{id}/logs` |
@@ -254,8 +254,9 @@ CB-Tumblebug 0.13.8 은 없는 노드와 없는 인프라에 `404` 가 아니라
 ## 7. 배포는 비동기다
 
 - `POST /aiapp/deployments` 는 요청을 카탈로그와 대조하고 대상 노드가 있는지 CB-Tumblebug 에서 확인한 뒤 바로 `202` 와 `pending` 기록을 돌려주고, 뒤에서 진행합니다.
-  `GET /aiapp/deployments/{id}` 를 `status` 가 `pending`·`deploying` 이 아닐 때까지 읽습니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수
-  있습니다(Semaphore 태스크 하나의 상한 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분).
+  `GET /aiapp/deployments/{id}/progress` 를 몇 초 간격으로 `done` 이 `true` 가 될 때까지 읽습니다(7-1절). 전체 기록이 필요하면
+  `GET /aiapp/deployments/{id}` 입니다. 모델을 처음 받는 노드는 수십 분이 걸릴 수 있습니다(Semaphore 태스크 하나의 상한
+  `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분).
 - **dry-run** 은 노드 조회와 파일 배치만 하고 Semaphore 에 아무것도 올리지 않는 모드입니다. AI-App 설정
   `AIAPP_TUMBLEBUG_DRY_RUN`(기본 `true`)으로 정하며 요청으로 바꿀 수 없습니다. 이때 `POST` 는 끝난 기록(`dry-run`)을 `200` 으로
   돌려줍니다. 지금 모드는 `GET /aiapp/status` 의 `dryRun` 으로 봅니다.
@@ -309,6 +310,61 @@ CPU 로 도는 경우). 성공하면 근거 줄이 `nodes[].gpuCheck` 에 남습
 
 포트 하나만 응답하고 다른 컨테이너가 재시작을 되풀이하는 경우(예: Dify 의 nginx 는 응답하는데 agent backend 와 local sandbox 가
 죽고 뜨기를 반복)가 있어서 두 가지를 다 봅니다. 확인은 배포 시점에 한 번이고, 그 뒤에 컨테이너가 죽는지는 보지 않습니다.
+
+### 7-1. 진행 보기 (`GET /aiapp/deployments/{id}/progress`)
+
+추론 서비스 배포와 응용 배포, 그리고 `DELETE` 로 내리는 중인 배포를 같은 경로로 봅니다. 배포 기록에서 계산하므로 노드나 다른
+서비스에 묻지 않고, 몇 초 간격으로 읽어도 됩니다. 응답은 기록(`GET /aiapp/deployments/{id}`)보다 작습니다. compose 원문, 노트,
+연 포트 목록이 빠지고 노드마다 마지막 단계 하나만 들어갑니다.
+
+```sh
+curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
+```
+
+```json
+{
+  "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48", "type": "inference", "status": "deploying",
+  "done": false, "succeeded": false, "createdAt": "2026-11-04T12:00:00Z", "elapsedSeconds": 312,
+  "count": {"total": 1, "inProgress": 1, "succeeded": 0, "failed": 0},
+  "nodes": [{
+    "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
+    "status": "deploying", "done": false,
+    "phase": "compose-up", "phaseStartedAt": "2026-11-04T12:01:10Z",
+    "step": {"playbook": "compose-up.yml", "taskId": 42, "status": "running",
+             "currentTask": "Wait until the service answers",
+             "taskUrl": "http://203.0.113.5:3001/project/1/history?t=42", "startedAt": "2026-11-04T12:01:10Z"},
+    "stepsDone": 1, "stepsTotal": 2,
+    "host": "203.0.113.10", "serviceUrl": "http://203.0.113.10:8000/v1", "ports": [8000]
+  }]
+}
+```
+
+| 필드 | 뜻 |
+|---|---|
+| `done` | `false` 면 AI-App 이 아직 일하는 중입니다(`pending`·`deploying`·`removing`). `true` 가 되면 폴링을 멈춥니다 |
+| `succeeded` | 끝났고 모든 노드에서 서비스가 떠 있음(`running`), 또는 `dry-run`. 그 밖의 끝(`failed`·`partial`·`interrupted`·`removed`·`remove-failed`)은 `false` |
+| `count` | 노드 수. `inProgress` 는 진행 중, `succeeded` 는 `running`·`dry-run`·`removed`, `failed` 는 `failed`·`interrupted`·`remove-failed` |
+| `elapsedSeconds` | `createdAt` 부터 끝난 때까지(진행 중이면 지금까지) 초 |
+| `nodes[].phase` | 그 노드에서 지금 하는 일. 아래 표. 실패한 노드는 실패한 단계에 머뭅니다 |
+| `nodes[].step` | 마지막으로 시작한 playbook. `taskId`·`taskUrl` 은 태스크가 시작되면 바로 채워집니다. `status` 는 도는 동안 `waiting`·`starting`·`running`, 끝나면 `success`·`error`·`stopped`·`rejected` |
+| `nodes[].step.currentTask` | playbook 이 지금 하고 있는 Ansible 태스크 이름. 로그의 마지막 `TASK [...]` 줄에서 뽑습니다. 끝난 뒤에는 실패했으면 멈춘 태스크, 성공했으면 빈 값입니다 |
+| `nodes[].stepsDone` / `stepsTotal` | 성공한 playbook 수 / 할 playbook 수. 배포는 2(`install-docker`, 그다음 `compose-up` 또는 `copy-and-run`), 내리기는 1(`compose-down`), dry-run 은 0 |
+
+| `phase` | 그동안 하는 일 |
+|---|---|
+| `reading-node` | CB-Tumblebug 에서 노드와 SSH 키를 읽음 |
+| `staging` | 공유 stage 폴더에 compose·스크립트·`.env` 를 둠 (dry-run 은 여기서 끝) |
+| `checking-ssh` | 노드에 SSH 로그인만 해 보고 사용자를 정함 (`targets[].sshUser` 를 주면 건너뜀). 부팅 중인 노드면 1분쯤 걸림 |
+| `waiting-node-lock` | 같은 노드의 같은 작업 키(런타임·응용 이름)를 다른 배포가 하고 있어서 기다림 |
+| `install-docker` | docker(GPU 노드면 NVIDIA Container Toolkit 까지)를 설치. 이미 있으면 금방 끝남 |
+| `compose-up` | 추론 서비스: 이미지와 모델을 받고 헬스 경로가 응답할 때까지 기다림. 모델을 처음 받으면 가장 오래 걸리는 단계. `currentTask` 가 `Wait until the service answers` 면 런타임이 모델을 읽는 중 |
+| `copy-and-run` | 응용: 파일을 복사하고 `deploy.sh` 를 돌린 뒤 포트 응답과 컨테이너 안정을 확인 |
+| `compose-down` | 내리기: `docker compose down` |
+| `opening-ports` | CB-Tumblebug 보안 그룹에 서빙 포트를 엶 |
+| `done` | 그 노드는 끝남 (배포 성공 또는 내림) |
+
+`step.status` 와 `currentTask` 는 playbook 이 도는 동안 AI-App 이 Semaphore 에서 5초마다 읽어 기록에 넣습니다. 같은 때에
+`GET /aiapp/deployments/{id}/logs` 도 도는 중인 단계의 그때까지 로그를 돌려줍니다.
 
 ## 8. 서빙 포트 열기
 
@@ -399,8 +455,9 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 |---|---|---|
 | POST | `/aiapp/deployments` | 추론 서비스(`type: inference`) 또는 응용(`type: app`)을 노드에 배포. `202`, dry-run 이면 `200` |
 | GET | `/aiapp/deployments` | 배포 목록 (최신순). 필터 `type`, `nsId`, `status` |
-| GET | `/aiapp/deployments/{id}` | 배포 기록 하나 (노드별 상태, 주소, 단계, 연 포트) |
-| GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력과 `taskUrl` |
+| GET | `/aiapp/deployments/{id}` | 배포 기록 하나 (노드별 상태, `phase`, 주소, 단계, 연 포트) |
+| GET | `/aiapp/deployments/{id}/progress` | 배포 진행 요약. 끝났는지(`done`), 성공인지(`succeeded`), 노드별 `phase`·현재 단계·Ansible 태스크. 폴링용 (7-1절) |
+| GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력과 `taskUrl`. 도는 중인 단계는 그때까지의 출력 |
 | DELETE | `/aiapp/deployments/{id}` | 노드에서 내림 (`docker compose down`, named volume 유지) |
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`·`resume`·`reboot`·`terminate`). `terminate` 는 VM 을 지움 |
 | GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 필터 `nsId`, `infraId`, `nodeId`, `type` |

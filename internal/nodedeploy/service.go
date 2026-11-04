@@ -403,6 +403,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 		n.Status = model.NodeDeployDeploying
 		n.StartedAt = &started
+		setPhase(n, PhaseReadingNode, started)
 	})
 
 	fail := func(err error) {
@@ -459,6 +460,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		}
 		n.StageDir = dir
 		n.WorkKey, n.NodeDir = p.place.WorkKey, p.place.NodeDir
+		setPhase(n, PhaseStaging, time.Now().UTC())
 	})
 
 	rendered, err := s.stage(id, dir, req, p, gpu)
@@ -482,6 +484,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 	}
 
 	if target.SSHUser == "" {
+		s.setPhase(id, idx, PhaseCheckingSSH)
 		user, source, userNote := s.decideSSHUser(ctx, access, node, sshUser)
 		sshUser = user
 		s.updateNode(id, idx, func(n *model.NodeDeployResult) {
@@ -519,6 +522,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		steps = append(steps, withPlaybook(base, PlaybookCopyAndRun, vars))
 	}
 
+	s.setPhase(id, idx, PhaseWaitingNodeLock)
 	unlock, err := s.locks.lock(ctx, target.Key()+" "+p.place.WorkKey)
 	if err != nil {
 		fail(fmt.Errorf("waiting for another deployment of %s on the node: %w", p.place.WorkKey, err))
@@ -531,7 +535,12 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 			return
 		}
 	}
-	s.updateNode(id, idx, func(n *model.NodeDeployResult) { n.GPUCheck = gpuCheckEvidence(n.Steps) })
+	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
+		n.GPUCheck = gpuCheckEvidence(n.Steps)
+		if len(ports) > 0 {
+			setPhase(n, PhaseOpeningPorts, time.Now().UTC())
+		}
+	})
 	s.openNodePorts(ctx, id, idx, target.NsID, node, ports)
 	s.finishNode(id, idx, model.NodeDeployRunning, "")
 	logger.Info().Msg("Node deployment succeeded")
@@ -597,7 +606,36 @@ func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphor
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
 		n.Steps = append(n.Steps, step)
 		stepIdx = len(n.Steps) - 1
+		setPhase(n, playbookPhase(spec.Playbook), step.StartedAt)
 	})
+
+	// The record is written only when what a caller sees changes: the task,
+	// its status, or the length of its log.
+	var seen semaphore.RunProgress
+	seenLines := -1
+	spec.Progress = func(p semaphore.RunProgress) {
+		lines := seenLines
+		if p.Output != nil {
+			lines = len(p.Output)
+		}
+		if p.TaskID == seen.TaskID && p.Status == seen.Status && lines == seenLines {
+			return
+		}
+		seen, seenLines = p, lines
+		s.updateNode(id, idx, func(n *model.NodeDeployResult) {
+			if stepIdx < 0 || stepIdx >= len(n.Steps) {
+				return
+			}
+			st := &n.Steps[stepIdx]
+			st.TaskID, st.TaskURL, st.Status = p.TaskID, p.TaskURL, p.Status
+			if p.Output != nil {
+				st.Output = p.Output
+				if task := currentTask(p.Output); task != "" {
+					st.CurrentTask = task
+				}
+			}
+		})
+	}
 
 	result, err := s.runner.Run(ctx, spec)
 	finished := time.Now().UTC()
@@ -611,7 +649,17 @@ func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphor
 			st.TaskID = result.TaskID
 			st.TaskURL = result.TaskURL
 			st.Status = result.Status
-			st.Output = result.Output
+			if len(result.Output) > 0 || st.Output == nil {
+				st.Output = result.Output
+			}
+			// A playbook that succeeded ran past every task, and its last
+			// TASK line is often a check that was skipped; only a playbook
+			// that did not succeed keeps the task it stopped on.
+			if result.Succeeded() {
+				st.CurrentTask = ""
+			} else if task := currentTask(st.Output); task != "" {
+				st.CurrentTask = task
+			}
 			st.CleanupErrors = result.CleanupErrors
 		}
 		if err != nil {
@@ -796,6 +844,9 @@ func (s *Service) finishNode(id string, idx int, status, errText string) {
 		n.Status = status
 		n.Error = errText
 		n.FinishedAt = &now
+		if status == model.NodeDeployRunning {
+			setPhase(n, PhaseDone, now)
+		}
 	})
 }
 

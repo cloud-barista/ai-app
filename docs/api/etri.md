@@ -137,8 +137,9 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 }'
 ```
 
-- 받으면 `202` 와 `{"id": "...", "status": "pending", ...}` 입니다. 그 `id` 로 `GET /aiapp/deployments/{id}` 를 `status` 가
-  `pending`·`deploying` 이 아닐 때까지 읽습니다. `running` 이면 됐습니다.
+- 받으면 `202` 와 `{"id": "...", "status": "pending", ...}` 입니다. 그 `id` 로 `GET /aiapp/deployments/{id}/progress` 를 `done` 이
+  `true` 가 될 때까지 읽습니다. `succeeded` 가 `true`(`status: running`)면 됐습니다. 도는 동안 노드마다 `phase`(지금 하는 일)와
+  `step.currentTask`(Ansible 태스크 이름)가 보입니다. 필드는 [README 7-1절](README.md) 입니다.
 - 접근 승인이 필요한 Hugging Face 모델이면 `"env": {"HF_TOKEN": "<토큰>"}` 을 `inference` 안에 넣습니다. 이 값은 배포 기록과
   노드의 `.env` 에 평문으로 남습니다.
 - vm3 처럼 `"gpu": true` 를 주면 노드 스펙을 보지 않고 GPU 를 씁니다. 빼면 스펙의 `acceleratorType` 으로 정합니다(2절).
@@ -162,10 +163,12 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 ```sh
 id=<위 응답의 id>
 for i in $(seq 1 90); do
-  status=$(curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id" | jq -r .status)
-  echo "$i $status"
-  case "$status" in pending|deploying) sleep 10 ;; *) break ;; esac
+  p=$(curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress")
+  echo "$i $(echo "$p" | jq -r '[.status, (.nodes[] | "\(.target.nodeId):\(.phase) \(.step.currentTask // "")")] | join(" ")')"
+  [ "$(echo "$p" | jq -r .done)" = true ] && break
+  sleep 10
 done
+echo "$p" | jq '{status, succeeded}'
 ```
 
 ### 3-3. 추론 서비스 주소 읽기

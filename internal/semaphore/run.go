@@ -67,6 +67,24 @@ type RunSpec struct {
 	Playbook string
 	// ExtraVars are passed to the playbook as extra variables.
 	ExtraVars map[string]any
+	// Progress, when set, is called once the task is started and after every
+	// status check while it runs, with the task, its status and the log so
+	// far (the private key masked out). It is not called once the task ended;
+	// the RunResult carries the final status and the settled log. It runs on
+	// the goroutine of Run and must not block.
+	Progress func(RunProgress)
+}
+
+// RunProgress is what a running task looks like at one status check.
+type RunProgress struct {
+	TaskID  int
+	TaskURL string
+	// Status is the Semaphore task status seen: waiting, starting, running or
+	// stopping while it runs.
+	Status string
+	// Output is the task log so far, one line per entry, colour codes removed.
+	// It is nil when the log could not be read at this check.
+	Output []string
 }
 
 // RunResult is the outcome of a Run.
@@ -159,8 +177,21 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (result *RunResult, err 
 	result.TaskURL = c.TaskURL(projectID, task.ID)
 	result.Status = task.Status
 	log.Info().Str("run", name).Int("task", task.ID).Str("playbook", spec.Playbook).Msg("Started Semaphore task")
+	report := func(withOutput bool) {
+		if spec.Progress == nil || IsFinished(result.Status) {
+			return
+		}
+		p := RunProgress{TaskID: result.TaskID, TaskURL: result.TaskURL, Status: result.Status}
+		if withOutput {
+			if lines, err := c.TaskOutput(ctx, projectID, result.TaskID); err == nil {
+				p.Output = outputLines(lines, spec.PrivateKey)
+			}
+		}
+		spec.Progress(p)
+	}
+	report(false)
 
-	waitErr := c.wait(ctx, projectID, result)
+	waitErr := c.wait(ctx, projectID, result, func() { report(true) })
 	if waitErr != nil {
 		// The task is stopped rather than left running with an inventory and a
 		// key that are about to be deleted.
@@ -243,8 +274,9 @@ func (c *Client) setup(ctx context.Context, playbook string) (projectID, templat
 	return projectID, templateID, nil
 }
 
-// wait polls the task until it ends, the run times out or ctx is done.
-func (c *Client) wait(ctx context.Context, projectID int, result *RunResult) error {
+// wait polls the task until it ends, the run times out or ctx is done. checked
+// is called after every status check.
+func (c *Client) wait(ctx context.Context, projectID int, result *RunResult, checked func()) error {
 	interval := c.pollInterval
 	if interval <= 0 {
 		interval = defaultPollInterval
@@ -281,6 +313,9 @@ func (c *Client) wait(ctx context.Context, projectID int, result *RunResult) err
 			return err
 		}
 		result.Status = task.Status
+		if checked != nil {
+			checked()
+		}
 	}
 	if IsFinished(result.Status) {
 		return nil

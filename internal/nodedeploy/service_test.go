@@ -177,6 +177,11 @@ func (f *fakeRunner) Run(ctx context.Context, spec semaphore.RunSpec) (*semaphor
 	status := f.statuses[spec.Host+" "+spec.Playbook]
 	block := f.block
 	f.mu.Unlock()
+	if spec.Progress != nil {
+		spec.Progress(semaphore.RunProgress{TaskID: taskID, TaskURL: "http://ui/task", Status: semaphore.StatusWaiting})
+		spec.Progress(semaphore.RunProgress{TaskID: taskID, TaskURL: "http://ui/task", Status: semaphore.StatusRunning,
+			Output: []string{"PLAY [node] ***", "TASK [Wait until the service answers] ***"}})
+	}
 	if block != nil {
 		select {
 		case <-block:

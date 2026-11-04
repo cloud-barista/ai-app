@@ -417,7 +417,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds. Without sshUser, before the playbooks of a node run, the service logs in to the node over SSH with that key (authentication only, no command, 10 seconds per attempt, at most 6 attempts) as the CB-Tumblebug user and keeps it when the node accepts it. CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user accepts the same key. So when the node refuses the CB-Tumblebug user, the default users of the node image (from its osType: ec2-user for Amazon Linux, RHEL and SUSE, rocky, almalinux then ec2-user, centos, fedora, opc then ec2-user for Oracle Linux, admin for Debian, ubuntu; ec2-user, ubuntu and admin for an OS not recognized; never root) are tried in order and the first accepted is used, with a note naming both users. When every user is refused, or the node cannot be reached yet (still booting), the CB-Tumblebug user is kept and a note says so; install-docker then waits for the node as before. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as, and nodes[].sshUserSource where it came from (request, tumblebug or fallback). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
+                "description": "Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.\n\ntype inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as [\"--max-model-len\",\"32768\"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.\n\nEach target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds. Without sshUser, before the playbooks of a node run, the service logs in to the node over SSH with that key (authentication only, no command, 10 seconds per attempt, at most 6 attempts) as the CB-Tumblebug user and keeps it when the node accepts it. CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user accepts the same key. So when the node refuses the CB-Tumblebug user, the default users of the node image (from its osType: ec2-user for Amazon Linux, RHEL and SUSE, rocky, almalinux then ec2-user, centos, fedora, opc then ec2-user for Oracle Linux, admin for Debian, ubuntu; ec2-user, ubuntu and admin for an OS not recognized; never root) are tried in order and the first accepted is used, with a note naming both users. When every user is refused, or the node cannot be reached yet (still booting), the CB-Tumblebug user is kept and a note says so; install-docker then waits for the node as before. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as, and nodes[].sshUserSource where it came from (request, tumblebug or fallback). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.\n\nFor every node, in parallel up to a bound: the files are placed in \u003cAIAPP_STAGE_ROOT\u003e/\u003cid\u003e/\u003ccsp\u003e-\u003cnodeId\u003e/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/\u003cwork key\u003e and run as compose project aiapp-\u003cwork key\u003e, where the work key is ms-\u003cruntimeId\u003e for an inference service and app-\u003cname\u003e for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.\n\nOnce the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.\n\nThe request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}/progress until done is true (or GET /deployments/{id} for the whole record). With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.",
                 "consumes": [
                     "application/json"
                 ],
@@ -493,7 +493,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, and every playbook run with its Semaphore task ID and status. Task output is left out; read it with GET /deployments/{id}/logs.",
+                "description": "Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, its phase (what the service is doing there, as in GET /deployments/{id}/progress), and every playbook run with its Semaphore task ID and status (set when the task starts and followed while it runs) and the Ansible task it is on (currentTask). For polling, GET /deployments/{id}/progress answers the same progress in a shorter body. Task output is left out; read it with GET /deployments/{id}/logs.",
                 "produces": [
                     "application/json"
                 ],
@@ -644,7 +644,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. A step's output appears when its task ends. The tasks and their logs are also kept in Semaphore under the template of each playbook.",
+                "description": "Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. While a task runs, its output is the log so far, read from Semaphore every 5 seconds; once it ends, the whole log. The tasks and their logs are also kept in Semaphore under the template of each playbook.",
                 "produces": [
                     "application/json"
                 ],
@@ -667,6 +667,47 @@
                         "description": "Task output per node and step",
                         "schema": {
                             "$ref": "#/definitions/model.NodeDeploymentLogs"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
+        "/deployments/{id}/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.\n\ndone is false while the deployment is pending, deploying or removing, and true otherwise. succeeded is true only when it ended running (the service is up on every node) or dry-run. A finished deployment that is not succeeded is failed, partial (count.succeeded and count.failed tell how many nodes), interrupted (the service restarted while it ran), or removed or remove-failed once taken down.\n\nFor every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as \"Wait until the service answers\"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Deployment] Node Deployment"
+                ],
+                "summary": "Get the progress of a deployment",
+                "operationId": "GetNodeDeploymentProgress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Progress of the deployment",
+                        "schema": {
+                            "$ref": "#/definitions/model.NodeDeploymentProgress"
                         }
                     },
                     "404": {
@@ -2694,6 +2735,28 @@
                         "$ref": "#/definitions/model.NodeOpenedPort"
                     }
                 },
+                "phase": {
+                    "description": "Phase is what the service is doing on the node: reading-node (the node\nand its SSH key are read from CB-Tumblebug), staging (the files are\nplaced in the stage folder), checking-ssh (the SSH user is tried),\nwaiting-node-lock (another deployment of the same work key on the node\nruns first), install-docker, compose-up, copy-and-run or compose-down\n(that playbook runs; steps[] holds its task), opening-ports (the served\nports are opened in the security groups) and done once the node\nsucceeded. A node that failed keeps the phase it failed in. Absent until\nwork on the node begins, and for records written before phases were\nkept.",
+                    "type": "string",
+                    "enum": [
+                        "reading-node",
+                        "staging",
+                        "checking-ssh",
+                        "waiting-node-lock",
+                        "install-docker",
+                        "compose-up",
+                        "copy-and-run",
+                        "compose-down",
+                        "opening-ports",
+                        "done"
+                    ],
+                    "example": "compose-up"
+                },
+                "phaseStartedAt": {
+                    "description": "PhaseStartedAt is when the node entered Phase.",
+                    "type": "string",
+                    "example": "2026-10-29T12:00:40Z"
+                },
                 "ports": {
                     "description": "Ports are the TCP ports the deployment serves on the node: the runtime\nport of an inference service, the ports of an application. They are\nopened inbound from 0.0.0.0/0 in every security group of the node once\nthe playbooks succeed. A dry run and a failed node open none; with\nport opening turned off (AIAPP_DEPLOYMENT_OPEN_PORTS=false) none are\nopened and notes says so.",
                     "type": "array",
@@ -2791,6 +2854,11 @@
                         "type": "string"
                     }
                 },
+                "currentTask": {
+                    "description": "CurrentTask is the Ansible task the playbook is on, from the last\nTASK [...] line of the log so far, such as \"Wait until the service\nanswers\". Once the playbook ended it is the task it stopped on when it\ndid not succeed, and empty when it succeeded.",
+                    "type": "string",
+                    "example": "Wait until the service answers"
+                },
                 "error": {
                     "description": "Error is why the run could not be registered, started or followed.",
                     "type": "string"
@@ -2800,7 +2868,7 @@
                     "example": "2026-10-29T12:02:10Z"
                 },
                 "output": {
-                    "description": "Output is the task log, one line per entry. It is returned by\nGET /deployments/{id}/logs and left out of the deployment record.",
+                    "description": "Output is the task log, one line per entry: the log so far while the\ntask runs, then the whole log. It is returned by\nGET /deployments/{id}/logs and left out of the deployment record.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -2821,7 +2889,7 @@
                     "example": "2026-10-29T12:00:02Z"
                 },
                 "status": {
-                    "description": "Status is the final Semaphore task status: success, error, stopped or\nrejected, or empty when the task never started.",
+                    "description": "Status is the Semaphore task status: waiting, starting, running or\nstopping while the task runs (read every 5 seconds), then the final one,\nsuccess, error, stopped or rejected. Empty while the task is being\nregistered and when it never started. TaskID and TaskURL are set as soon\nas the task starts.",
                     "type": "string",
                     "example": "success"
                 },
@@ -2992,6 +3060,86 @@
                 }
             }
         },
+        "model.NodeDeploymentProgress": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Count is how many nodes are in each state.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeProgressCount"
+                        }
+                    ]
+                },
+                "createdAt": {
+                    "type": "string",
+                    "example": "2026-10-29T12:00:00Z"
+                },
+                "done": {
+                    "description": "Done is false while the service still works on the deployment\n(pending, deploying or removing) and true otherwise: polling can stop.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "elapsedSeconds": {
+                    "description": "ElapsedSeconds runs from createdAt to finishedAt (or removedAt once\ntaken down), or to now while the deployment is not done.",
+                    "type": "integer",
+                    "example": 312
+                },
+                "error": {
+                    "description": "Error is why the deployment as a whole stopped, when it did.",
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "description": "FinishedAt is when the last node finished deploying; RemovedAt when\ntaking it down ended.",
+                    "type": "string",
+                    "example": "2026-10-29T12:05:00Z"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
+                },
+                "nodes": {
+                    "description": "Nodes are the per node progress, in request order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NodeProgress"
+                    }
+                },
+                "removedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is the deployment status, as in GET /deployments/{id}.",
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "deploying",
+                        "running",
+                        "failed",
+                        "partial",
+                        "dry-run",
+                        "interrupted",
+                        "removing",
+                        "removed",
+                        "remove-failed"
+                    ],
+                    "example": "deploying"
+                },
+                "succeeded": {
+                    "description": "Succeeded is true when the deployment ended with its service up on\nevery node (running), or was a dry run (dry-run). Removing never counts\nas success: removed is Done without Succeeded.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "inference",
+                        "app"
+                    ],
+                    "example": "inference"
+                }
+            }
+        },
         "model.NodeDeploymentReq": {
             "type": "object",
             "required": [
@@ -3106,6 +3254,97 @@
                     "description": "SecurityGroupID is the CB-Tumblebug security group, in the namespace\nof the target.",
                     "type": "string",
                     "example": "etri-shared-aws-ap-northeast-2"
+                }
+            }
+        },
+        "model.NodeProgress": {
+            "type": "object",
+            "properties": {
+                "done": {
+                    "description": "Done is true once the node is no longer pending, deploying or removing.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "error": {
+                    "description": "Error is why the node failed.",
+                    "type": "string"
+                },
+                "host": {
+                    "description": "Host is the address the node was reached at (nodes[].node.host).",
+                    "type": "string",
+                    "example": "203.0.113.10"
+                },
+                "phase": {
+                    "description": "Phase is nodes[].phase of the record: where the node is, or where it\nfailed.",
+                    "type": "string",
+                    "example": "compose-up"
+                },
+                "phaseStartedAt": {
+                    "type": "string"
+                },
+                "ports": {
+                    "description": "Ports are the TCP ports the deployment serves on the node.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        8000
+                    ]
+                },
+                "serviceUrl": {
+                    "description": "ServiceURL is the inference API on the node (inference only).",
+                    "type": "string",
+                    "example": "http://203.0.113.10:8000/v1"
+                },
+                "status": {
+                    "description": "Status is the node status, as in GET /deployments/{id}.",
+                    "type": "string",
+                    "example": "deploying"
+                },
+                "step": {
+                    "description": "Step is the last playbook started on the node, without its log.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeDeployStep"
+                        }
+                    ]
+                },
+                "stepsDone": {
+                    "description": "StepsDone counts the playbooks of StepsTotal that succeeded. StepsTotal\nis 2 for a deployment (install-docker, then compose-up or\ncopy-and-run), 1 while or after taking it down (compose-down), and 0\nfor a dry run.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "stepsTotal": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "target": {
+                    "$ref": "#/definitions/model.NodeDeployTarget"
+                }
+            }
+        },
+        "model.NodeProgressCount": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "description": "Failed are failed, interrupted or remove-failed.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "inProgress": {
+                    "description": "InProgress are pending, deploying or removing.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "succeeded": {
+                    "description": "Succeeded are running or dry-run, or removed once taken down.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },

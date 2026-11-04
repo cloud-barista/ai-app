@@ -46,23 +46,22 @@ aiapp() {
 }
 
 # wait_deployment ID
-# Reads the deployment until its status is no longer pending, deploying or
-# removing, at most POLL_MAX times, and prints the last record.
+# Reads the progress of the deployment (GET /deployments/ID/progress) until
+# done, at most POLL_MAX times, printing the phase of every node on stderr,
+# and then prints the whole record.
 wait_deployment() {
-	local id=$1 i body status
+	local id=$1 i progress status
 	for ((i = 1; i <= POLL_MAX; i++)); do
-		body=$(AIAPP_QUIET=1 aiapp GET "/deployments/${id}")
-		status=$(jq -r '.status' <<<"$body")
-		case "$status" in
-		pending | deploying | removing)
-			echo "[$i/$POLL_MAX] $id $status" >&2
-			sleep "$POLL_INTERVAL"
-			;;
-		*)
-			printf '%s\n' "$body"
+		progress=$(AIAPP_QUIET=1 aiapp GET "/deployments/${id}/progress")
+		status=$(jq -r '.status' <<<"$progress")
+		if [ "$(jq -r '.done' <<<"$progress")" = true ]; then
+			AIAPP_QUIET=1 aiapp GET "/deployments/${id}"
 			return 0
-			;;
-		esac
+		fi
+		jq -r --arg n "[$i/$POLL_MAX]" '"\($n) \(.id) \(.status) \(.elapsedSeconds)s",
+			(.nodes[] | "  \(.target.nodeId) \(.phase // .status) \(.stepsDone)/\(.stepsTotal)"
+				+ (if .step.currentTask then " (\(.step.currentTask))" else "" end))' <<<"$progress" >&2
+		sleep "$POLL_INTERVAL"
 	done
 	echo "deployment $id still $status after $POLL_MAX reads; read it later with GET /deployments/$id" >&2
 	return 1
@@ -73,6 +72,7 @@ wait_deployment() {
 summarize_deployment() {
 	jq -r '"deployment \(.id) \(.type) status=\(.status) dryRun=\(.dryRun)",
 		(.nodes[] | "  \(.target.nsId)/\(.target.infraId)/\(.target.nodeId) \(.status)"
+			+ (if .phase then " phase=\(.phase)" else "" end)
 			+ (if .sshUser then " sshUser=\(.sshUser)" else "" end)
 			+ (if .serviceUrl then " serviceUrl=\(.serviceUrl)" else "" end)
 			+ (if .ports then " ports=\(.ports | map(tostring) | join(","))" else "" end)
