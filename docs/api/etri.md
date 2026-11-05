@@ -63,7 +63,15 @@ aws 에서는 이미지의 기본 사용자(`ec2-user`)가 같은 키로 접속�
 azure 마켓플레이스에서 플랜(구매 조건)이 붙은 이미지(예: CIQ 의 Rocky Linux 이미지)는 지금 CB-Tumblebug 으로 만들 수 없습니다.
 VM 생성이 `VMMarketplaceInvalidInput: ... requires Plan information in the request` 로 실패합니다. 플랜이 없는 이미지(AlmaLinux, RHEL 등)를 씁니다.
 
-### 2-1. 실제로 써 본 이미지 (2026-11-03)
+gcp 에서 GPU VM 을 만들 때 알아 둘 것이 둘 있습니다(vm3, `g2-standard-4` L4 로 확인).
+
+- 존마다 GPU 재고가 다릅니다. `us-west1-a`·`us-west1-b` 는 `does not have enough resources available ... (state:STOCKOUT)` 로 실패했고
+  `us-west1-c` 에서 만들어졌습니다. 재고가 없으면 같은 리전의 다른 존으로 다시 요청합니다.
+- 다른 존으로 다시 요청할 때는 **노드 그룹 이름을 바꿉니다.** CB-Tumblebug 은 노드 그룹 이름으로 보안 그룹(`<infra>-<그룹>`)을 만들고,
+  같은 이름이 이미 있으면 그것을 다시 씁니다. 처음 존의 vNet 에 만들어진 보안 그룹이 다른 존 vNet 의 VM 에는 적용되지 않아(GCP 방화벽은
+  네트워크 단위) SSH(22)가 막힙니다. AI-App 의 배포는 `install-docker` 의 연결 대기에서 실패합니다.
+
+### 2-1. 실제로 써 본 이미지
 
 CB-Tumblebug 0.13.8 의 `POST /ns/system/resources/searchImage` 에 `"isGPUImage": true` 를 넣어 고른 이미지입니다.
 
@@ -71,6 +79,7 @@ CB-Tumblebug 0.13.8 의 `POST /ns/system/resources/searchImage` 에 `"isGPUImage
 |---|---|---|---|---|
 | aws ap-northeast-1 | `g4dn.xlarge` (T4) | `ami-0e8e3e0f677c0f395` Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) | 595 | docker·compose·nvidia 런타임이 다 들어 있음. vLLM + Qwen3-Embedding 동작 |
 | azure koreacentral | `Standard_NC4as_T4_v3` (T4) | `microsoft-dsvm:ubuntu-hpc:2204:22.04.2026100101` | 580 | compose 플러그인이 없어 `moby-compose` 를 깖. Ollama 가 GPU 사용(초당 약 43 토큰) |
+| gcp us-west1 (`us-west1-c`) | `g2-standard-4` (L4) | `ubuntu-accelerator-2204-amd64-with-nvidia-595` (Canonical, Ubuntu 22.04) | 595 | docker 가 없어 AI-App 이 Docker apt 저장소로 설치(29.9.3, compose 5.7.0). vLLM + Ministral 3 8B 가 GPU 사용 |
 | azure koreacentral | `Standard_NC4as_T4_v3` | `microsoft-dsvm:ubuntu-2204:2204-gen2:25.06.18` | 535 | **쓰지 말 것.** 드라이버가 오래돼 Ollama 가 CPU 로 돎(초당 약 5 토큰) |
 
 VM 이 Running 이 된 직후에는 cloud-init 이 접속 사용자를 아직 만들지 않았을 수 있습니다. `install-docker` 가 접속될 때까지 최대 10분 기다립니다.
@@ -155,7 +164,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
   Ollama 가 GPU 를 못 찾으면 로그가 `msg="inference compute" id=cpu library=cpu compute="" name=cpu description=cpu ...` 이고
   실패 메시지에 이 줄이 찍힙니다. 엔진이 헬스 응답보다 조금 늦게 GPU 를 잡을 수 있어 5초 간격으로 6번까지 봅니다.
 - vm3 의 Ministral 은 `args` 를 주지 않아도 카탈로그 아티팩트의 `runtimes[].args`(`--max-model-len 32768` 과 mistral 형식 플래그)가
-  `vllm serve` 뒤에 붙습니다. aws g6.xlarge(L4 24GB)에서 이 인자 없이 띄웠더니 기본 최대 길이 262144 에 KV 캐시 34.0 GiB 가 필요한데 9.31 GiB 뿐이라는
+  `vllm serve` 뒤에 붙습니다. L4(24GB) 노드에서 이 인자 없이 띄웠더니 기본 최대 길이 262144 에 KV 캐시 34.0 GiB 가 필요한데 9.31 GiB 뿐이라는
   오류(`estimated maximum model length is 71760`)로 vLLM 이 뜨지 않았습니다. 다른 값을 쓰려면 `"args": ["--max-model-len", "16384"]` 처럼
   요청에 주면 카탈로그 인자 뒤에 붙어 덮어씁니다.
 - 세 노드를 한 요청에 넣을 수도 있지만(`targets` 여러 개), 모델이 노드마다 달라 위처럼 따로 보냅니다.

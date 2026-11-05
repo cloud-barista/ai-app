@@ -597,17 +597,16 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 
 env 값은 배포 기록과 노드의 `.env` 에 평문으로 남습니다(10절). 비밀번호를 넣을 때는 이 점을 알고 넣습니다.
 
-### 12-0. 시험한 노드 (2026-11-03)
+### 12-0. 시험한 노드
 
 아래 화면은 모두 이 노드 3대에서 찍었습니다. 값은 CB-Tumblebug 의 노드·스펙 조회와 노드 안의 명령(`uname -m`, `nvidia-smi`,
-`docker ps`)으로 확인한 것입니다. vm3 는 계획상 gcp `g2-standard-4`(L4) 이지만 gcp 서비스 계정 권한 문제로 일단 aws `g6.xlarge`(L4) 로
-진행했습니다.
+`docker ps`)으로 확인한 것입니다.
 
 | 노드 | CSP · 리전 (존) | 스펙 | 아키텍처 | 이미지 · OS | GPU 드라이버 · docker |
 |---|---|---|---|---|---|
 | vm1 (`vm1-2`) | aws `ap-northeast-1` 도쿄 (`ap-northeast-1a`) | `g4dn.xlarge`: 4 vCPU, 16 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `ami-0e8e3e0f677c0f395`, Ubuntu 22.04.5 LTS | 595.112.07 · 29.9.2 |
 | vm2 (`vm2b-2`) | azure `koreacentral` (존 1) | `Standard_NC4as_T4_v3`: 4 vCPU, 28 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `microsoft-dsvm:ubuntu-hpc:2204:22.04.2026100101`, Ubuntu 22.04.5 LTS | 580.178.04 · 29.8.1 |
-| vm3 (`vm3-2`) | aws `ap-northeast-1` 도쿄 (`ap-northeast-1a`) | `g6.xlarge`: 4 vCPU, 16 GiB, NVIDIA L4 1장(24 GB), 디스크 150 GB | x86_64 | `ami-0e8e3e0f677c0f395`, Ubuntu 22.04.5 LTS | 595.112.07 · 29.9.2 |
+| vm3 (`vm3gc-2`) | gcp `us-west1` (`us-west1-c`) | `g2-standard-4`: 4 vCPU, 16 GiB, NVIDIA L4 1장(24 GB), 디스크 150 GB | x86_64 | `ubuntu-accelerator-2204-amd64-with-nvidia-595`, Ubuntu 22.04.5 LTS | 595.91.07 · 29.9.3 (AI-App 이 설치) |
 
 | 노드 | 런타임 (엔진) 버전 | 모델 · 아티팩트 | 응용 · 버전 |
 |---|---|---|---|
@@ -644,7 +643,7 @@ vm1 의 모델은 임베딩 모델이라, Dify 의 **지식(Knowledge)** 기능�
 이 지식을 쓰는 대화 앱(검색한 단락을 붙여 LLM 이 답함)을 만들려면 대화 모델이 하나 더 있어야 합니다. 예를 들어 vm2 의 Ollama 나 vm3 의
 vLLM 을 같은 방법으로 LLM 공급자로 등록합니다.
 
-### 12-3. Langflow (aws vm3, vLLM + Ministral 3 8B)
+### 12-3. Langflow (gcp vm3, vLLM + Ministral 3 8B)
 
 `MODEL_BASE_URL=http://<vm3>:8000/v1` 로 배포했습니다(응용 버전 5). 배포 출력에 `created the Langflow global variable MODEL_BASE_URL` 이
 찍히고, Langflow 의 전역 변수 목록에 `MODEL_BASE_URL`(Generic)이 생깁니다. 관리자로 로그인해 흐름
@@ -672,5 +671,5 @@ OpenAI 컴포넌트의 `OpenAI API Base` 칸에 전역 변수 `MODEL_BASE_URL` �
 
 ![Langflow Playground 의 답](../figures/shots/langflow-playground.png)
 
-Playground 에서 일정을 물으면 4.6초 만에 답이 옵니다. 답의 내용(9시에 떠나 11시 30분에 도착한다면서 11시 경복궁이 무리 없다고 함)은
-모델의 몫이고 AI-App 이 고치지 않습니다.
+Playground 에서 일정을 물으면 5.6초 만에 답이 옵니다. 답의 내용(KTX 가 11시 30분쯤 도착하니 일정이 빠듯하다)은 모델의 몫이고, 같은 질문에도
+실행마다 판단이 달라질 수 있습니다. AI-App 은 답을 고치지 않습니다.

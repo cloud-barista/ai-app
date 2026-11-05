@@ -306,9 +306,7 @@ ETRI 가 제시한 여행 계획 통합 포털 시나리오. 포털은 별도 �
 |------|------|------|----------|------|------|
 | aws vm1 | 관광 문서 분석 (RAG) | Qwen3-Embedding-0.6B | HF `Qwen/Qwen3-Embedding-0.6B`, BF16 | vLLM | Dify |
 | azure vm2 | 이미지 분석·여행 계획 생성 | Qwen3-VL-8B | Ollama `qwen3-vl:8b` (GGUF, 6.2GB) | Ollama | Open WebUI |
-| aws vm3 | 일정 검증·외부 API·알림 (에이전트) | Ministral 3 8B | HF `mistralai/Ministral-3-8B-Instruct-2512`, FP8 | vLLM | Langflow |
-
-vm3 는 계획상 gcp `g2-standard-4`(L4) 이지만 gcp 권한 문제로 일단 aws `g6.xlarge`(L4) 로 진행했다.
+| gcp vm3 | 일정 검증·외부 API·알림 (에이전트) | Ministral 3 8B | HF `mistralai/Ministral-3-8B-Instruct-2512`, FP8 | vLLM | Langflow |
 
 HF 값은 `https://huggingface.co/api/models/<id>` 로 확인한 것이다(Qwen3-Embedding-0.6B `feature-extraction` BF16,
 Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8 가중치 + BF16 일부, 아키텍처

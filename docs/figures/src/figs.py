@@ -207,7 +207,7 @@ f.arrow("M740,490 L740,558", "green")
 f.box(1120, 150, 440, 110, "CB-Tumblebug", ["VM 생성 · 노드 제어"], "warn")
 f.box(1120, 400, 440, 110, "Semaphore", ["Ansible"], "relay")
 f.panel(1120, 620, 440, 250, "Tumblebug Infra (노드)", "gpu")
-for i, (n, sub) in enumerate([("aws vm1", "vLLM + Dify"), ("azure vm2", "Ollama + Open WebUI"), ("aws vm3", "vLLM + Langflow")]):
+for i, (n, sub) in enumerate([("aws vm1", "vLLM + Dify"), ("azure vm2", "Ollama + Open WebUI"), ("gcp vm3", "vLLM + Langflow")]):
     f.box(1145, 670 + i * 62, 390, 52, n + "   " + sub, None, "white", tsize=15)
 f.arrow("M340,240 L468,240", "blue", 3)
 label(f, 434, 230, "① 조회", "#1d4ed8", 14)
@@ -361,7 +361,7 @@ f.box(560, 130, 480, 90, "여행 계획 통합 포털", ["별도 노드, ETRI �
 nodes = [
     ("aws vm1", "관광 문서 분석 (RAG)", "Dify", "vLLM :8000", "Qwen3-Embedding-0.6B", "HF, BF16", "g4dn.xlarge T4"),
     ("azure vm2", "이미지 분석 · 여행 계획 생성", "Open WebUI", "Ollama :11434", "Qwen3-VL-8B", "Ollama qwen3-vl:8b, GGUF", "NC4as_T4_v3 T4"),
-    ("aws vm3", "일정 검증 · 외부 API · 알림", "Langflow", "vLLM :8000", "Ministral 3 8B", "HF, FP8", "g6.xlarge L4"),
+    ("gcp vm3", "일정 검증 · 외부 API · 알림", "Langflow", "vLLM :8000", "Ministral 3 8B", "HF, FP8", "g2-standard-4 L4"),
 ]
 for i, (n, role, app, rt, m, mf, spec) in enumerate(nodes):
     x = 60 + i * 510
@@ -375,7 +375,6 @@ for i, (n, role, app, rt, m, mf, spec) in enumerate(nodes):
     label(f, x + 245, 545, "Ollama API" if rt.startswith("Ollama") else "OpenAI 호환 API", "#1d4ed8", 14, 400, "start")
     f.add(f'<line x1="{x+235}" y1="670" x2="{x+235}" y2="720" stroke="#059669" stroke-width="3"/>')
     f.arrow(f"M800,220 L{x+235},288", "gray", 2.5)
-label(f, 1575, 885, "vm3 는 계획상 gcp g2-standard-4(L4) 이지만 gcp 권한 문제로 일단 aws g6.xlarge(L4) 로 진행했다", "#475569", 14, 400, "end")
 save(f, "07-travel-nodes")
 
 
