@@ -22,10 +22,17 @@ func listAppBundlesTool(apps *appstore.Store) Tool {
 		Grade: GradeRead,
 		Description: "List the uploaded AI applications, ordered by name, with every version: its number, the " +
 			"deployment script, the files it ships (name, size and SHA-256), the ports it serves and when it was uploaded. A node " +
-			"receiving a version gets the files in one folder and runs the script there.",
-		InputSchema: object(map[string]any{}),
+			"receiving a version gets the files in one folder and runs the script there. The list is paged: limit and " +
+			"offset pick the page in name order, total counts every application.",
+		InputSchema: object(withPage(map[string]any{})),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
-			return model.AppListResp{Apps: apps.List(ctx)}, nil
+			page, err := pageArgs(input)
+			if err != nil {
+				return nil, err
+			}
+			resp := model.AppListResp{}
+			resp.Apps, resp.Page = model.Paginate(apps.List(ctx), page)
+			return resp, nil
 		},
 	}
 }

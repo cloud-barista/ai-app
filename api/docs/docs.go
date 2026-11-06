@@ -26,7 +26,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first.",
+                "description": "List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first. The list is paged: limit and offset pick the page in name order, and total counts every application.",
                 "produces": [
                     "application/json"
                 ],
@@ -35,11 +35,33 @@ const docTemplate = `{
                 ],
                 "summary": "List AI applications",
                 "operationId": "GetAllApps",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Most applications to return, from 1 to 1000",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Applications to skip in name order, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "AI application list",
+                        "description": "AI applications ordered by name, one page of them with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/model.AppListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "limit is not from 1 to 1000, or offset is negative",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
                         }
                     }
                 }
@@ -270,7 +292,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List archived deployment and control runs, newest first. A record holds the instruction, every tool call with its arguments and the guard verdict",
+                "description": "List archived deployment and control runs, newest first. A record holds the instruction, every tool call with its arguments and the guard verdict. The list is paged: limit and offset pick the page, and total counts every record.",
                 "produces": [
                     "application/json"
                 ],
@@ -282,21 +304,28 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 20,
-                        "description": "How many records to return",
+                        "default": 100,
+                        "description": "Most records to return, from 1 to 1000",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Records to skip from the newest, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Archived runs",
+                        "description": "Archived runs, newest first, with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/model.ArchiveListResp"
                         }
                     },
                     "400": {
-                        "description": "Malformed limit",
+                        "description": "limit is not from 1 to 1000, or offset is negative or not a whole number",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -426,7 +455,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise.",
+                "description": "List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise. The list is paged after the filters: limit and offset pick the page, newest first, and total counts every deployment the filters keep.",
                 "produces": [
                     "application/json"
                 ],
@@ -469,13 +498,33 @@ const docTemplate = `{
                         "description": "Deployment status",
                         "name": "status",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Most deployments to return, from 1 to 1000",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Deployments to skip from the newest, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Deployments, newest first",
+                        "description": "Deployments, newest first, one page of them with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/model.NodeDeploymentListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "limit is not from 1 to 1000, or offset is negative",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
                         }
                     }
                 }
@@ -838,17 +887,31 @@ const docTemplate = `{
                         "description": "true: only the endpoints whose node is Running, with addresses; false: only the others",
                         "name": "available",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Most endpoints to return, from 1 to 1000",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Endpoints to skip, after the filters and in the order of nsId, infraId, nodeId and workKey, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Endpoints serving now",
+                        "description": "Endpoints serving now, one page of them with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/model.EndpointListResp"
                         }
                     },
                     "400": {
-                        "description": "available is not a boolean",
+                        "description": "available is not a boolean, limit is not from 1 to 1000, or offset is negative",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -895,7 +958,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it",
+                "description": "List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it. The list is paged: limit and offset pick the page, and total counts every run.",
                 "produces": [
                     "application/json"
                 ],
@@ -907,21 +970,28 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 20,
-                        "description": "How many runs to return",
+                        "default": 100,
+                        "description": "Most runs to return, from 1 to 1000",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Runs to skip from the newest, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Archived runs",
+                        "description": "Archived runs, newest first, with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/engine.RunListResp"
                         }
                     },
                     "400": {
-                        "description": "Malformed limit",
+                        "description": "limit is not from 1 to 1000, or offset is negative or not a whole number",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1073,7 +1143,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
+                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller. The list is paged after the filters: limit and offset pick the page in id order, and total counts every model the filters keep.",
                 "produces": [
                     "application/json"
                 ],
@@ -1139,17 +1209,31 @@ const docTemplate = `{
                         "description": "true: some artifact lists a runtime and can be deployed; false: none does",
                         "name": "deployable",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Most models to return, from 1 to 1000",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Models to skip in id order, 0 or more. Past the end gives an empty list",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "AI model list, ordered by id",
+                        "description": "AI models the filters keep, ordered by id, one page of them with total, limit and offset",
                         "schema": {
                             "$ref": "#/definitions/model.ModelListResp"
                         }
                     },
                     "400": {
-                        "description": "origin is not a known origin, or verified or deployable is not a boolean",
+                        "description": "origin is not a known origin, verified or deployable is not a boolean, limit is not from 1 to 1000, or offset is negative",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1943,11 +2027,26 @@ const docTemplate = `{
         "engine.RunListResp": {
             "type": "object",
             "properties": {
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
                 "runs": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/engine.Run"
                     }
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -2111,6 +2210,21 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.App"
                     }
+                },
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -2155,11 +2269,26 @@ const docTemplate = `{
         "model.ArchiveListResp": {
             "type": "object",
             "properties": {
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
                 "records": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.ArchiveRecord"
                     }
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -2453,6 +2582,21 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.Endpoint"
                     }
+                },
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -2582,11 +2726,26 @@ const docTemplate = `{
         "model.ModelListResp": {
             "type": "object",
             "properties": {
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
                 "models": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.Model"
                     }
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -3114,6 +3273,21 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.NodeDeployment"
                     }
+                },
+                "limit": {
+                    "description": "Limit is the most items one response holds.",
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "description": "Offset is how many items of the list come before the first one returned.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "description": "Total is how many items the filters keep, before the page is cut.",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },

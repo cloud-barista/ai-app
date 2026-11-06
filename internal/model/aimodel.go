@@ -158,6 +158,7 @@ type RuntimeCompat struct {
 // ModelListResp is the model catalog listing body.
 type ModelListResp struct {
 	Models []Model `json:"models"`
+	Page
 }
 
 // Validate reports why a Model cannot be registered.

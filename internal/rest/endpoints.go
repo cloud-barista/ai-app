@@ -27,8 +27,10 @@ import (
 // @Param infraId query string false "CB-Tumblebug Infra of the node"
 // @Param nodeId query string false "Node within the Infra"
 // @Param available query bool false "true: only the endpoints whose node is Running, with addresses; false: only the others"
-// @Success 200 {object} model.EndpointListResp "Endpoints serving now"
-// @Failure 400 {object} model.SimpleMsg "available is not a boolean"
+// @Param limit query int false "Most endpoints to return, from 1 to 1000" default(100)
+// @Param offset query int false "Endpoints to skip, after the filters and in the order of nsId, infraId, nodeId and workKey, 0 or more. Past the end gives an empty list" default(0)
+// @Success 200 {object} model.EndpointListResp "Endpoints serving now, one page of them with total, limit and offset"
+// @Failure 400 {object} model.SimpleMsg "available is not a boolean, limit is not from 1 to 1000, or offset is negative"
 // @Security BearerAuth
 // @Router /endpoints [get]
 func (h *Handler) RestGetAllEndpoints(c echo.Context) error {
@@ -46,5 +48,11 @@ func (h *Handler) RestGetAllEndpoints(c echo.Context) error {
 		}
 		filter.Available = &available
 	}
-	return c.JSON(http.StatusOK, model.EndpointListResp{Endpoints: h.nodeDeploy.Endpoints(ctx, filter)})
+	page, err := pageQuery(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
+	}
+	resp := model.EndpointListResp{}
+	resp.Endpoints, resp.Page = model.Paginate(h.nodeDeploy.Endpoints(ctx, filter), page)
+	return c.JSON(http.StatusOK, resp)
 }

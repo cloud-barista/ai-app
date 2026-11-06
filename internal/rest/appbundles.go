@@ -166,15 +166,24 @@ func rawFileName(fh *multipart.FileHeader) (string, error) {
 // RestGetAllAppBundles godoc
 // @ID GetAllApps
 // @Summary List AI applications
-// @Description List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first.
+// @Description List every uploaded AI application, ordered by name, with every version: its number, script, files (name, size and SHA-256), the ports it serves and upload time. Versions are listed oldest first. The list is paged: limit and offset pick the page in name order, and total counts every application.
 // @Tags [App] AI Applications
 // @Produce json
-// @Success 200 {object} model.AppListResp "AI application list"
+// @Param limit query int false "Most applications to return, from 1 to 1000" default(100)
+// @Param offset query int false "Applications to skip in name order, 0 or more. Past the end gives an empty list" default(0)
+// @Success 200 {object} model.AppListResp "AI applications ordered by name, one page of them with total, limit and offset"
+// @Failure 400 {object} model.SimpleMsg "limit is not from 1 to 1000, or offset is negative"
 // @Security BearerAuth
 // @Router /apps [get]
 func (h *Handler) RestGetAllAppBundles(c echo.Context) error {
 	ctx := c.Request().Context()
-	return c.JSON(http.StatusOK, model.AppListResp{Apps: h.apps.List(ctx)})
+	page, err := pageQuery(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
+	}
+	resp := model.AppListResp{}
+	resp.Apps, resp.Page = model.Paginate(h.apps.List(ctx), page)
+	return c.JSON(http.StatusOK, resp)
 }
 
 // RestGetAppBundle godoc

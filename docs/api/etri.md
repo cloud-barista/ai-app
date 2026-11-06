@@ -250,7 +250,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 
 ## 4. 포털이 주소를 찾는 법
 
-포털은 `GET /aiapp/endpoints` 하나로 지금 떠 있는 것을 다 읽습니다.
+포털은 `GET /aiapp/endpoints` 하나로 지금 떠 있는 것을 다 읽습니다. 한 번에 `limit`(기본 100, 최대 1000)개까지라, 응답의 `total` 이 더 크면 `offset` 을 늘려 다음 페이지를 읽습니다([README.md](README.md) 9-0절).
 
 ```sh
 curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel"

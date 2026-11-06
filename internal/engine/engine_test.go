@@ -662,9 +662,17 @@ func TestRunsAreArchived(t *testing.T) {
 	first := execute(t, e, WorkflowDeploy, modelRequest("vm1"))
 	second := execute(t, e, WorkflowHeal, HealInput{DeploymentID: "old"})
 
-	runs, err := e.ListRuns(0)
-	if err != nil || len(runs) != 2 || runs[0].RunID != second.RunID || runs[1].RunID != first.RunID {
-		t.Fatalf("ListRuns = %d runs, err %v, want the two runs newest first", len(runs), err)
+	runs, page, err := e.ListRuns(model.Page{Limit: model.DefaultPageLimit})
+	if err != nil || len(runs) != 2 || runs[0].RunID != second.RunID || runs[1].RunID != first.RunID || page.Total != 2 {
+		t.Fatalf("ListRuns = %d runs, %+v, err %v, want the two runs newest first", len(runs), page, err)
+	}
+	runs, page, err = e.ListRuns(model.Page{Limit: 1, Offset: 1})
+	if err != nil || len(runs) != 1 || runs[0].RunID != first.RunID || page != (model.Page{Total: 2, Limit: 1, Offset: 1}) {
+		t.Fatalf("ListRuns limit 1 offset 1 = %d runs, %+v, err %v, want the older run and total 2", len(runs), page, err)
+	}
+	runs, page, err = e.ListRuns(model.Page{Limit: 1, Offset: 5})
+	if err != nil || len(runs) != 0 || page.Total != 2 {
+		t.Fatalf("ListRuns offset past the end = %d runs, %+v, err %v, want none and total 2", len(runs), page, err)
 	}
 	got, err := e.GetRun(first.RunID)
 	if err != nil || got.Workflow != WorkflowDeploy || len(got.Steps) != 3 || got.Steps[1].Status != StepBlocked {
@@ -918,6 +926,55 @@ func TestHealLeavesADeploymentTakenDown(t *testing.T) {
 		want := "deployment old is " + status + "; a deployment taken down is not healed"
 		if got := run.Steps[0].Error; got != want {
 			t.Errorf("%s: read error = %q", status, got)
+		}
+	}
+}
+
+// pagingApp answers list_models with n models, one page at a time as the
+// AI-App service does.
+type pagingApp struct {
+	AppClient
+	n      int
+	inputs []map[string]any
+}
+
+func (p *pagingApp) Call(ctx context.Context, nsID, name string, input json.RawMessage) (any, error) {
+	var args map[string]any
+	if err := json.Unmarshal(input, &args); err != nil {
+		return nil, err
+	}
+	p.inputs = append(p.inputs, args)
+	all := make([]model.Model, p.n)
+	for i := range all {
+		all[i].ID = fmt.Sprintf("m-%04d", i)
+	}
+	limit, offset := int(args["limit"].(float64)), int(args["offset"].(float64))
+	page, err := model.NewPage(&limit, &offset)
+	if err != nil {
+		return nil, err
+	}
+	resp := model.ModelListResp{}
+	resp.Models, resp.Page = model.Paginate(all, page)
+	return resp, nil
+}
+
+func TestListAllReadsEveryPage(t *testing.T) {
+	app := &pagingApp{n: 2*model.MaxPageLimit + 5}
+	models, err := listAll(context.Background(), app, "ns", toolListModels, map[string]any{"task": "chat"},
+		func(raw json.RawMessage) ([]model.Model, model.Page, error) {
+			var resp model.ModelListResp
+			err := decodeRaw(raw, &resp)
+			return resp.Models, resp.Page, err
+		})
+	if err != nil || len(models) != app.n || models[0].ID != "m-0000" || models[app.n-1].ID != fmt.Sprintf("m-%04d", app.n-1) {
+		t.Fatalf("listAll = %d models, err %v, want all %d in order", len(models), err, app.n)
+	}
+	if len(app.inputs) != 3 {
+		t.Fatalf("list_models called %d times, want 3 pages", len(app.inputs))
+	}
+	for i, in := range app.inputs {
+		if in["offset"] != float64(i*model.MaxPageLimit) || in["limit"] != float64(model.MaxPageLimit) || in["task"] != "chat" {
+			t.Errorf("call %d input = %v, want the filter with limit %d and offset %d", i, in, model.MaxPageLimit, i*model.MaxPageLimit)
 		}
 	}
 }

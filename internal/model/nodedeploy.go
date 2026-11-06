@@ -551,6 +551,7 @@ type NodeDeployStep struct {
 type NodeDeploymentListResp struct {
 	// Deployments are ordered newest first, without task output.
 	Deployments []NodeDeployment `json:"deployments"`
+	Page
 }
 
 // NodeDeploymentLogs is the task output of one deployment.

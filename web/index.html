@@ -1038,6 +1038,33 @@ async function api(method, path, body) {
   };
 }
 
+/* Every list of the API is paged (limit 1 to 1000, 100 by default) and gives
+   total, the count of every item its filters keep. apiAll reads a list whole,
+   PAGE_MAX items a call, until it has total items, and answers as api does with
+   data[key] holding every item. A failed page answers that failure. */
+const PAGE_MAX = 1000;
+async function apiAll(path, key) {
+  const sep = path.includes('?') ? '&' : '?';
+  let all = [];
+  for (let offset = 0; ;) {
+    const r = await api('GET', `${path}${sep}limit=${PAGE_MAX}&offset=${offset}`);
+    if (!r.ok || !r.data) return r;
+    const got = r.data[key] || [];
+    all = all.concat(got);
+    offset += got.length;
+    if (!got.length || offset >= (r.data.total || 0)) {
+      r.data = { ...r.data, [key]: all, offset: 0, limit: all.length };
+      return r;
+    }
+  }
+}
+
+/* pageNote says how much of a paged list a count shows when it is not all. */
+function pageNote(data, shown) {
+  const total = data && data.total;
+  return typeof total === 'number' && total > shown ? ` (최근 ${shown} 건만 표시, 전체 ${total} 건)` : '';
+}
+
 /* formSummary is what the wire shows for a multipart body: each field, a file
    as its name and size, a long text cut short. */
 function formSummary(fd) {
@@ -1152,7 +1179,7 @@ async function loadOverview() {
     api('GET', '/readyz'), api('GET', '/tools'),
     api('GET', '/engine/readyz'), api('GET', '/engine/card'),
     api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card'),
-    api('GET', '/models'), api('GET', '/apps'), api('GET', '/deployments'), api('GET', '/status')]);
+    apiAll('/models', 'models'), apiAll('/apps', 'apps'), apiAll('/deployments', 'deployments'), api('GET', '/status')]);
   wire($('ov-wire'), engCard,
     'GET /readyz, /tools, /engine/readyz, /engine/card, /partner/nl/readyz, /partner/nl/card, /models, /apps, /deployments, /status 를 불렀습니다 (아래는 engine/card)');
   wire($('ov-deps-wire'), status);
@@ -1363,7 +1390,7 @@ function resetNewModel() {
 
 async function ensureModels() {
   if (MODELS_ALL.length) return;
-  const r = await api('GET', '/models');
+  const r = await apiAll('/models', 'models');
   if (r.ok) MODELS_ALL = (r.data && r.data.models) || [];
 }
 
@@ -1392,7 +1419,7 @@ async function loadModels() {
   const q = MODEL_FILTERS.filter((k) => $('md-f-' + k).value)
     .map((k) => k + '=' + encodeURIComponent($('md-f-' + k).value)).join('&');
   $('md-msg').textContent = '부르는 중...';
-  const r = await api('GET', '/models' + (q ? '?' + q : ''));
+  const r = await apiAll('/models' + (q ? '?' + q : ''), 'models');
   wire($('md-wire'), r);
   $('md-msg').textContent = '';
 
@@ -1556,7 +1583,7 @@ const latestOf = (a) => (a.versions || []).reduce((x, v) => (!x || v.version > x
 const bytesOf = (s) => new TextEncoder().encode(s || '').length;
 
 async function loadApps() {
-  const r = await api('GET', '/apps');
+  const r = await apiAll('/apps', 'apps');
   wire($('ap-wire'), r);
   if (!r.ok) { $('ap-list').innerHTML = failNote(r); $('ap-count').textContent = ''; return; }
 
@@ -1882,7 +1909,7 @@ function taskBadge(s) {
 
 async function loadDeployments() {
   loadEndpoints();
-  const r = await api('GET', '/deployments');
+  const r = await apiAll('/deployments', 'deployments');
   wire($('dp-list-wire'), r);
   if (!r.ok) { $('dp-list').innerHTML = failNote(r); $('dp-count').textContent = ''; return; }
 
@@ -1905,7 +1932,7 @@ async function loadDeployments() {
 }
 
 async function loadEndpoints() {
-  const r = await api('GET', '/endpoints');
+  const r = await apiAll('/endpoints', 'endpoints');
   wire($('ep-list-wire'), r);
   if (!r.ok) { $('ep-list').innerHTML = failNote(r); $('ep-count').textContent = ''; return; }
 
@@ -2184,7 +2211,7 @@ async function loadEnginePage() {
 }
 
 async function loadDeploymentIds() {
-  const r = await api('GET', '/deployments');
+  const r = await apiAll('/deployments', 'deployments');
   if (r.ok) { DEPS = (r.data && r.data.deployments) || []; fillDeploymentIds(DEPS); }
 }
 
@@ -2305,7 +2332,7 @@ async function loadEngineRuns() {
   if (!r.ok) { $('en-runs').innerHTML = failNote(r); $('en-runs-count').textContent = ''; return; }
 
   const runs = (r.data && r.data.runs) || [];
-  $('en-runs-count').textContent = runs.length + ' 건';
+  $('en-runs-count').textContent = runs.length + ' 건' + pageNote(r.data, runs.length);
   if (!runs.length) { $('en-runs').innerHTML = '<div class="empty">아직 엔진 실행이 없습니다.</div>'; return; }
 
   $('en-runs').innerHTML = `<table>
@@ -2348,7 +2375,7 @@ function workKeyOf(n, d) {
 }
 
 async function loadMonitor() {
-  const r = await api('GET', '/deployments');
+  const r = await apiAll('/deployments', 'deployments');
   wire($('mo-wire'), r);
   if (!r.ok) { $('mo-stats').innerHTML = failNote(r); $('mo-nodes').innerHTML = ''; return; }
 
@@ -2802,7 +2829,10 @@ async function loadArchive() {
   });
   rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
 
-  const bySrc = ARCHIVES.map((a, i) => `${a.label} ${rows.filter((x) => x._src === i).length}`).join(' · ');
+  const bySrc = ARCHIVES.map((a, i) => {
+    const shown = rows.filter((x) => x._src === i).length;
+    return `${a.label} ${shown}${results[i].ok ? pageNote(results[i].data, shown) : ''}`;
+  }).join(' · ');
   $('ar-count').textContent = rows.length + ' 건 (' + bySrc + ')';
 
   if (!rows.length) {

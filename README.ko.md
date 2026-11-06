@@ -223,6 +223,9 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 도구와 감사 | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | 자동화 엔진 (넘겨 줌) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |
 
+목록 경로(`GET /models`, `/apps`, `/deployments`, `/endpoints`, `/archive`, `/engine/runs`)와 MCP 목록 도구는 `limit`(기본 100, 1~1000)과 `offset`(기본 0)을 받고,
+필터를 거친 전체 수 `total` 을 함께 돌려줍니다. 범위 밖의 `limit` 이나 음수 `offset` 은 `400` 입니다. 자세한 것은 [API 가이드](docs/api/README.md) 9-0절입니다.
+
 배포 상태는 `pending`, `deploying`, `running`, `failed`, `partial`, `dry-run`, `interrupted`, `removing`, `removed`, `remove-failed` 입니다.
 노드는 런타임의 헬스 경로가 응답해야(GPU 노드면 런타임이 실제로 GPU 위에 있어야) `running` 이 되고,
 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 `running` 이 됩니다.

@@ -40,8 +40,6 @@ const (
 	// waiting for a deployment to end keeps asking, and how often.
 	defaultWaitTimeout  = 15 * time.Minute
 	defaultWaitInterval = 20 * time.Second
-	// defaultRunLimit bounds a run listing.
-	defaultRunLimit = 20
 )
 
 var (
@@ -162,7 +160,7 @@ func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQu
 	if err := e.app.Prepare(ctx); err != nil {
 		return nil, err
 	}
-	filter := map[string]string{}
+	filter := map[string]any{}
 	for name, value := range map[string]string{
 		"task": in.Task, "modality": in.Modality, "format": in.Format, "runtimeId": in.RuntimeID, "source": in.Source,
 	} {
@@ -170,31 +168,58 @@ func (e *Engine) ListApplications(ctx context.Context, nsID string, in CatalogQu
 			filter[name] = value
 		}
 	}
-	raw, err := callApp(ctx, e.app, nsID, toolListModels, filter)
+	models, err := listAll(ctx, e.app, nsID, toolListModels, filter, func(raw json.RawMessage) ([]model.Model, model.Page, error) {
+		var resp model.ModelListResp
+		err := decodeRaw(raw, &resp)
+		return resp.Models, resp.Page, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	var models model.ModelListResp
-	if err := decodeRaw(raw, &models); err != nil {
-		return nil, fmt.Errorf("%s: %w", toolListModels, err)
-	}
-	raw, err = callApp(ctx, e.app, nsID, toolListApps, map[string]any{})
+	apps, err := listAll(ctx, e.app, nsID, toolListApps, map[string]any{}, func(raw json.RawMessage) ([]model.App, model.Page, error) {
+		var resp model.AppListResp
+		err := decodeRaw(raw, &resp)
+		return resp.Apps, resp.Page, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	var apps model.AppListResp
-	if err := decodeRaw(raw, &apps); err != nil {
-		return nil, fmt.Errorf("%s: %w", toolListApps, err)
-	}
-	return summarizeCatalog(models.Models, apps.Apps), nil
+	return summarizeCatalog(models, apps), nil
 }
 
-// ListRuns reads the most recent runs, newest first.
-func (e *Engine) ListRuns(limit int) ([]Run, error) {
-	if limit <= 0 {
-		limit = defaultRunLimit
+// listAll calls a list tool of the AI-App service one page of
+// model.MaxPageLimit items at a time until it has every item the filters in
+// input keep, in the order of the list.
+func listAll[T any](ctx context.Context, app AppClient, nsID, tool string, input map[string]any,
+	items func(json.RawMessage) ([]T, model.Page, error)) ([]T, error) {
+	var all []T
+	for offset := 0; ; {
+		input["limit"], input["offset"] = model.MaxPageLimit, offset
+		raw, err := callApp(ctx, app, nsID, tool, input)
+		if err != nil {
+			return nil, err
+		}
+		got, page, err := items(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", tool, err)
+		}
+		all = append(all, got...)
+		offset += len(got)
+		if len(got) == 0 || offset >= page.Total {
+			return all, nil
+		}
 	}
-	return e.runs.List(limit)
+}
+
+// ListRuns reads the page p asks for of the archived runs, newest first, with
+// the total of runs.
+func (e *Engine) ListRuns(p model.Page) ([]Run, model.Page, error) {
+	runs, err := e.runs.List(0)
+	if err != nil {
+		return nil, p, err
+	}
+	page, p := model.Paginate(runs, p)
+	return page, p, nil
 }
 
 // GetRun reads one archived run.

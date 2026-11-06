@@ -23,17 +23,21 @@ AIAPP_URL=http://<AI-App 호스트>:8090/aiapp
 |---|---|
 | 시작할 때 연결 확인 | `GET /aiapp/status` |
 | 런타임 목록 | `GET /aiapp/runtimes` |
-| 모델 목록·상세 | `GET /aiapp/models` (필터 `task`, `modality`, `format`, `runtimeId`, `source`), `GET /aiapp/models/{modelId}` |
-| 응용 목록·상세 | `GET /aiapp/apps`, `GET /aiapp/apps/{name}`, `GET /aiapp/apps/{name}/versions/{version}` |
+| 모델 목록·상세 | `GET /aiapp/models` (필터 `task`, `modality`, `format`, `runtimeId`, `source`; 페이지 `limit`, `offset`), `GET /aiapp/models/{modelId}` |
+| 응용 목록·상세 | `GET /aiapp/apps?limit=&offset=`, `GET /aiapp/apps/{name}`, `GET /aiapp/apps/{name}/versions/{version}` |
 | 응용 업로드 | `POST /aiapp/apps` (multipart) |
 | 배포 요청 | `POST /aiapp/deployments` |
 | 배포 진행·완료 확인 | `GET /aiapp/deployments/{id}/progress` 를 `done` 이 `true` 가 될 때까지 |
 | 배포 기록 전체 | `GET /aiapp/deployments/{id}` |
-| 배포 목록 | `GET /aiapp/deployments?type=&nsId=&status=` |
+| 배포 목록 | `GET /aiapp/deployments?type=&nsId=&status=&limit=&offset=` |
 | 배포 로그 | `GET /aiapp/deployments/{id}/logs` |
-| 지금 떠 있는 것 | `GET /aiapp/endpoints?nsId=&infraId=&nodeId=&type=&available=` |
+| 지금 떠 있는 것 | `GET /aiapp/endpoints?nsId=&infraId=&nodeId=&type=&available=&limit=&offset=` |
 | 내리기 | `DELETE /aiapp/deployments/{id}` |
 | VM 정지·재개·재부팅·종료 | `POST /aiapp/deployments/{id}/control` |
+
+목록(모델, 응용, 배포, 주소)은 페이지로 나뉩니다. `limit` 은 기본 100, 1~1000 이고 `offset` 은 기본 0 입니다.
+응답의 `total` 이 필터를 거친 전체 수라서, 화면에는 "`total` 건 중 몇 건" 을 보여 주고 다음 페이지는 `offset` 에 `limit` 을 더해 부릅니다.
+자동 수집이 켜져 있으면 모델이 100 개를 넘으니 첫 페이지만 보고 전부라고 하지 않습니다. 자세한 것은 [README.md](README.md) 9-0절입니다.
 
 ## 3. 연결 확인
 

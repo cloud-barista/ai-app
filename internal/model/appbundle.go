@@ -68,6 +68,7 @@ type AppFile struct {
 // AppListResp is the application listing body.
 type AppListResp struct {
 	Apps []App `json:"apps"`
+	Page
 }
 
 // appNamePattern is what an application name may look like. Unlike a catalog

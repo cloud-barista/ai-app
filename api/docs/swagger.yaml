@@ -230,10 +230,24 @@ definitions:
     type: object
   engine.RunListResp:
     properties:
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
       runs:
         items:
           $ref: '#/definitions/engine.Run'
         type: array
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   engine.RunStatus:
     enum:
@@ -358,6 +372,20 @@ definitions:
         items:
           $ref: '#/definitions/model.App'
         type: array
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   model.AppVersion:
     properties:
@@ -398,10 +426,24 @@ definitions:
     type: object
   model.ArchiveListResp:
     properties:
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
       records:
         items:
           $ref: '#/definitions/model.ArchiveRecord'
         type: array
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   model.ArchiveRecord:
     properties:
@@ -682,6 +724,20 @@ definitions:
         items:
           $ref: '#/definitions/model.Endpoint'
         type: array
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   model.EndpointURL:
     properties:
@@ -807,10 +863,24 @@ definitions:
     type: object
   model.ModelListResp:
     properties:
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
       models:
         items:
           $ref: '#/definitions/model.Model'
         type: array
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   model.NodeAppReq:
     properties:
@@ -1327,6 +1397,20 @@ definitions:
         items:
           $ref: '#/definitions/model.NodeDeployment'
         type: array
+      limit:
+        description: Limit is the most items one response holds.
+        example: 100
+        type: integer
+      offset:
+        description: Offset is how many items of the list come before the first one
+          returned.
+        example: 0
+        type: integer
+      total:
+        description: Total is how many items the filters keep, before the page is
+          cut.
+        example: 1
+        type: integer
     type: object
   model.NodeDeploymentLogs:
     properties:
@@ -2163,15 +2247,33 @@ paths:
     get:
       description: 'List every uploaded AI application, ordered by name, with every
         version: its number, script, files (name, size and SHA-256), the ports it
-        serves and upload time. Versions are listed oldest first.'
+        serves and upload time. Versions are listed oldest first. The list is paged:
+        limit and offset pick the page in name order, and total counts every application.'
       operationId: GetAllApps
+      parameters:
+      - default: 100
+        description: Most applications to return, from 1 to 1000
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Applications to skip in name order, 0 or more. Past the end gives
+          an empty list
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: AI application list
+          description: AI applications ordered by name, one page of them with total,
+            limit and offset
           schema:
             $ref: '#/definitions/model.AppListResp'
+        "400":
+          description: limit is not from 1 to 1000, or offset is negative
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
       security:
       - BearerAuth: []
       summary: List AI applications
@@ -2344,24 +2446,33 @@ paths:
       - '[App] AI Applications'
   /archive:
     get:
-      description: List archived deployment and control runs, newest first. A record
-        holds the instruction, every tool call with its arguments and the guard verdict
+      description: 'List archived deployment and control runs, newest first. A record
+        holds the instruction, every tool call with its arguments and the guard verdict.
+        The list is paged: limit and offset pick the page, and total counts every
+        record.'
       operationId: GetArchive
       parameters:
-      - default: 20
-        description: How many records to return
+      - default: 100
+        description: Most records to return, from 1 to 1000
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Records to skip from the newest, 0 or more. Past the end gives
+          an empty list
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Archived runs
+          description: Archived runs, newest first, with total, limit and offset
           schema:
             $ref: '#/definitions/model.ArchiveListResp'
         "400":
-          description: Malformed limit
+          description: limit is not from 1 to 1000, or offset is negative or not a
+            whole number
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
@@ -2461,12 +2572,13 @@ paths:
       - '[Model] AI Model Catalog'
   /deployments:
     get:
-      description: List the deployments made through POST /deployments, newest first,
+      description: 'List the deployments made through POST /deployments, newest first,
         with the status of every node. Each filter is optional and matched exactly;
         all given filters must match. nsId matches a deployment when any of its targets
         is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs.
         Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory
-        otherwise.
+        otherwise. The list is paged after the filters: limit and offset pick the
+        page, newest first, and total counts every deployment the filters keep.'
       operationId: GetAllNodeDeployments
       parameters:
       - description: Deployment type
@@ -2495,13 +2607,29 @@ paths:
         in: query
         name: status
         type: string
+      - default: 100
+        description: Most deployments to return, from 1 to 1000
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Deployments to skip from the newest, 0 or more. Past the end
+          gives an empty list
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Deployments, newest first
+          description: Deployments, newest first, one page of them with total, limit
+            and offset
           schema:
             $ref: '#/definitions/model.NodeDeploymentListResp'
+        "400":
+          description: limit is not from 1 to 1000, or offset is negative
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
       security:
       - BearerAuth: []
       summary: List deployments onto nodes
@@ -2782,15 +2910,28 @@ paths:
         in: query
         name: available
         type: boolean
+      - default: 100
+        description: Most endpoints to return, from 1 to 1000
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Endpoints to skip, after the filters and in the order of nsId,
+          infraId, nodeId and workKey, 0 or more. Past the end gives an empty list
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Endpoints serving now
+          description: Endpoints serving now, one page of them with total, limit and
+            offset
           schema:
             $ref: '#/definitions/model.EndpointListResp'
         "400":
-          description: available is not a boolean
+          description: available is not a boolean, limit is not from 1 to 1000, or
+            offset is negative
           schema:
             $ref: '#/definitions/model.SimpleMsg'
       security:
@@ -2823,24 +2964,32 @@ paths:
       - '[Engine] AI Application Automation Engine'
   /engine/runs:
     get:
-      description: List archived engine runs, newest first, each with every step,
-        its input and result, and whether the dry-run gate held it
+      description: 'List archived engine runs, newest first, each with every step,
+        its input and result, and whether the dry-run gate held it. The list is paged:
+        limit and offset pick the page, and total counts every run.'
       operationId: GetEngineRuns
       parameters:
-      - default: 20
-        description: How many runs to return
+      - default: 100
+        description: Most runs to return, from 1 to 1000
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Runs to skip from the newest, 0 or more. Past the end gives an
+          empty list
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Archived runs
+          description: Archived runs, newest first, with total, limit and offset
           schema:
             $ref: '#/definitions/engine.RunListResp'
         "400":
-          description: Malformed limit
+          description: limit is not from 1 to 1000, or offset is negative or not a
+            whole number
           schema:
             $ref: '#/definitions/model.SimpleMsg'
         "500":
@@ -2957,7 +3106,9 @@ paths:
         and source match an artifact, and a model is listed only when one of its artifacts
         matches all three of them at once. Values are returned as the source states
         them: an absent contextLength, sizeGiB or precision means unknown, not zero.
-        Sizing nodes from these values is left to the caller.'
+        Sizing nodes from these values is left to the caller. The list is paged after
+        the filters: limit and offset pick the page in id order, and total counts
+        every model the filters keep.'
       operationId: GetAllModels
       parameters:
       - description: Model task, such as chat, vision-chat or embedding
@@ -3003,16 +3154,28 @@ paths:
         in: query
         name: deployable
         type: boolean
+      - default: 100
+        description: Most models to return, from 1 to 1000
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Models to skip in id order, 0 or more. Past the end gives an
+          empty list
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: AI model list, ordered by id
+          description: AI models the filters keep, ordered by id, one page of them
+            with total, limit and offset
           schema:
             $ref: '#/definitions/model.ModelListResp'
         "400":
-          description: origin is not a known origin, or verified or deployable is
-            not a boolean
+          description: origin is not a known origin, verified or deployable is not
+            a boolean, limit is not from 1 to 1000, or offset is negative
           schema:
             $ref: '#/definitions/model.SimpleMsg'
       security:

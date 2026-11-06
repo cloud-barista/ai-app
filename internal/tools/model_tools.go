@@ -30,8 +30,9 @@ func listModelsTool(models *modelcat.Store) Tool {
 			"set), verified=false the others. An artifact with no runtimes cannot be deployed: its deployable is " +
 			"false, and a model is deployable when some artifact is; deployable=true keeps the deployable models, " +
 			"deployable=false the others. An absent " +
-			"contextLength, sizeGiB or precision means unknown, not zero.",
-		InputSchema: object(map[string]any{
+			"contextLength, sizeGiB or precision means unknown, not zero. The list is ordered by id and paged after the filters: limit and offset pick the page, total counts every " +
+			"model the filters keep.",
+		InputSchema: object(withPage(map[string]any{
 			"task":      stringProp("Model task, such as chat, vision-chat or embedding"),
 			"modality":  stringProp("Input modality the model accepts, such as text or image"),
 			"format":    stringProp("Artifact file format: hf (Hugging Face safetensors) or gguf"),
@@ -43,7 +44,7 @@ func listModelsTool(models *modelcat.Store) Tool {
 				"has deployed on a runtime, false the others"},
 			"deployable": map[string]any{"type": "boolean", "description": "true keeps models with an artifact that " +
 				"lists a runtime, false the others"},
-		}),
+		})),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var args modelcat.Filter
 			if len(input) > 0 {
@@ -65,7 +66,13 @@ func listModelsTool(models *modelcat.Store) Tool {
 				}
 				args = modelcat.Filter(raw)
 			}
-			return model.ModelListResp{Models: models.List(ctx, args)}, nil
+			page, err := pageArgs(input)
+			if err != nil {
+				return nil, err
+			}
+			resp := model.ModelListResp{}
+			resp.Models, resp.Page = model.Paginate(models.List(ctx, args), page)
+			return resp, nil
 		},
 	}
 }

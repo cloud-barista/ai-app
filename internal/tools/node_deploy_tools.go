@@ -138,12 +138,13 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 		Grade: GradeRead,
 		Description: "List the deployments made by create_deployment, newest first, with the status of every node. " +
 			"Every filter is optional and matched exactly; nsId matches a deployment when any of its targets is in " +
-			"that namespace. Task output is left out.",
-		InputSchema: object(map[string]any{
+			"that namespace. Task output is left out. The list is paged after the filters: limit and offset pick the " +
+			"page, newest first, and total counts every deployment the filters keep.",
+		InputSchema: object(withPage(map[string]any{
 			"type":   enumProp("Deployment type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"nsId":   stringProp("CB-Tumblebug namespace of any target"),
 			"status": stringProp("Deployment status: pending, deploying, running, failed, partial, dry-run, interrupted, removing, removed or remove-failed"),
-		}),
+		})),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var filter nodedeploy.ListFilter
 			if len(input) > 0 {
@@ -157,7 +158,13 @@ func listNodeDeploymentsTool(svc *nodedeploy.Service) Tool {
 				}
 				filter = nodedeploy.ListFilter(raw)
 			}
-			return model.NodeDeploymentListResp{Deployments: svc.List(ctx, filter)}, nil
+			page, err := pageArgs(input)
+			if err != nil {
+				return nil, err
+			}
+			resp := model.NodeDeploymentListResp{}
+			resp.Deployments, resp.Page = model.Paginate(svc.List(ctx, filter), page)
+			return resp, nil
 		},
 	}
 }
@@ -178,14 +185,14 @@ func listEndpointsTool(svc *nodedeploy.Service) Tool {
 			"compatible API) and healthUrl; an app endpoint has name, version and one url per port. portsOpened says " +
 			"whether every port was opened in the node's security groups; portsError and notes say why not. Every " +
 			"filter is optional and matched exactly.",
-		InputSchema: object(map[string]any{
+		InputSchema: object(withPage(map[string]any{
 			"nsId":    stringProp("CB-Tumblebug namespace of the node"),
 			"type":    enumProp("Endpoint type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"infraId": stringProp("CB-Tumblebug Infra of the node"),
 			"nodeId":  stringProp("Node within the Infra"),
 			"available": map[string]any{"type": "boolean", "description": "true keeps the endpoints whose node is " +
 				"Running, with addresses; false keeps the others"},
-		}),
+		})),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var filter nodedeploy.EndpointFilter
 			if len(input) > 0 {
@@ -201,7 +208,13 @@ func listEndpointsTool(svc *nodedeploy.Service) Tool {
 				}
 				filter = nodedeploy.EndpointFilter(raw)
 			}
-			return model.EndpointListResp{Endpoints: svc.Endpoints(ctx, filter)}, nil
+			page, err := pageArgs(input)
+			if err != nil {
+				return nil, err
+			}
+			resp := model.EndpointListResp{}
+			resp.Endpoints, resp.Page = model.Paginate(svc.Endpoints(ctx, filter), page)
+			return resp, nil
 		},
 	}
 }

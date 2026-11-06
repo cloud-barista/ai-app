@@ -44,4 +44,5 @@ type TokenUsage struct {
 // ArchiveListResp is the archive listing body.
 type ArchiveListResp struct {
 	Records []ArchiveRecord `json:"records"`
+	Page
 }

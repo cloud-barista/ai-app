@@ -112,4 +112,5 @@ type EndpointURL struct {
 type EndpointListResp struct {
 	// Endpoints are ordered by nsId, infraId, nodeId and workKey.
 	Endpoints []Endpoint `json:"endpoints"`
+	Page
 }

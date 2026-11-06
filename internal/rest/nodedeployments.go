@@ -59,13 +59,16 @@ func (h *Handler) RestPostNodeDeployment(c echo.Context) error {
 // RestGetAllNodeDeployments godoc
 // @ID GetAllNodeDeployments
 // @Summary List deployments onto nodes
-// @Description List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise.
+// @Description List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise. The list is paged after the filters: limit and offset pick the page, newest first, and total counts every deployment the filters keep.
 // @Tags [Deployment] Node Deployment
 // @Produce json
 // @Param type query string false "Deployment type" Enums(inference, app)
 // @Param nsId query string false "CB-Tumblebug namespace of any target"
 // @Param status query string false "Deployment status" Enums(pending, deploying, running, failed, partial, dry-run, interrupted, removing, removed, remove-failed)
-// @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first"
+// @Param limit query int false "Most deployments to return, from 1 to 1000" default(100)
+// @Param offset query int false "Deployments to skip from the newest, 0 or more. Past the end gives an empty list" default(0)
+// @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first, one page of them with total, limit and offset"
+// @Failure 400 {object} model.SimpleMsg "limit is not from 1 to 1000, or offset is negative"
 // @Security BearerAuth
 // @Router /deployments [get]
 func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
@@ -75,7 +78,13 @@ func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
 		NsID:   c.QueryParam("nsId"),
 		Status: c.QueryParam("status"),
 	}
-	return c.JSON(http.StatusOK, model.NodeDeploymentListResp{Deployments: h.nodeDeploy.List(ctx, filter)})
+	page, err := pageQuery(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
+	}
+	resp := model.NodeDeploymentListResp{}
+	resp.Deployments, resp.Page = model.Paginate(h.nodeDeploy.List(ctx, filter), page)
+	return c.JSON(http.StatusOK, resp)
 }
 
 // RestGetNodeDeployment godoc

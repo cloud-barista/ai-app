@@ -66,26 +66,28 @@ func (h *Handler) RestPostEngineWorkflow(c echo.Context) error {
 // RestGetEngineRuns godoc
 // @ID GetEngineRuns
 // @Summary List automation engine runs
-// @Description List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it
+// @Description List archived engine runs, newest first, each with every step, its input and result, and whether the dry-run gate held it. The list is paged: limit and offset pick the page, and total counts every run.
 // @Tags [Engine] AI Application Automation Engine
 // @Produce json
-// @Param limit query int false "How many runs to return" default(20)
-// @Success 200 {object} engine.RunListResp "Archived runs"
-// @Failure 400 {object} model.SimpleMsg "Malformed limit"
+// @Param limit query int false "Most runs to return, from 1 to 1000" default(100)
+// @Param offset query int false "Runs to skip from the newest, 0 or more. Past the end gives an empty list" default(0)
+// @Success 200 {object} engine.RunListResp "Archived runs, newest first, with total, limit and offset"
+// @Failure 400 {object} model.SimpleMsg "limit is not from 1 to 1000, or offset is negative or not a whole number"
 // @Failure 500 {object} model.SimpleMsg "Archive lookup failed"
 // @Security BearerAuth
 // @Router /engine/runs [get]
 func (h *Handler) RestGetEngineRuns(c echo.Context) error {
-	limit, err := intQueryParam(c, "limit")
+	page, err := pageQuery(c)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: "Limit must be a whole number"})
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
 	}
-	runs, err := h.engine.ListRuns(limit)
+	resp := engine.RunListResp{}
+	resp.Runs, resp.Page, err = h.engine.ListRuns(page)
 	if err != nil {
-		log.Error().Err(err).Int("limit", limit).Msg("Failed to list engine runs")
+		log.Error().Err(err).Msg("Failed to list engine runs")
 		return c.JSON(http.StatusInternalServerError, model.SimpleMsg{Message: "Archive lookup failed"})
 	}
-	return c.JSON(http.StatusOK, engine.RunListResp{Runs: runs})
+	return c.JSON(http.StatusOK, resp)
 }
 
 // RestGetEngineRun godoc

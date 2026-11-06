@@ -75,6 +75,7 @@ type Run struct {
 // RunListResp is the engine run listing body.
 type RunListResp struct {
 	Runs []Run `json:"runs"`
+	model.Page
 }
 
 // DeployInput is the node deployment request create_deployment takes: an

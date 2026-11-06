@@ -241,6 +241,9 @@ All paths are under `/aiapp`. Field level documentation is in Swagger (`/aiapp/a
 | Tools and audit | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | Automation engine (forwarded) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |
 
+Every list route (`GET /models`, `/apps`, `/deployments`, `/endpoints`, `/archive`, `/engine/runs`) and the MCP list tools take `limit` (default 100, 1 to 1000) and `offset` (default 0),
+and answer with `total`, the count after the filters. A limit out of range or a negative offset is `400`. See the [API guide](docs/api/README.md) section 9-0.
+
 Deployment states: `pending`, `deploying`, `running`, `failed`, `partial`, `dry-run`, `interrupted`, `removing`, `removed`, `remove-failed`.
 A node becomes `running` only when the runtime's health path answers (and, on GPU nodes, the runtime is actually on the GPU),
 or for an app when its ports answer HTTP and its containers stay up without restarts.

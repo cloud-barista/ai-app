@@ -407,6 +407,38 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 
 모든 경로는 `/aiapp` 아래입니다. 요청·응답 필드는 Swagger(`/aiapp/api/index.html`, 파일은 `api/docs/swagger.yaml`)에 있습니다.
 
+### 9-0. 목록은 페이지로 나뉜다
+
+목록 API 는 모두 쿼리 `limit`, `offset` 을 받고 응답에 `total` 을 붙입니다.
+대상은 `GET /aiapp/models`, `/aiapp/apps`, `/aiapp/deployments`, `/aiapp/endpoints`, `/aiapp/archive`, `/aiapp/engine/runs` 와
+MCP 도구 `list_models`, `list_apps`, `list_node_deployments`, `list_endpoints`(입력 `limit`, `offset`)입니다.
+
+| 값 | 뜻 |
+|---|---|
+| `limit` | 한 번에 받을 수. 기본 100, 1~1000. 0, 음수, 1000 초과, 숫자가 아니면 `400` (메시지에 범위가 나옴) |
+| `offset` | 앞에서 건너뛸 수. 기본 0. 음수나 숫자가 아니면 `400`. 끝을 넘으면 빈 목록과 `total` |
+| `total` | 필터를 거친 뒤, 페이지로 자르기 전의 전체 수 |
+
+필터를 먼저 적용하고, 각 목록의 원래 순서에서 자릅니다.
+
+| 목록 | 순서 |
+|---|---|
+| `models` | `id` 순 |
+| `apps` | `name` 순 |
+| `deployments` | 최신순 (`createdAt` 내림차순, 같으면 `id` 순) |
+| `endpoints` | `nsId`, `infraId`, `nodeId`, `workKey` 순 |
+| `archive` 의 `records`, `engine/runs` 의 `runs` | 최신순 (기록된 순서의 역순) |
+
+응답은 원래 배열 필드에 `total`, `limit`, `offset` 이 더해진 모양입니다.
+
+```sh
+curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/models?limit=2&offset=1" | jq '{total, limit, offset, ids: [.models[].id]}'
+# 다음 페이지는 offset 에 limit 을 더해서. offset >= total 이면 끝
+```
+
+자동 수집이 켜져 있으면 모델이 100 개를 쉽게 넘으므로 `limit` 만 믿고 전부 받았다고 보지 말고 `total` 과 견줍니다.
+자동화 엔진의 카탈로그 조회(`list_applications`)는 `total` 에 닿을 때까지 1000 개씩 나눠 받습니다.
+
 ### 9-1. 상태
 
 | 메서드 | 경로 | 하는 일 |
@@ -420,13 +452,13 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 |---|---|---|
 | GET | `/aiapp/runtimes` | 런타임 목록 (`id`, `image`, `formats`, `port`, `healthPath`, `apiBasePath`) |
 | GET | `/aiapp/runtimes/{runtimeId}` | 런타임 하나 |
-| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable` |
+| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable`. `id` 순, 페이지 `limit`·`offset`·`total` (9-0) |
 | POST | `/aiapp/models` | 모델 등록. 같은 `id` 면 바꿔 씀. 언제나 `origin: manual` 로 저장되고 수집이 더는 건드리지 않음 |
 | GET | `/aiapp/models/{modelId}` | 모델 하나 |
 | DELETE | `/aiapp/models/{modelId}` | 모델 삭제. 이미 떠 있는 추론 서비스는 그대로 |
 | GET | `/aiapp/models/{modelId}/artifacts/{artifactId}/compose` | 노드에 갈 compose 파일 미리 보기 (쿼리 `runtimeId`, `gpu`, 되풀이하는 `arg`) |
 | POST | `/aiapp/apps` | 응용 업로드 (multipart: `name`, `script`, `files` 여러 개, `ports`). 같은 이름이면 다음 버전 |
-| GET | `/aiapp/apps` | 응용 목록 (버전, 파일, 포트) |
+| GET | `/aiapp/apps` | 응용 목록 (버전, 파일, 포트). `name` 순, 페이지 (9-0) |
 | GET | `/aiapp/apps/{name}` | 응용 하나 (모든 버전) |
 | GET | `/aiapp/apps/{name}/versions/{version}` | 응용 한 버전 |
 | DELETE | `/aiapp/apps/{name}` | 응용 삭제 (모든 버전). 노드에 올라간 것은 그대로 |
@@ -496,13 +528,13 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | 메서드 | 경로 | 하는 일 |
 |---|---|---|
 | POST | `/aiapp/deployments` | 추론 서비스(`type: inference`) 또는 응용(`type: app`)을 노드에 배포. `202`, dry-run 이면 `200` |
-| GET | `/aiapp/deployments` | 배포 목록 (최신순). 필터 `type`, `nsId`, `status` |
+| GET | `/aiapp/deployments` | 배포 목록 (최신순). 필터 `type`, `nsId`, `status`. 페이지 (9-0) |
 | GET | `/aiapp/deployments/{id}` | 배포 기록 하나 (노드별 상태, `phase`, 주소, 단계, 연 포트) |
 | GET | `/aiapp/deployments/{id}/progress` | 배포 진행 요약. 끝났는지(`done`), 서비스가 떴는지(`running`), 노드별 `phase`·현재 단계·Ansible 태스크. 폴링용 (7-1절) |
 | GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력과 `taskUrl`. 도는 중인 단계는 그때까지의 출력 |
 | DELETE | `/aiapp/deployments/{id}` | 노드에서 내림 (`docker compose down`, named volume 유지) |
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`·`resume`·`reboot`·`terminate`). `terminate` 는 VM 을 지움 |
-| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). vLLM 이면 `apiKey`. 필터 `nsId`, `infraId`, `nodeId`, `type`, `available` |
+| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). vLLM 이면 `apiKey`. 필터 `nsId`, `infraId`, `nodeId`, `type`, `available`. 페이지 (9-0) |
 
 ### 9-4. 추천 (자리만)
 
@@ -519,7 +551,7 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | GET | `/aiapp/api/*` | Swagger UI |
 | GET | `/aiapp/tools` | MCP 도구 목록과 등급, dry-run 상태 |
 | (any) | `/aiapp/mcp` | 같은 도구의 MCP 서버 (Streamable HTTP) |
-| GET | `/aiapp/archive` | 배포·제어 아카이브 목록 |
+| GET | `/aiapp/archive` | 배포·제어 아카이브 목록 (최신순). 페이지 (9-0) |
 | GET | `/aiapp/archive/{runId}` | 아카이브 한 건 |
 | (any) | `/aiapp/engine/*` | 자동화 엔진으로 넘김 |
 | (any) | `/aiapp/partner/nl/*` | 자연어 에이전트(모의)로 넘김 |

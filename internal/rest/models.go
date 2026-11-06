@@ -17,7 +17,7 @@ import (
 // RestGetAllModels godoc
 // @ID GetAllModels
 // @Summary List AI models
-// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.
+// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller. The list is paged after the filters: limit and offset pick the page in id order, and total counts every model the filters keep.
 // @Tags [Model] AI Model Catalog
 // @Produce json
 // @Param task query string false "Model task, such as chat, vision-chat or embedding"
@@ -27,9 +27,11 @@ import (
 // @Param source query string false "Artifact source, such as huggingface or ollama"
 // @Param origin query string false "Who put the model in the catalog. An absent origin is read as manual" Enums(seed,manual,huggingface,ollama,docker-model-runner,ngc,kaggle)
 // @Param verified query bool false "true: an inference deployment of some artifact succeeded on some runtime (runtimes[].verifiedAt set); false: none did"
-// @Success 200 {object} model.ModelListResp "AI model list, ordered by id"
+// @Success 200 {object} model.ModelListResp "AI models the filters keep, ordered by id, one page of them with total, limit and offset"
 // @Param deployable query bool false "true: some artifact lists a runtime and can be deployed; false: none does"
-// @Failure 400 {object} model.SimpleMsg "origin is not a known origin, or verified or deployable is not a boolean"
+// @Param limit query int false "Most models to return, from 1 to 1000" default(100)
+// @Param offset query int false "Models to skip in id order, 0 or more. Past the end gives an empty list" default(0)
+// @Failure 400 {object} model.SimpleMsg "origin is not a known origin, verified or deployable is not a boolean, limit is not from 1 to 1000, or offset is negative"
 // @Security BearerAuth
 // @Router /models [get]
 func (h *Handler) RestGetAllModels(c echo.Context) error {
@@ -59,7 +61,13 @@ func (h *Handler) RestGetAllModels(c echo.Context) error {
 		}
 		filter.Deployable = &deployable
 	}
-	return c.JSON(http.StatusOK, model.ModelListResp{Models: h.models.List(ctx, filter)})
+	page, err := pageQuery(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
+	}
+	resp := model.ModelListResp{}
+	resp.Models, resp.Page = model.Paginate(h.models.List(ctx, filter), page)
+	return c.JSON(http.StatusOK, resp)
 }
 
 // RestPostModel godoc
