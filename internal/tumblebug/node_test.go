@@ -172,6 +172,18 @@ func TestResolveNodeAccess(t *testing.T) {
 				CSP: "azure", Region: "koreacentral", Zone: "1"},
 		},
 		{
+			name: "the node's zone wins over the connection's default zone",
+			node: Node{
+				ID: "n", PublicIP: "198.51.100.2", NodeUserName: "cb-user",
+				ConnectionConfig: NodeConnConfig{ProviderName: "GCP",
+					RegionZoneInfo: RegionZoneInfo{AssignedRegion: "us-west1", AssignedZone: "us-west1-a"}},
+				Region: NodeRegion{Region: "us-west1", Zone: "us-west1-c"},
+			},
+			key: &SSHKey{ID: "k", PrivateKey: testPrivateKey},
+			want: NodeAccess{Host: "198.51.100.2", Port: 22, User: "cb-user", PrivateKey: testPrivateKey,
+				CSP: "gcp", Region: "us-west1", Zone: "us-west1-c"},
+		},
+		{
 			name: "key user name when nothing was verified",
 			node: Node{ID: "n", PublicIP: "198.51.100.1", SSHPort: 2222, ConnectionConfig: NodeConnConfig{ProviderName: "gcp"}},
 			key:  &SSHKey{ID: "k", Username: "key-user", PrivateKey: testPrivateKey},

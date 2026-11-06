@@ -255,8 +255,11 @@ func ResolveNodeAccess(node *Node, key *SSHKey) (*NodeAccess, error) {
 		User:       user,
 		PrivateKey: key.PrivateKey,
 		CSP:        strings.ToLower(node.ConnectionConfig.ProviderName),
-		Region:     firstNonEmpty(zoneInfo.AssignedRegion, node.Region.Region),
-		Zone:       firstNonEmpty(zoneInfo.AssignedZone, node.Region.Zone),
+		// The node's own region and zone come first: the connection's
+		// assigned zone is only its default, and a node created in another
+		// zone of the region (e.g. after a GPU stockout) lives elsewhere.
+		Region: firstNonEmpty(node.Region.Region, zoneInfo.AssignedRegion),
+		Zone:   firstNonEmpty(node.Region.Zone, zoneInfo.AssignedZone),
 	}, nil
 }
 
