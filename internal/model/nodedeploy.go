@@ -556,10 +556,10 @@ type NodeDeploymentProgress struct {
 	// Done is false while the service still works on the deployment
 	// (pending, deploying or removing) and true otherwise: polling can stop.
 	Done bool `json:"done" example:"false"`
-	// Succeeded is true when the deployment ended with its service up on
-	// every node (running), or was a dry run (dry-run). Removing never counts
-	// as success: removed is Done without Succeeded.
-	Succeeded bool `json:"succeeded" example:"false"`
+	// Running is true when the deployment ended with its service up on every
+	// node (status running). A dry run, and a deployment taken down, is Done
+	// without Running.
+	Running bool `json:"running" example:"false"`
 	// Error is why the deployment as a whole stopped, when it did.
 	Error     string    `json:"error,omitempty"`
 	CreatedAt time.Time `json:"createdAt" example:"2026-10-29T12:00:00Z"`
@@ -581,10 +581,14 @@ type NodeProgressCount struct {
 	Total int `json:"total" example:"2"`
 	// InProgress are pending, deploying or removing.
 	InProgress int `json:"inProgress" example:"1"`
-	// Succeeded are running or dry-run, or removed once taken down.
-	Succeeded int `json:"succeeded" example:"1"`
+	// Running are running.
+	Running int `json:"running" example:"1"`
 	// Failed are failed, interrupted or remove-failed.
 	Failed int `json:"failed" example:"0"`
+	// DryRun are dry-run.
+	DryRun int `json:"dryRun" example:"0"`
+	// Removed are removed.
+	Removed int `json:"removed" example:"0"`
 }
 
 // NodeProgress is the short progress of one node.

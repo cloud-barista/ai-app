@@ -75,7 +75,8 @@ func TestEndpointRoute(t *testing.T) {
 		t.Fatalf("endpoints = %+v, want 2", list.Endpoints)
 	}
 	a, m := list.Endpoints[0], list.Endpoints[1]
-	if a.Type != model.NodeDeployTypeApp || a.DeploymentID != app.ID || a.WorkKey != "app-web" || a.Host != "203.0.113.21" {
+	if a.Type != model.NodeDeployTypeApp || a.DeploymentID != app.ID || a.WorkKey != "app-web" || a.Host != "203.0.113.21" ||
+		a.NodeStatus != "Running" || !a.Available {
 		t.Errorf("app endpoint = %+v", a)
 	}
 	if m.Type != model.NodeDeployTypeInference || m.DeploymentID != inf.ID || m.WorkKey != "ms-vllm" ||
@@ -89,13 +90,29 @@ func TestEndpointRoute(t *testing.T) {
 		"?nsId=etri&infraId=travel&nodeId=vm1": 2,
 		"?nodeId=vm2":                          0,
 		"?nsId=other":                          0,
+		"?available=true":                      2,
+		"?available=false":                     0,
 	} {
 		if got := len(getEndpoints(t, s, query).Endpoints); got != want {
 			t.Errorf("GET /endpoints%s = %d, want %d", query, got, want)
 		}
 	}
+	if rec := sendNodeJSON(s, http.MethodGet, "/aiapp/endpoints?available=maybe", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("GET /endpoints?available=maybe = %d, want 400", rec.Code)
+	}
 
-	rec := sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/"+app.ID, "")
+	rec := sendNodeJSON(s, http.MethodGet, "/aiapp/deployments/"+inf.ID+"/progress", "")
+	var progress map[string]any
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &progress) != nil {
+		t.Fatalf("GET progress = %d: %s", rec.Code, rec.Body.String())
+	}
+	count, _ := progress["count"].(map[string]any)
+	if progress["running"] != true || progress["done"] != true || count["running"] != float64(1) ||
+		progress["succeeded"] != nil || count["succeeded"] != nil {
+		t.Errorf("progress = %s, want running and count.running, no succeeded", rec.Body.String())
+	}
+
+	rec = sendNodeJSON(s, http.MethodDelete, "/aiapp/deployments/"+app.ID, "")
 	if rec.Code != http.StatusAccepted && rec.Code != http.StatusOK {
 		t.Fatalf("DELETE = %d: %s", rec.Code, rec.Body.String())
 	}

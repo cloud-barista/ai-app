@@ -167,24 +167,31 @@ func listEndpointsTool(svc *nodedeploy.Service) Tool {
 			"node and work key (ms-<runtimeId> for an inference service, app-<name> for an app), derived from the " +
 			"deployments of create_deployment. The latest deployment of a work key on a node decides it: it is listed " +
 			"only when that deployment is running there, so a redeploy replaces it, delete_deployment removes it, and a " +
-			"later deployment that failed after starting its service leaves none. Dry runs are never listed. An " +
-			"inference endpoint has runtimeId, modelId, artifactId, url (OpenAI compatible API) and healthUrl; an app " +
-			"endpoint has name, version and one url per port. portsOpened says whether every port was opened in the " +
-			"node's security groups; portsError and notes say why not. Every filter is optional and matched exactly.",
+			"later deployment that failed after starting its service leaves none. Dry runs are never listed. Each node " +
+			"is read from CB-Tumblebug when listing: nodeStatus is its status (Running, Suspended, Terminated, ...; " +
+			"unknown when CB-Tumblebug could not be read, not-found when the node is gone), and available is true only " +
+			"when it is Running. Only an available endpoint has host and URLs, built from the node's current public IP " +
+			"(private IP when it has none). An inference endpoint has runtimeId, modelId, artifactId, url (OpenAI " +
+			"compatible API) and healthUrl; an app endpoint has name, version and one url per port. portsOpened says " +
+			"whether every port was opened in the node's security groups; portsError and notes say why not. Every " +
+			"filter is optional and matched exactly.",
 		InputSchema: object(map[string]any{
 			"nsId":    stringProp("CB-Tumblebug namespace of the node"),
 			"type":    enumProp("Endpoint type", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 			"infraId": stringProp("CB-Tumblebug Infra of the node"),
 			"nodeId":  stringProp("Node within the Infra"),
+			"available": map[string]any{"type": "boolean", "description": "true keeps the endpoints whose node is " +
+				"Running, with addresses; false keeps the others"},
 		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var filter nodedeploy.EndpointFilter
 			if len(input) > 0 {
 				var raw struct {
-					NsID    string `json:"nsId"`
-					Type    string `json:"type"`
-					InfraID string `json:"infraId"`
-					NodeID  string `json:"nodeId"`
+					NsID      string `json:"nsId"`
+					Type      string `json:"type"`
+					InfraID   string `json:"infraId"`
+					NodeID    string `json:"nodeId"`
+					Available *bool  `json:"available"`
 				}
 				if err := decode(input, &raw); err != nil {
 					return nil, err

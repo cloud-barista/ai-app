@@ -37,7 +37,8 @@ const (
 // group routes for nodes vm1 (aws, GPU spec, RHEL image), vm2 (azure, CPU
 // spec, two security groups, no image) and vm3 (gcp, spec that cannot be read), all in namespace
 // etri, infra travel. Node gone answers 404, node down answers 503, and any
-// other node answers 500 "no Node found" as CB-Tumblebug 0.13.8 does.
+// other node answers 500 "no Node found" as CB-Tumblebug 0.13.8 does. vm1,
+// vm2 and vm3 are Running unless edited.
 // Security group sg-azure-b already lets in TCP 8000-9000 from anywhere.
 type fakeTumblebug struct {
 	mu       sync.Mutex
@@ -48,6 +49,31 @@ type fakeTumblebug struct {
 	rules []rulesCall
 	// failRules makes adding rules to this security group answer 500.
 	failRules string
+	// nodeEdits are set on the node of that ID when it is read, such as
+	// another status or publicIP.
+	nodeEdits map[string]map[string]any
+	// nodeGone makes reading this node answer 500 "no Node found".
+	nodeGone string
+	// nodeDown makes reading this node answer 503.
+	nodeDown string
+	// nodeReads counts the reads of each node.
+	nodeReads map[string]int
+}
+
+// edit sets the fields of node id that later reads answer with.
+func (f *fakeTumblebug) edit(id string, fields map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.nodeEdits == nil {
+		f.nodeEdits = map[string]map[string]any{}
+	}
+	f.nodeEdits[id] = fields
+}
+
+func (f *fakeTumblebug) reads(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nodeReads[id]
 }
 
 // rulesCall is one POST .../securityGroup/{id}/rules the fake received.
@@ -64,14 +90,14 @@ func (f *fakeTumblebug) rulesCalls() []rulesCall {
 
 func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nodes := map[string]map[string]any{
-		"vm1": {"id": "vm1", "publicIP": "203.0.113.11", "sshKeyId": "key1", "nodeUserName": "cb-user",
+		"vm1": {"id": "vm1", "status": "Running", "publicIP": "203.0.113.11", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"imageId": "ami-rhel9", "image": map[string]any{"osType": "Red Hat Enterprise Linux 9"},
 			"specId": "aws+gpu", "securityGroupIds": []string{"sg-aws"}, "connectionConfig": map[string]any{"providerName": "AWS",
 				"regionZoneInfo": map[string]any{"assignedRegion": "ap-northeast-2", "assignedZone": "ap-northeast-2a"}}},
-		"vm2": {"id": "vm2", "privateIP": "198.51.100.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
+		"vm2": {"id": "vm2", "status": "Running", "privateIP": "198.51.100.12", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"specId": "azure+cpu", "securityGroupIds": []string{"sg-azure-a", "sg-azure-b", "sg-azure-a"},
 			"connectionConfig": map[string]any{"providerName": "Azure"}},
-		"vm3": {"id": "vm3", "publicIP": "203.0.113.13", "sshKeyId": "key1", "nodeUserName": "cb-user",
+		"vm3": {"id": "vm3", "status": "Running", "publicIP": "203.0.113.13", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"specId": "gcp+missing", "securityGroupIds": []string{"sg-gcp"}, "connectionConfig": map[string]any{"providerName": "GCP"}},
 		"evil": {"id": "evil", "publicIP": "203.0.113.14", "sshKeyId": "key1", "nodeUserName": "cb-user",
 			"connectionConfig": map[string]any{"providerName": "../../../../tmp/evil"}},
@@ -88,7 +114,23 @@ func (f *fakeTumblebug) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if m := regexp.MustCompile(`^/ns/etri/infra/travel/node/([^/]+)$`).FindStringSubmatch(path); m != nil {
+		f.mu.Lock()
+		if f.nodeReads == nil {
+			f.nodeReads = map[string]int{}
+		}
+		f.nodeReads[m[1]]++
+		gone, down := f.nodeGone == m[1], f.nodeDown == m[1]
 		if node, ok := nodes[m[1]]; ok {
+			for k, v := range f.nodeEdits[m[1]] {
+				node[k] = v
+			}
+		}
+		f.mu.Unlock()
+		if down {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"message": "spider is not ready"})
+			return
+		}
+		if node, ok := nodes[m[1]]; ok && !gone {
 			writeJSON(w, http.StatusOK, node)
 			return
 		}

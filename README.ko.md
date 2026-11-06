@@ -218,7 +218,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 카탈로그 | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /models/sync` |
 | 응용 | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | 배포 | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
-| 주소 | `GET /endpoints` (필터 `nsId`, `infraId`, `nodeId`, `type`) |
+| 주소 | `GET /endpoints` (필터 `nsId`, `infraId`, `nodeId`, `type`, `available`). 부를 때마다 CB-Tumblebug 에서 노드를 읽어 지금 IP 로 주소를 만들고, 노드가 `Running` 일 때만 주소를 줌 |
 | 추천 (자리만) | `POST /recommendations/models`, `POST /recommendations/apps` (구현을 등록하기 전까지 `501`) |
 | 도구와 감사 | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | 자동화 엔진 (넘겨 줌) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |
@@ -264,7 +264,6 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | API 전체에 bearer 토큰 하나 | 사용자·역할 구분 없음 |
 | 헬스는 배포할 때 한 번만 확인 | 나중에 컨테이너가 죽어도 기록은 안 바뀜 |
 | 노드 하나에 런타임마다 모델 하나 | 같은 노드에 같은 런타임으로 다른 모델을 배포하면 앞의 것을 바꿈 |
-| 주소는 배포할 때의 노드 IP 로 만듦 | 정지 후 재개로 공인 IP 가 바뀌면 다시 배포해야 새 주소가 나옴 |
 | 큰 모델을 처음 받으면 태스크 상한 30분(`AIAPP_SEMAPHORE_TIMEOUT`)에 걸릴 수 있고, 엔진은 15분(`AIAPP_HEALTH_TIMEOUT`)만 기다림 | 큰 모델이면 상한을 올림 |
 | `kind: k8s` 대상 | `422` 로 거절 |
 | Windows 와 그 밖의 배포판(Amazon Linux 2, SUSE, Alpine) | `install-docker` 가 지원하지 않음 |

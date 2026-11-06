@@ -236,7 +236,7 @@ All paths are under `/aiapp`. Field level documentation is in Swagger (`/aiapp/a
 | Catalog | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /models/sync` |
 | Applications | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | Deployments | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
-| Endpoints | `GET /endpoints` (filters `nsId`, `infraId`, `nodeId`, `type`) |
+| Endpoints | `GET /endpoints` (filters `nsId`, `infraId`, `nodeId`, `type`, `available`). Reads each node from CB-Tumblebug on every call: URLs use the node's current IP and are given only while it is `Running` |
 | Recommendation (placeholder) | `POST /recommendations/models`, `POST /recommendations/apps` (`501` until an implementation is registered) |
 | Tools and audit | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | Automation engine (forwarded) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |
@@ -284,7 +284,6 @@ was deployed with the API alone and every service answered from outside. See [th
 | One bearer token for the whole API | No users or roles |
 | Health is checked once at deployment time | A container that dies later does not change the record |
 | One model per runtime per node | Deploying another model with the same runtime on the same node replaces the first |
-| Endpoint URLs use the node IP at deployment time | After a stop and start that changes the public IP, redeploy to refresh the URL |
 | Large first time model downloads can hit the 30 minute task limit (`AIAPP_SEMAPHORE_TIMEOUT`); the engine waits only 15 minutes (`AIAPP_HEALTH_TIMEOUT`) | Raise the limits for large models |
 | `kind: k8s` targets | Rejected with `422` |
 | Windows and other Linux distributions (Amazon Linux 2, SUSE, Alpine) | Not supported by `install-docker` |

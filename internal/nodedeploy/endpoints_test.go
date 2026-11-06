@@ -38,6 +38,9 @@ func TestEndpointsListTheInferenceAndTheAppServing(t *testing.T) {
 		t.Fatalf("endpoints = %v, want %v", got, want)
 	}
 	a, m := list[0], list[1]
+	if a.NodeStatus != "Running" || !a.Available || m.NodeStatus != "Running" || !m.Available {
+		t.Errorf("node status = %q %v, %q %v, want Running and available", a.NodeStatus, a.Available, m.NodeStatus, m.Available)
+	}
 	if a.Type != model.NodeDeployTypeApp || a.Name != "web" || a.Version != 2 || a.Host != "203.0.113.11" ||
 		a.CSP != "aws" || a.Region != "ap-northeast-2" || a.Zone != "ap-northeast-2a" || a.NsID != "etri" ||
 		a.InfraID != "travel" || !slices.Equal(a.Ports, []int{3000, 8080}) || !a.PortsOpened || a.PortsError != "" ||
@@ -55,6 +58,7 @@ func TestEndpointsListTheInferenceAndTheAppServing(t *testing.T) {
 		t.Errorf("inference endpoint = %+v", m)
 	}
 
+	yes, no := true, false
 	for filter, want := range map[EndpointFilter]int{
 		{Type: model.NodeDeployTypeInference}:            1,
 		{Type: model.NodeDeployTypeApp}:                  1,
@@ -64,6 +68,8 @@ func TestEndpointsListTheInferenceAndTheAppServing(t *testing.T) {
 		{InfraID: "other"}: 0,
 		{NsID: "etri", Type: model.NodeDeployTypeApp}:        1,
 		{NodeID: "vm1", Type: model.NodeDeployTypeInference}: 1,
+		{Available: &yes}: 2,
+		{Available: &no}:  0,
 	} {
 		if got := len(endpointsOf(f, filter)); got != want {
 			t.Errorf("filter %+v = %d endpoints, want %d", filter, got, want)
@@ -159,5 +165,69 @@ func TestPortsNotOpenedAreFlagged(t *testing.T) {
 	list := endpointsOf(f, EndpointFilter{})
 	if len(list) != 1 || list[0].PortsOpened || list[0].PortsError == "" || len(list[0].URLs) != 2 {
 		t.Errorf("endpoints = %+v, want one with portsOpened false and portsError", list)
+	}
+}
+
+func TestEndpointsFollowTheCurrentAddressOfARunningNode(t *testing.T) {
+	f := newFixture(t, false)
+	inf := deployed(t, f, modelReq("vm1"))
+	time.Sleep(2 * time.Millisecond)
+	deployed(t, f, appReq("vm1"))
+	f.tb.edit("vm1", map[string]any{"status": "Running", "publicIP": "203.0.113.99"})
+
+	before := f.tb.reads("vm1")
+	list := endpointsOf(f, EndpointFilter{})
+	if got := f.tb.reads("vm1") - before; got != 1 {
+		t.Errorf("vm1 read %d times for two endpoints, want once", got)
+	}
+	if len(list) != 2 {
+		t.Fatalf("endpoints = %v", endpointKeys(list))
+	}
+	a, m := list[0], list[1]
+	if !a.Available || a.Host != "203.0.113.99" || !slices.Equal(a.URLs, []model.EndpointURL{
+		{Port: 3000, URL: "http://203.0.113.99:3000"}, {Port: 8080, URL: "http://203.0.113.99:8080"},
+	}) {
+		t.Errorf("app endpoint = %+v, want the URLs on the new IP", a)
+	}
+	if !m.Available || m.URL != "http://203.0.113.99:11434/v1" || m.HealthURL != "http://203.0.113.99:11434/" {
+		t.Errorf("inference endpoint = %+v, want the URLs on the new IP", m)
+	}
+	if d, _ := f.svc.Get(context.Background(), inf.ID); d.Nodes[0].Node.Host != "203.0.113.11" {
+		t.Errorf("deployment record host = %q, want the host it was reached at", d.Nodes[0].Node.Host)
+	}
+}
+
+func TestEndpointsOfANodeNotRunningHaveNoAddress(t *testing.T) {
+	f := newFixture(t, false)
+	deployed(t, f, modelReq("vm1", "vm2", "vm3"))
+	f.tb.edit("vm1", map[string]any{"status": "Suspended", "publicIP": ""})
+	f.tb.mu.Lock()
+	f.tb.nodeGone, f.tb.nodeDown = "vm2", "vm3"
+	f.tb.mu.Unlock()
+
+	list := endpointsOf(f, EndpointFilter{})
+	if len(list) != 3 {
+		t.Fatalf("endpoints = %v, want every deployment listed", endpointKeys(list))
+	}
+	want := map[string]string{"vm1": "Suspended", "vm2": model.EndpointNodeNotFound, "vm3": model.EndpointNodeUnknown}
+	for _, e := range list {
+		if e.NodeStatus != want[e.NodeID] || e.Available || e.Host != "" || e.URL != "" || e.HealthURL != "" ||
+			len(e.URLs) != 0 || e.ModelID != "tiny" || e.DeploymentID == "" {
+			t.Errorf("%s endpoint = %+v, want nodeStatus %q, not available and no address", e.NodeID, e, want[e.NodeID])
+		}
+	}
+
+	yes, no := true, false
+	if got := endpointsOf(f, EndpointFilter{Available: &yes}); len(got) != 0 {
+		t.Errorf("available=true = %v, want none", endpointKeys(got))
+	}
+	if got := endpointsOf(f, EndpointFilter{Available: &no}); len(got) != 3 {
+		t.Errorf("available=false = %v, want all three", endpointKeys(got))
+	}
+
+	f.tb.edit("vm1", map[string]any{"status": "Running", "publicIP": "203.0.113.98"})
+	got := endpointsOf(f, EndpointFilter{Available: &yes})
+	if len(got) != 1 || got[0].NodeID != "vm1" || got[0].URL != "http://203.0.113.98:11434/v1" {
+		t.Errorf("after resume = %+v, want vm1 on its new IP", got)
 	}
 }

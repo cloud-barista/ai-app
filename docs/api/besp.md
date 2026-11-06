@@ -31,7 +31,7 @@ AIAPP_URL=http://<AI-App 호스트>:8090/aiapp
 | 배포 기록 전체 | `GET /aiapp/deployments/{id}` |
 | 배포 목록 | `GET /aiapp/deployments?type=&nsId=&status=` |
 | 배포 로그 | `GET /aiapp/deployments/{id}/logs` |
-| 지금 떠 있는 것 | `GET /aiapp/endpoints?nsId=&infraId=&nodeId=&type=` |
+| 지금 떠 있는 것 | `GET /aiapp/endpoints?nsId=&infraId=&nodeId=&type=&available=` |
 | 내리기 | `DELETE /aiapp/deployments/{id}` |
 | VM 정지·재개·재부팅·종료 | `POST /aiapp/deployments/{id}/control` |
 
@@ -154,8 +154,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 ```json
 {
   "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48", "type": "inference", "status": "deploying",
-  "done": false, "succeeded": false, "createdAt": "2026-11-03T12:00:00Z", "elapsedSeconds": 312,
-  "count": {"total": 1, "inProgress": 1, "succeeded": 0, "failed": 0},
+  "done": false, "running": false, "createdAt": "2026-11-03T12:00:00Z", "elapsedSeconds": 312,
+  "count": {"total": 1, "inProgress": 1, "running": 0, "failed": 0, "dryRun": 0, "removed": 0},
   "nodes": [{
     "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
     "status": "deploying", "done": false, "phase": "compose-up", "phaseStartedAt": "2026-11-03T12:01:10Z",
@@ -166,23 +166,23 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 }
 ```
 
-끝나면 `done: true` 이고, 성공이면 `succeeded: true`·`status: running`·노드 `phase: done`·`stepsDone: 2` 입니다.
-실패면 `succeeded: false` 이고 노드는 실패한 `phase` 에 머물며 `nodes[].error` 에 이유가, `nodes[].step.currentTask` 에
+끝나면 `done: true` 이고, 성공이면 `running: true`·`status: running`·노드 `phase: done`·`stepsDone: 2` 입니다.
+실패면 `running: false` 이고 노드는 실패한 `phase` 에 머물며 `nodes[].error` 에 이유가, `nodes[].step.currentTask` 에
 멈춘 Ansible 태스크가 있습니다.
 
 | 화면에 보여 줄 것 | 필드 |
 |---|---|
 | 끝났는지 (폴링 멈춤) | `done` |
-| 성공했는지 | `succeeded` (`false` 면 `status` 가 `failed`·`partial`·`interrupted` 중 하나) |
-| 노드 몇 개가 어떤 상태인지 | `count.total`·`inProgress`·`succeeded`·`failed` |
+| 서비스가 떴는지 | `running` (`false` 면 `status` 가 `failed`·`partial`·`interrupted`·`dry-run` 중 하나) |
+| 노드 몇 개가 어떤 상태인지 | `count.total`·`inProgress`·`running`·`failed`·`dryRun`·`removed` |
 | 노드가 지금 하는 일 | `nodes[].phase` ([README 7-1절](README.md) 의 표: `reading-node` → `staging` → `checking-ssh` → `install-docker` → `compose-up` 또는 `copy-and-run` → `opening-ports` → `done`) |
 | 단계 진행 막대 | `nodes[].stepsDone` / `nodes[].stepsTotal` |
 | 단계 안에서 하는 일 | `nodes[].step.currentTask` (Ansible 태스크 이름, 5초마다 갱신) |
 | 경과 시간 | `elapsedSeconds`, 단계별로는 `nodes[].phaseStartedAt` |
-| 끝난 뒤 쓸 주소 | `nodes[].serviceUrl` (추론), `nodes[].host` + `nodes[].ports` (응용). 응용 URL 은 `GET /aiapp/endpoints` 에도 있습니다 |
+| 끝난 뒤 쓸 주소 | `GET /aiapp/endpoints` (8절). 여기의 `nodes[].serviceUrl`·`nodes[].host` 는 배포할 때 접속한 IP 라, 노드를 정지했다 다시 켜서 IP 가 바뀌면 낡습니다 |
 
 내리기(`DELETE`)가 `202` 면 같은 경로를 같은 방법으로 읽습니다. 그때 `phase` 는 `compose-down`, `stepsTotal` 은 1이고, 끝나면
-`status: removed`, `succeeded: false`, `done: true` 입니다.
+`status: removed`, `running: false`, `done: true` 입니다.
 
 ### 6-2. 배포 기록 전체
 
@@ -264,17 +264,27 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri"
 ```json
 {"endpoints": [
   {"nsId": "etri", "infraId": "travel", "nodeId": "vm1", "type": "inference", "workKey": "ms-vllm",
-   "deploymentId": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48", "host": "203.0.113.10",
+   "deploymentId": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48",
+   "nodeStatus": "Running", "available": true, "host": "203.0.113.10",
    "runtimeId": "vllm", "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16",
    "url": "http://203.0.113.10:8000/v1", "healthUrl": "http://203.0.113.10:8000/health",
    "ports": [8000], "portsOpened": true, "deployedAt": "2026-11-03T12:05:00Z"},
   {"nsId": "etri", "infraId": "travel", "nodeId": "vm2", "type": "app", "workKey": "app-open-webui",
-   "deploymentId": "...", "host": "203.0.113.12", "name": "open-webui", "version": 1,
-   "urls": [{"port": 3000, "url": "http://203.0.113.12:3000"}], "ports": [3000], "portsOpened": true}
+   "deploymentId": "...", "nodeStatus": "Running", "available": true, "host": "203.0.113.12",
+   "name": "open-webui", "version": 1,
+   "urls": [{"port": 3000, "url": "http://203.0.113.12:3000"}], "ports": [3000], "portsOpened": true},
+  {"nsId": "etri", "infraId": "travel", "nodeId": "vm3", "type": "app", "workKey": "app-langflow",
+   "deploymentId": "...", "nodeStatus": "Suspended", "available": false,
+   "name": "langflow", "version": 2, "ports": [7860], "portsOpened": true}
 ]}
 ```
 
-- 배포 기록에서 계산합니다. 노드에 따로 묻지 않으므로, 배포 뒤에 누가 노드에서 컨테이너를 손으로 내렸으면 그것은 모릅니다.
+- 무엇이 떠 있는지는 배포 기록에서 계산합니다. 컨테이너를 노드에 따로 묻지 않으므로, 배포 뒤에 누가 노드에서 컨테이너를 손으로 내렸으면 그것은 모릅니다.
+- 주소는 부를 때마다 CB-Tumblebug 에서 노드를 읽어 지금 IP(공인 IP, 없으면 사설 IP)로 만듭니다. 노드를 정지했다 다시 켜서 IP 가 바뀌어도
+  다시 배포할 필요가 없습니다.
+- `nodeStatus` 는 CB-Tumblebug 이 준 노드 상태 그대로입니다(`Running`, `Suspended`, `Terminated`, `Failed` 등). **`Running` 일 때만
+  `available: true` 이고 `host`·`url`·`healthUrl`·`urls` 가 있습니다.** 그 밖에는 주소를 비우므로 화면에서는 노드 상태를 보여 주고
+  링크를 걸지 않습니다. CB-Tumblebug 을 못 읽으면 `unknown`, 노드가 없어졌으면 `not-found` 입니다. 주소 있는 것만 보려면 `?available=true`.
 - 노드 하나·작업 키 하나(런타임당 하나, 응용 이름당 하나)에 항목 하나입니다. 다시 배포하면 바뀌고, 내리면 빠집니다.
 - `portsOpened: false` 면 밖에서 안 닿을 수 있다고 표시합니다(`portsError`, `notes`).
 

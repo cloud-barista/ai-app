@@ -69,10 +69,14 @@ API 는 두 층입니다. **관리 API** 는 AI-App 서버 하나가 열고, 무
 - 노드 쪽 포트는 배포가 성공하면 AI-App 이 노드의 보안 그룹에 엽니다(8절). **출처 제한 없이(`0.0.0.0/0`) 열리고 추론 서비스에는
   인증이 없습니다.** 시험 환경 기준이며 운영에서 막을 방법은 열린 문제입니다.
 - AI-App 의 토큰은 노드 쪽 서비스에 쓰이지 않습니다.
-- 노드를 정지했다가 다시 켜면 CSP 에 따라 공인 IP 가 바뀝니다(aws 에서 확인). `GET /aiapp/endpoints` 의 주소는 **배포할 때의 IP**
-  이므로, 다시 켠 뒤에는 그 노드에 다시 배포해야 새 주소가 나옵니다. 지금 노드 IP 는 CB-Tumblebug 의 노드 조회로 봅니다.
+- 노드를 정지했다가 다시 켜면 CSP 에 따라 공인 IP 가 바뀝니다(aws 에서 확인). 그래서 `GET /aiapp/endpoints` 는 부를 때마다
+  CB-Tumblebug 에서 노드를 읽어 **지금 IP** 로 주소를 만듭니다. 다시 켠 뒤에 다시 배포하지 않아도 새 주소가 나옵니다.
+- 노드 상태는 `nodeStatus` 에 CB-Tumblebug 이 준 그대로(`Running`, `Suspended`, `Terminated`, `Failed` 등) 들어갑니다.
+  **`Running` 일 때만 `available: true` 이고 `host`·`url`·`healthUrl`·`urls` 가 있습니다.** 정지한 노드는 다시 켤 때 IP 가
+  바뀔 수 있어 주소를 내지 않습니다. CB-Tumblebug 을 못 읽으면 `nodeStatus: unknown`, 노드가 없어졌으면 `not-found` 이고 둘 다
+  주소가 없습니다. 이런 배포도 목록에서 빠지지 않습니다. 주소가 있는 것만 보려면 `?available=true` 를 붙입니다.
 
-실제 응답 예입니다(2026-11-03, IP 는 `<vm2>` 로 가림).
+응답 예입니다(IP 는 `<vm2>` 로 가림).
 
 ```sh
 curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/endpoints?nodeId=vm2b-2"
@@ -80,10 +84,12 @@ curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/endpoints?node
 
 ```json
 {"endpoints": [
-  {"nodeId": "vm2b-2", "csp": "azure", "type": "app", "workKey": "app-open-webui", "name": "open-webui", "version": 1,
+  {"nodeId": "vm2b-2", "csp": "azure", "nodeStatus": "Running", "available": true, "host": "<vm2>",
+   "type": "app", "workKey": "app-open-webui", "name": "open-webui", "version": 1,
    "urls": [{"port": 3000, "url": "http://<vm2>:3000"}], "portsOpened": true,
    "openedPorts": [{"securityGroupId": "travel-vm2b", "port": 3000, "protocol": "TCP", "result": "added"}]},
-  {"nodeId": "vm2b-2", "csp": "azure", "type": "inference", "workKey": "ms-ollama",
+  {"nodeId": "vm2b-2", "csp": "azure", "nodeStatus": "Running", "available": true, "host": "<vm2>",
+   "type": "inference", "workKey": "ms-ollama",
    "runtimeId": "ollama", "modelId": "qwen3-vl-8b", "artifactId": "ollama-gguf",
    "url": "http://<vm2>:11434/v1", "healthUrl": "http://<vm2>:11434/", "portsOpened": true}
 ]}
@@ -197,7 +203,7 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 | `02-upload-app.sh [폴더] [이름] [포트]` | `POST /apps` (기본 `examples/apps/open-webui`, 포트 `3000`) |
 | `03-deploy-inference.sh nsId infraId nodeId [modelId] [artifactId] [runtimeId]` | `POST /deployments` (type inference) 후 끝날 때까지 `GET /deployments/{id}/progress` 로 노드별 `phase` 를 찍고, 끝나면 기록 |
 | `04-deploy-app.sh nsId infraId nodeId 이름 [KEY=VALUE ...]` | `POST /deployments` (type app) 후 같은 대기 |
-| `05-endpoints.sh [nsId] [infraId] [nodeId]` | `GET /endpoints` |
+| `05-endpoints.sh [nsId] [infraId] [nodeId]` | `GET /endpoints`. 노드마다 `nodeStatus`·`available` 과 주소. `TYPE`, `AVAILABLE` 로 거름 |
 | `06-logs.sh 배포ID [줄 수]` | `GET /deployments/{id}/logs` |
 | `07-remove.sh 배포ID` | `DELETE /deployments/{id}` 후 끝날 때까지 대기 |
 
@@ -324,8 +330,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 ```json
 {
   "id": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48", "type": "inference", "status": "deploying",
-  "done": false, "succeeded": false, "createdAt": "2026-11-04T12:00:00Z", "elapsedSeconds": 312,
-  "count": {"total": 1, "inProgress": 1, "succeeded": 0, "failed": 0},
+  "done": false, "running": false, "createdAt": "2026-11-04T12:00:00Z", "elapsedSeconds": 312,
+  "count": {"total": 1, "inProgress": 1, "running": 0, "failed": 0, "dryRun": 0, "removed": 0},
   "nodes": [{
     "target": {"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm1"},
     "status": "deploying", "done": false,
@@ -342,8 +348,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 | 필드 | 뜻 |
 |---|---|
 | `done` | `false` 면 AI-App 이 아직 일하는 중입니다(`pending`·`deploying`·`removing`). `true` 가 되면 폴링을 멈춥니다 |
-| `succeeded` | 끝났고 모든 노드에서 서비스가 떠 있음(`running`), 또는 `dry-run`. 그 밖의 끝(`failed`·`partial`·`interrupted`·`removed`·`remove-failed`)은 `false` |
-| `count` | 노드 수. `inProgress` 는 진행 중, `succeeded` 는 `running`·`dry-run`·`removed`, `failed` 는 `failed`·`interrupted`·`remove-failed` |
+| `running` | 끝났고 모든 노드에서 서비스가 떠 있음(`status: running`). 그 밖의 끝(`failed`·`partial`·`interrupted`·`dry-run`·`removed`·`remove-failed`)은 `false` |
+| `count` | 노드 수. `inProgress` 는 `pending`·`deploying`·`removing`, `running` 은 `running`, `failed` 는 `failed`·`interrupted`·`remove-failed`, `dryRun` 은 `dry-run`, `removed` 는 `removed` |
 | `elapsedSeconds` | `createdAt` 부터 끝난 때까지(진행 중이면 지금까지) 초 |
 | `nodes[].phase` | 그 노드에서 지금 하는 일. 아래 표. 실패한 노드는 실패한 단계에 머뭅니다 |
 | `nodes[].step` | 마지막으로 시작한 playbook. `taskId`·`taskUrl` 은 태스크가 시작되면 바로 채워집니다. `status` 는 도는 동안 `waiting`·`starting`·`running`, 끝나면 `success`·`error`·`stopped`·`rejected` |
@@ -456,11 +462,11 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | POST | `/aiapp/deployments` | 추론 서비스(`type: inference`) 또는 응용(`type: app`)을 노드에 배포. `202`, dry-run 이면 `200` |
 | GET | `/aiapp/deployments` | 배포 목록 (최신순). 필터 `type`, `nsId`, `status` |
 | GET | `/aiapp/deployments/{id}` | 배포 기록 하나 (노드별 상태, `phase`, 주소, 단계, 연 포트) |
-| GET | `/aiapp/deployments/{id}/progress` | 배포 진행 요약. 끝났는지(`done`), 성공인지(`succeeded`), 노드별 `phase`·현재 단계·Ansible 태스크. 폴링용 (7-1절) |
+| GET | `/aiapp/deployments/{id}/progress` | 배포 진행 요약. 끝났는지(`done`), 서비스가 떴는지(`running`), 노드별 `phase`·현재 단계·Ansible 태스크. 폴링용 (7-1절) |
 | GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력과 `taskUrl`. 도는 중인 단계는 그때까지의 출력 |
 | DELETE | `/aiapp/deployments/{id}` | 노드에서 내림 (`docker compose down`, named volume 유지) |
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`·`resume`·`reboot`·`terminate`). `terminate` 는 VM 을 지움 |
-| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 필터 `nsId`, `infraId`, `nodeId`, `type` |
+| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). 필터 `nsId`, `infraId`, `nodeId`, `type`, `available` |
 
 ### 9-4. 추천 (자리만)
 
@@ -556,7 +562,7 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 - 노드의 배포판은 Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023 중 하나여야 합니다(`/etc/os-release` 의 `ID`, 파생 배포판은 `ID_LIKE`). 그 밖이면 노드가 `failed` 가 되고 로그에 `install-docker supports only ...` 가 남습니다. 배포판마다 어떻게 까는지는 [etri.md 2절](etri.md#2-vm-이-갖춰야-할-것) 에 있습니다.
 - docker 는 있는데 compose 플러그인이 없으면 노드의 저장소에서 `docker-compose-plugin` 이나 `moby-compose` 를 깝니다. 둘 다 없을 때 apt 를 쓰는 노드는 실패하고, dnf 를 쓰는 노드는 compose 플러그인을 GitHub 에서 직접 받아 깝니다.
 - `install-docker` 는 docker 와 compose 플러그인만 깝니다. 예시 응용이 노드에서 쓰는 도구는 이미지에 있어야 합니다. Dify 는 `git`(`openssl` 은 없으면 `/dev/urandom` 으로 대신함), Langflow 는 `MODEL_BASE_URL` 을 줄 때 `python3` 입니다.
-- 주소(`url`, `urls`)는 노드의 공인 IP 로 만듭니다. 공인 IP 가 없으면 사설 IP 입니다.
+- 주소(`url`, `urls`)는 `GET /aiapp/endpoints` 를 부를 때 CB-Tumblebug 에서 읽은 노드의 지금 공인 IP 로 만듭니다. 공인 IP 가 없으면 사설 IP 입니다. 노드가 `Running` 이 아니면 주소가 없습니다(1-1절).
 - 한 런타임(Ollama 포함)에 모델은 하나입니다. 같은 노드에 같은 런타임으로 다른 모델을 배포하면 앞의 모델을 바꿉니다.
 - 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 의 named volume
   `catalog`, `/app/data/catalog/models.json`)은 아티팩트 필드가 `engines` 라 새 코드가 읽지 못해 기동이 실패합니다. 그 파일을 지우면 기본

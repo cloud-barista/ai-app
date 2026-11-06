@@ -63,7 +63,7 @@ func TestNodeDeployToolsCheckTheirInput(t *testing.T) {
 	if list, ok := out.(model.NodeDeploymentListResp); err != nil || !ok || len(list.Deployments) != 0 {
 		t.Errorf("list = %v, %v", out, err)
 	}
-	for _, input := range []string{``, `{}`, `{"nsId":"etri","type":"app","infraId":"travel","nodeId":"vm1"}`} {
+	for _, input := range []string{``, `{}`, `{"nsId":"etri","type":"app","infraId":"travel","nodeId":"vm1"}`, `{"available":true}`} {
 		out, err = registry.Call(ctx, "default", "list_endpoints", json.RawMessage(input))
 		if list, ok := out.(model.EndpointListResp); err != nil || !ok || list.Endpoints == nil || len(list.Endpoints) != 0 {
 			t.Errorf("list_endpoints %s = %v, %v", input, out, err)
@@ -71,6 +71,9 @@ func TestNodeDeployToolsCheckTheirInput(t *testing.T) {
 	}
 	if _, err := registry.Call(ctx, "default", "list_endpoints", json.RawMessage(`{"nodeId":1}`)); err == nil {
 		t.Error("list_endpoints with a malformed filter was accepted")
+	}
+	if _, err := registry.Call(ctx, "default", "list_endpoints", json.RawMessage(`{"available":"yes"}`)); err == nil {
+		t.Error("list_endpoints with a non boolean available was accepted")
 	}
 }
 

@@ -55,7 +55,7 @@ func newNodeDeployServer(t *testing.T, dryRun bool) (*Server, *countingRunner, *
 		switch r.URL.Path {
 		case "/tumblebug/ns/etri/infra/travel/node/vm1":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id": "vm1", "publicIP": "203.0.113.21", "sshKeyId": "k", "nodeUserName": "cb-user",
+				"id": "vm1", "status": "Running", "publicIP": "203.0.113.21", "sshKeyId": "k", "nodeUserName": "cb-user",
 				"connectionConfig": map[string]any{"providerName": "AWS"},
 			})
 		case "/tumblebug/ns/etri/infra/travel/node/down":

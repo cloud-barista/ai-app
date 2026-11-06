@@ -616,6 +616,7 @@
     <p class="lede">
       지금 떠 있는 추론·응용의 주소입니다 (<code>GET /endpoints</code>). 노드와 작업 키(<code>ms-&lt;runtimeId&gt;</code>, <code>app-&lt;name&gt;</code>)마다
       가장 최근 배포가 성공했을 때만 나옵니다. 내리거나 그 뒤 배포가 실패하면 빠지고, dry-run 은 나오지 않습니다.
+      주소는 부를 때마다 CB-Tumblebug 에서 읽은 노드의 지금 IP 로 만들고, 노드가 Running 이 아니면 비워 둡니다.
     </p>
     <div id="ep-list"><div class="spin">부르는 중...</div></div>
     <div class="row" style="margin-top:14px">
@@ -1913,7 +1914,7 @@ async function loadEndpoints() {
   if (!eps.length) { $('ep-list').innerHTML = '<div class="empty">떠 있는 추론·응용이 없습니다.</div>'; return; }
 
   $('ep-list').innerHTML = `<table>
-    <tr><th>노드</th><th style="width:110px">종류</th><th>무엇</th><th>주소</th>
+    <tr><th>노드</th><th style="width:110px">노드 상태</th><th style="width:110px">종류</th><th>무엇</th><th>주소</th>
         <th style="width:96px">포트</th><th style="width:110px">배포 ID</th></tr>
     ${eps.map((e) => {
       const what = e.type === 'inference' ? `${e.runtimeId} · ${e.modelId}/${e.artifactId}` : `${e.name} v${e.version}`;
@@ -1921,6 +1922,7 @@ async function loadEndpoints() {
       const why = e.portsError || (e.notes || []).join(' / ');
       return `<tr class="click" onclick="showDeployment(${jsq(e.deploymentId)})">
       <td class="mono" style="font-size:12px">${esc(e.nsId + '/' + e.infraId + '/' + e.nodeId)}<br><span style="color:var(--ink-3)">${esc([e.csp, e.region].filter(Boolean).join(' · '))}</span></td>
+      <td>${e.available ? `<span class="b b-st-succeeded">${esc(e.nodeStatus)}</span>` : `<span class="b b-st-skipped">${esc(e.nodeStatus || 'unknown')}</span>`}</td>
       <td><span class="b b-mut">${esc(e.type)}</span></td>
       <td class="mono" style="font-size:12px">${esc(what)}</td>
       <td class="mono" style="font-size:12px">${urls.length ? urls.map(esc).join('<br>') : '-'}</td>

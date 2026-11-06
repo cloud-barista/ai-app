@@ -692,7 +692,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.\n\ndone is false while the deployment is pending, deploying or removing, and true otherwise. succeeded is true only when it ended running (the service is up on every node) or dry-run. A finished deployment that is not succeeded is failed, partial (count.succeeded and count.failed tell how many nodes), interrupted (the service restarted while it ran), or removed or remove-failed once taken down.\n\nFor every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as \"Wait until the service answers\"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.",
+                "description": "Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.\n\ndone is false while the deployment is pending, deploying or removing, and true otherwise. running is true only when it ended running (the service is up on every node). A finished deployment that is not running is failed, partial (count.running and count.failed tell how many nodes), interrupted (the service restarted while it ran), dry-run, or removed or remove-failed once taken down. count has total, inProgress (pending, deploying, removing), running, failed (failed, interrupted, remove-failed), dryRun and removed.\n\nFor every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as \"Wait until the service answers\"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.",
                 "produces": [
                     "application/json"
                 ],
@@ -733,7 +733,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the addresses of what serves on the nodes now, derived from the deployment records of POST /deployments: one endpoint per node and work key (ms-\u003cruntimeId\u003e for an inference service, app-\u003cname\u003e for an app). Each filter is optional and matched exactly; all given filters must match. Endpoints are ordered by nsId, infraId, nodeId and workKey.\n\nOn a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or deploying, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment is running on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or deploying leaves none until it ends. Dry-run deployments never make an endpoint.\n\nAn inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://\u003chost\u003e:\u003cport\u003e\u003capiBasePath\u003e) and healthUrl. An app endpoint carries name, version and urls, one http://\u003chost\u003e:\u003cport\u003e per port it serves. host is the public IP of the node, or its private IP when it has none. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.",
+                "description": "List the addresses of what serves on the nodes now, derived from the deployment records of POST /deployments: one endpoint per node and work key (ms-\u003cruntimeId\u003e for an inference service, app-\u003cname\u003e for an app). Each filter is optional and matched exactly; all given filters must match. Endpoints are ordered by nsId, infraId, nodeId and workKey.\n\nOn a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or deploying, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment is running on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or deploying leaves none until it ends. Dry-run deployments never make an endpoint.\n\nEvery node with an endpoint is read from CB-Tumblebug on each call, once per node. nodeStatus is the node status CB-Tumblebug gives (Running, Suspended, Terminated, Failed, ...), unknown when CB-Tumblebug could not be read, or not-found when it no longer has the node; the endpoint is listed in every case. available is true only when the node is Running; only then are host and the URLs set, built from the current public IP of the node, or its private IP when it has none. A node that is not Running has no address, since its IP may change when it is resumed.\n\nAn inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://\u003chost\u003e:\u003cport\u003e\u003capiBasePath\u003e) and healthUrl. An app endpoint carries name, version and urls, one http://\u003chost\u003e:\u003cport\u003e per port it serves. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.",
                 "produces": [
                     "application/json"
                 ],
@@ -770,6 +770,12 @@ const docTemplate = `{
                         "description": "Node within the Infra",
                         "name": "nodeId",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: only the endpoints whose node is Running, with addresses; false: only the others",
+                        "name": "available",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -777,6 +783,12 @@ const docTemplate = `{
                         "description": "Endpoints serving now",
                         "schema": {
                             "$ref": "#/definitions/model.EndpointListResp"
+                        }
+                    },
+                    "400": {
+                        "description": "available is not a boolean",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
                         }
                     }
                 }
@@ -2260,6 +2272,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "hf-bf16"
                 },
+                "available": {
+                    "description": "Available is true when the node is Running and has an address; only\nthen are host and the URLs set.",
+                    "type": "boolean",
+                    "example": true
+                },
                 "csp": {
                     "description": "CSP is the cloud of the node, in lower case.",
                     "type": "string",
@@ -2276,12 +2293,12 @@ const docTemplate = `{
                     "example": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48"
                 },
                 "healthUrl": {
-                    "description": "HealthURL answers 200 once the runtime is up:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime healthPath\u003e. Inference only, and\nonly when the runtime profile names a health path.",
+                    "description": "HealthURL answers 200 once the runtime is up:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime healthPath\u003e. Inference only, and\nonly when available and the runtime profile names a health path.",
                     "type": "string",
                     "example": "http://203.0.113.10:8000/health"
                 },
                 "host": {
-                    "description": "Host is the address the node was reached at and the URLs are built\nfrom: its public IP, or its private IP when it has none.",
+                    "description": "Host is the address the URLs are built from: the current public IP of\nthe node, or its private IP when it has none. Absent when not\navailable.",
                     "type": "string",
                     "example": "203.0.113.10"
                 },
@@ -2304,6 +2321,11 @@ const docTemplate = `{
                     "description": "NodeID is the node within the Infra.",
                     "type": "string",
                     "example": "vm1"
+                },
+                "nodeStatus": {
+                    "description": "NodeStatus is the node status CB-Tumblebug gives when the endpoints are\nlisted, such as Running, Suspended, Terminated or Failed; unknown when\nCB-Tumblebug could not be read, not-found when it no longer has the\nnode.",
+                    "type": "string",
+                    "example": "Running"
                 },
                 "notes": {
                     "description": "Notes are the notes of the node result, such as port opening being\nturned off.",
@@ -2363,12 +2385,12 @@ const docTemplate = `{
                     "example": "inference"
                 },
                 "url": {
-                    "description": "URL is the OpenAI compatible API of an inference service:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime apiBasePath\u003e. Inference only.",
+                    "description": "URL is the OpenAI compatible API of an inference service:\nhttp://\u003chost\u003e:\u003cruntime port\u003e\u003cruntime apiBasePath\u003e. Inference only, and\nonly when available.",
                     "type": "string",
                     "example": "http://203.0.113.10:8000/v1"
                 },
                 "urls": {
-                    "description": "URLs are http://\u003chost\u003e:\u003cport\u003e for every port the application serves.\nApp only; absent when the application serves no port.",
+                    "description": "URLs are http://\u003chost\u003e:\u003cport\u003e for every port the application serves.\nApp only; absent when not available or the application serves no port.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.EndpointURL"
@@ -3115,6 +3137,11 @@ const docTemplate = `{
                 "removedAt": {
                     "type": "string"
                 },
+                "running": {
+                    "description": "Running is true when the deployment ended with its service up on every\nnode (status running). A dry run, and a deployment taken down, is Done\nwithout Running.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "status": {
                     "description": "Status is the deployment status, as in GET /deployments/{id}.",
                     "type": "string",
@@ -3131,11 +3158,6 @@ const docTemplate = `{
                         "remove-failed"
                     ],
                     "example": "deploying"
-                },
-                "succeeded": {
-                    "description": "Succeeded is true when the deployment ended with its service up on\nevery node (running), or was a dry run (dry-run). Removing never counts\nas success: removed is Done without Succeeded.",
-                    "type": "boolean",
-                    "example": false
                 },
                 "type": {
                     "type": "string",
@@ -3334,6 +3356,11 @@ const docTemplate = `{
         "model.NodeProgressCount": {
             "type": "object",
             "properties": {
+                "dryRun": {
+                    "description": "DryRun are dry-run.",
+                    "type": "integer",
+                    "example": 0
+                },
                 "failed": {
                     "description": "Failed are failed, interrupted or remove-failed.",
                     "type": "integer",
@@ -3344,8 +3371,13 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "succeeded": {
-                    "description": "Succeeded are running or dry-run, or removed once taken down.",
+                "removed": {
+                    "description": "Removed are removed.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "running": {
+                    "description": "Running are running.",
                     "type": "integer",
                     "example": 1
                 },

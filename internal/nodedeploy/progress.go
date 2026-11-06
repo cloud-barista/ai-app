@@ -85,7 +85,7 @@ func progressOf(d *model.NodeDeployment, now time.Time) *model.NodeDeploymentPro
 	out := &model.NodeDeploymentProgress{
 		ID: d.ID, Type: d.Type, Status: d.Status, Error: d.Error,
 		Done:      !inProgress(d.Status),
-		Succeeded: d.Status == model.NodeDeployRunning || d.Status == model.NodeDeployDryRun,
+		Running:   d.Status == model.NodeDeployRunning,
 		CreatedAt: d.CreatedAt, FinishedAt: d.FinishedAt, RemovedAt: d.RemovedAt,
 		Nodes: make([]model.NodeProgress, 0, len(d.Nodes)),
 	}
@@ -107,8 +107,12 @@ func progressOf(d *model.NodeDeployment, now time.Time) *model.NodeDeploymentPro
 		switch n.Status {
 		case model.NodeDeployPending, model.NodeDeployDeploying, model.NodeDeployRemoving:
 			out.Count.InProgress++
-		case model.NodeDeployRunning, model.NodeDeployDryRun, model.NodeDeployRemoved:
-			out.Count.Succeeded++
+		case model.NodeDeployRunning:
+			out.Count.Running++
+		case model.NodeDeployDryRun:
+			out.Count.DryRun++
+		case model.NodeDeployRemoved:
+			out.Count.Removed++
 		default:
 			out.Count.Failed++
 		}

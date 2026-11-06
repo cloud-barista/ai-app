@@ -2,9 +2,22 @@ package model
 
 import "time"
 
+// Node statuses of an endpoint besides those CB-Tumblebug gives.
+const (
+	// EndpointNodeRunning is the CB-Tumblebug node status under which an
+	// endpoint is available.
+	EndpointNodeRunning = "Running"
+	// EndpointNodeUnknown is a node CB-Tumblebug could not be read for.
+	EndpointNodeUnknown = "unknown"
+	// EndpointNodeNotFound is a node CB-Tumblebug no longer has.
+	EndpointNodeNotFound = "not-found"
+)
+
 // Endpoint is one inference service or application serving on a node now, as
 // the deployment records tell it: the latest deployment of its work key on
-// the node succeeded there and has not been taken down.
+// the node succeeded there and has not been taken down. Whether it can be
+// reached, and at which address, follows the node as CB-Tumblebug gives it
+// when the endpoints are listed.
 type Endpoint struct {
 	// NsID is the CB-Tumblebug namespace of the node.
 	NsID string `json:"nsId" example:"etri"`
@@ -17,9 +30,18 @@ type Endpoint struct {
 	// Region and Zone are where the node runs.
 	Region string `json:"region,omitempty" example:"ap-northeast-2"`
 	Zone   string `json:"zone,omitempty" example:"ap-northeast-2a"`
-	// Host is the address the node was reached at and the URLs are built
-	// from: its public IP, or its private IP when it has none.
-	Host string `json:"host" example:"203.0.113.10"`
+	// NodeStatus is the node status CB-Tumblebug gives when the endpoints are
+	// listed, such as Running, Suspended, Terminated or Failed; unknown when
+	// CB-Tumblebug could not be read, not-found when it no longer has the
+	// node.
+	NodeStatus string `json:"nodeStatus" example:"Running"`
+	// Available is true when the node is Running and has an address; only
+	// then are host and the URLs set.
+	Available bool `json:"available" example:"true"`
+	// Host is the address the URLs are built from: the current public IP of
+	// the node, or its private IP when it has none. Absent when not
+	// available.
+	Host string `json:"host,omitempty" example:"203.0.113.10"`
 	// Type is inference or app.
 	Type string `json:"type" enums:"inference,app" example:"inference"`
 	// WorkKey is what serves on the node: ms-<runtimeId> for an inference
@@ -40,11 +62,12 @@ type Endpoint struct {
 	// ArtifactID is the artifact of that model. Inference only.
 	ArtifactID string `json:"artifactId,omitempty" example:"hf-bf16"`
 	// URL is the OpenAI compatible API of an inference service:
-	// http://<host>:<runtime port><runtime apiBasePath>. Inference only.
+	// http://<host>:<runtime port><runtime apiBasePath>. Inference only, and
+	// only when available.
 	URL string `json:"url,omitempty" example:"http://203.0.113.10:8000/v1"`
 	// HealthURL answers 200 once the runtime is up:
 	// http://<host>:<runtime port><runtime healthPath>. Inference only, and
-	// only when the runtime profile names a health path.
+	// only when available and the runtime profile names a health path.
 	HealthURL string `json:"healthUrl,omitempty" example:"http://203.0.113.10:8000/health"`
 
 	// Name is the uploaded application. App only.
@@ -52,7 +75,7 @@ type Endpoint struct {
 	// Version is the application version deployed. App only.
 	Version int `json:"version,omitempty" example:"1"`
 	// URLs are http://<host>:<port> for every port the application serves.
-	// App only; absent when the application serves no port.
+	// App only; absent when not available or the application serves no port.
 	URLs []EndpointURL `json:"urls,omitempty"`
 
 	// Ports are the TCP ports the deployment serves on the node.

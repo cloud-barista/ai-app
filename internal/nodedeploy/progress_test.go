@@ -30,7 +30,7 @@ func TestProgressFollowsARunningPlaybookThenTheEnd(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	n := p.Nodes[0]
-	if p.Done || p.Succeeded || p.Count.InProgress != 1 || n.Done {
+	if p.Done || p.Running || p.Count.InProgress != 1 || p.Count.Running != 0 || n.Done {
 		t.Errorf("while running: %+v", p)
 	}
 	if n.Phase != "install-docker" || n.PhaseStartedAt == nil || n.StepsDone != 0 || n.StepsTotal != 2 {
@@ -48,7 +48,7 @@ func TestProgressFollowsARunningPlaybookThenTheEnd(t *testing.T) {
 	waitFinished(t, f.svc, created.ID)
 	p, _ = f.svc.Progress(context.Background(), created.ID)
 	n = p.Nodes[0]
-	if !p.Done || !p.Succeeded || p.Status != model.NodeDeployRunning || p.Count.Succeeded != 1 || p.FinishedAt == nil {
+	if !p.Done || !p.Running || p.Status != model.NodeDeployRunning || p.Count.Running != 1 || p.Count.Failed != 0 || p.FinishedAt == nil {
 		t.Errorf("after the end: %+v", p)
 	}
 	if n.Phase != PhaseDone || n.StepsDone != 2 || n.StepsTotal != 2 || n.Step.Playbook != PlaybookComposeUp ||
@@ -67,7 +67,7 @@ func TestProgressKeepsThePhaseAFailedNodeStoppedIn(t *testing.T) {
 	waitFinished(t, f.svc, created.ID)
 	p, _ := f.svc.Progress(context.Background(), created.ID)
 	n := p.Nodes[0]
-	if !p.Done || p.Succeeded || p.Count.Failed != 1 {
+	if !p.Done || p.Running || p.Count.Failed != 1 || p.Count.Running != 0 {
 		t.Errorf("progress = %+v", p)
 	}
 	if n.Phase != "compose-up" || n.StepsDone != 1 || n.Error == "" || n.Step.Status != semaphore.StatusError ||
@@ -96,7 +96,7 @@ func TestProgressOfARemoval(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	n := p.Nodes[0]
-	if p.Status != model.NodeDeployRemoved || p.Succeeded || p.RemovedAt == nil {
+	if p.Status != model.NodeDeployRemoved || p.Running || p.Count.Removed != 1 || p.Count.Running != 0 || p.RemovedAt == nil {
 		t.Errorf("removal progress = %+v", p)
 	}
 	if n.Phase != PhaseDone || n.StepsDone != 1 || n.StepsTotal != 1 || n.Step.Playbook != PlaybookComposeDown {
@@ -111,7 +111,7 @@ func TestProgressOfADryRunHasNoSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := f.svc.Progress(context.Background(), created.ID)
-	if !p.Done || !p.Succeeded || p.Nodes[0].StepsTotal != 0 || p.Nodes[0].Phase != PhaseStaging {
+	if !p.Done || p.Running || p.Count.DryRun != 1 || p.Count.Running != 0 || p.Nodes[0].StepsTotal != 0 || p.Nodes[0].Phase != PhaseStaging {
 		t.Errorf("dry run progress = %+v", p)
 	}
 }

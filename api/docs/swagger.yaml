@@ -504,6 +504,12 @@ definitions:
         description: ArtifactID is the artifact of that model. Inference only.
         example: hf-bf16
         type: string
+      available:
+        description: |-
+          Available is true when the node is Running and has an address; only
+          then are host and the URLs set.
+        example: true
+        type: boolean
       csp:
         description: CSP is the cloud of the node, in lower case.
         example: aws
@@ -523,13 +529,14 @@ definitions:
         description: |-
           HealthURL answers 200 once the runtime is up:
           http://<host>:<runtime port><runtime healthPath>. Inference only, and
-          only when the runtime profile names a health path.
+          only when available and the runtime profile names a health path.
         example: http://203.0.113.10:8000/health
         type: string
       host:
         description: |-
-          Host is the address the node was reached at and the URLs are built
-          from: its public IP, or its private IP when it has none.
+          Host is the address the URLs are built from: the current public IP of
+          the node, or its private IP when it has none. Absent when not
+          available.
         example: 203.0.113.10
         type: string
       infraId:
@@ -547,6 +554,14 @@ definitions:
       nodeId:
         description: NodeID is the node within the Infra.
         example: vm1
+        type: string
+      nodeStatus:
+        description: |-
+          NodeStatus is the node status CB-Tumblebug gives when the endpoints are
+          listed, such as Running, Suspended, Terminated or Failed; unknown when
+          CB-Tumblebug could not be read, not-found when it no longer has the
+          node.
+        example: Running
         type: string
       notes:
         description: |-
@@ -602,13 +617,14 @@ definitions:
       url:
         description: |-
           URL is the OpenAI compatible API of an inference service:
-          http://<host>:<runtime port><runtime apiBasePath>. Inference only.
+          http://<host>:<runtime port><runtime apiBasePath>. Inference only, and
+          only when available.
         example: http://203.0.113.10:8000/v1
         type: string
       urls:
         description: |-
           URLs are http://<host>:<port> for every port the application serves.
-          App only; absent when the application serves no port.
+          App only; absent when not available or the application serves no port.
         items:
           $ref: '#/definitions/model.EndpointURL'
         type: array
@@ -1309,6 +1325,13 @@ definitions:
         type: array
       removedAt:
         type: string
+      running:
+        description: |-
+          Running is true when the deployment ended with its service up on every
+          node (status running). A dry run, and a deployment taken down, is Done
+          without Running.
+        example: false
+        type: boolean
       status:
         description: Status is the deployment status, as in GET /deployments/{id}.
         enum:
@@ -1324,13 +1347,6 @@ definitions:
         - remove-failed
         example: deploying
         type: string
-      succeeded:
-        description: |-
-          Succeeded is true when the deployment ended with its service up on
-          every node (running), or was a dry run (dry-run). Removing never counts
-          as success: removed is Done without Succeeded.
-        example: false
-        type: boolean
       type:
         enum:
         - inference
@@ -1502,6 +1518,10 @@ definitions:
     type: object
   model.NodeProgressCount:
     properties:
+      dryRun:
+        description: DryRun are dry-run.
+        example: 0
+        type: integer
       failed:
         description: Failed are failed, interrupted or remove-failed.
         example: 0
@@ -1510,8 +1530,12 @@ definitions:
         description: InProgress are pending, deploying or removing.
         example: 1
         type: integer
-      succeeded:
-        description: Succeeded are running or dry-run, or removed once taken down.
+      removed:
+        description: Removed are removed.
+        example: 0
+        type: integer
+      running:
+        description: Running are running.
         example: 1
         type: integer
       total:
@@ -2572,7 +2596,7 @@ paths:
       description: |-
         Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.
 
-        done is false while the deployment is pending, deploying or removing, and true otherwise. succeeded is true only when it ended running (the service is up on every node) or dry-run. A finished deployment that is not succeeded is failed, partial (count.succeeded and count.failed tell how many nodes), interrupted (the service restarted while it ran), or removed or remove-failed once taken down.
+        done is false while the deployment is pending, deploying or removing, and true otherwise. running is true only when it ended running (the service is up on every node). A finished deployment that is not running is failed, partial (count.running and count.failed tell how many nodes), interrupted (the service restarted while it ran), dry-run, or removed or remove-failed once taken down. count has total, inProgress (pending, deploying, removing), running, failed (failed, interrupted, remove-failed), dryRun and removed.
 
         For every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as "Wait until the service answers"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.
       operationId: GetNodeDeploymentProgress
@@ -2605,7 +2629,9 @@ paths:
 
         On a node, a work key is decided by the latest deployment of it there (by creation time) that is pending or deploying, that started its service (compose-up or copy-and-run ran), or that was taken down after starting it. It has an endpoint only when that deployment is running on the node. So a redeploy replaces the endpoint with the new deploymentId; DELETE /deployments/{id} removes it, and an older deployment of the same work key does not come back, since compose-down stopped the project they share; a later deployment that failed after it started its service leaves no endpoint, since the shared project was recreated and the older containers are gone; a later deployment that failed before that (for example in install-docker) leaves the older endpoint as it was; one still pending or deploying leaves none until it ends. Dry-run deployments never make an endpoint.
 
-        An inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://<host>:<port><apiBasePath>) and healthUrl. An app endpoint carries name, version and urls, one http://<host>:<port> per port it serves. host is the public IP of the node, or its private IP when it has none. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.
+        Every node with an endpoint is read from CB-Tumblebug on each call, once per node. nodeStatus is the node status CB-Tumblebug gives (Running, Suspended, Terminated, Failed, ...), unknown when CB-Tumblebug could not be read, or not-found when it no longer has the node; the endpoint is listed in every case. available is true only when the node is Running; only then are host and the URLs set, built from the current public IP of the node, or its private IP when it has none. A node that is not Running has no address, since its IP may change when it is resumed.
+
+        An inference endpoint carries runtimeId, modelId, artifactId, url (the OpenAI compatible API, http://<host>:<port><apiBasePath>) and healthUrl. An app endpoint carries name, version and urls, one http://<host>:<port> per port it serves. portsOpened is true when every served port was found or added in a CB-Tumblebug security group of the node; otherwise the URLs may not be reachable from outside, and portsError or notes say why.
       operationId: GetAllEndpoints
       parameters:
       - description: CB-Tumblebug namespace of the node
@@ -2627,6 +2653,11 @@ paths:
         in: query
         name: nodeId
         type: string
+      - description: 'true: only the endpoints whose node is Running, with addresses;
+          false: only the others'
+        in: query
+        name: available
+        type: boolean
       produces:
       - application/json
       responses:
@@ -2634,6 +2665,10 @@ paths:
           description: Endpoints serving now
           schema:
             $ref: '#/definitions/model.EndpointListResp'
+        "400":
+          description: available is not a boolean
+          schema:
+            $ref: '#/definitions/model.SimpleMsg'
       security:
       - BearerAuth: []
       summary: List the inference services and applications serving now

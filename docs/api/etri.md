@@ -147,7 +147,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 ```
 
 - 받으면 `202` 와 `{"id": "...", "status": "pending", ...}` 입니다. 그 `id` 로 `GET /aiapp/deployments/{id}/progress` 를 `done` 이
-  `true` 가 될 때까지 읽습니다. `succeeded` 가 `true`(`status: running`)면 됐습니다. 도는 동안 노드마다 `phase`(지금 하는 일)와
+  `true` 가 될 때까지 읽습니다. `running` 이 `true`(`status: running`)면 됐습니다. 도는 동안 노드마다 `phase`(지금 하는 일)와
   `step.currentTask`(Ansible 태스크 이름)가 보입니다. 필드는 [README 7-1절](README.md) 입니다.
 - 접근 승인이 필요한 Hugging Face 모델이면 `"env": {"HF_TOKEN": "<토큰>"}` 을 `inference` 안에 넣습니다. 이 값은 배포 기록과
   노드의 `.env` 에 평문으로 남습니다.
@@ -177,7 +177,7 @@ for i in $(seq 1 90); do
   [ "$(echo "$p" | jq -r .done)" = true ] && break
   sleep 10
 done
-echo "$p" | jq '{status, succeeded}'
+echo "$p" | jq '{status, running}'
 ```
 
 ### 3-3. 추론 서비스 주소 읽기
@@ -191,7 +191,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel&type=inferenc
   "endpoints": [
     {
       "nsId": "etri", "infraId": "travel", "nodeId": "vm1",
-      "csp": "aws", "region": "ap-northeast-2", "host": "203.0.113.10",
+      "csp": "aws", "region": "ap-northeast-2",
+      "nodeStatus": "Running", "available": true, "host": "203.0.113.10",
       "type": "inference", "workKey": "ms-vllm",
       "deploymentId": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48",
       "runtimeId": "vllm", "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16",
@@ -251,12 +252,16 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel"
 | 필드 | 쓰는 곳 |
 |---|---|
 | `nodeId`, `workKey` | 어느 노드의 무엇인지. 노드 하나·작업 키 하나에 항목 하나 |
+| `nodeStatus`, `available` | 부를 때 CB-Tumblebug 에서 읽은 노드 상태(`Running`, `Suspended` 등). `Running` 일 때만 `available: true` 이고 주소가 있음 |
 | `type: inference` 의 `url` | OpenAI 호환 API (`/v1/chat/completions`, `/v1/embeddings`) |
 | `type: app` 의 `urls[].url` | 응용 화면 (`http://<노드>:<포트>`) |
 | `portsOpened` | `false` 면 보안 그룹에 포트가 안 열렸을 수 있음. `portsError`·`notes` 를 봄 |
 | `deploymentId` | 이 주소를 만든 배포. 내릴 때 씀 |
 
 - 다시 배포하면 항목의 `deploymentId` 와 주소가 새 것으로 바뀝니다. 내리면 항목이 빠집니다.
+- 주소는 노드의 지금 IP(공인 IP, 없으면 사설 IP)로 만듭니다. 노드를 정지했다 다시 켜서 IP 가 바뀌어도 다시 배포하지 않고 그대로 읽으면 됩니다.
+- 노드가 `Running` 이 아니면(정지·종료·실패) 항목은 남지만 `available: false` 이고 `host`·`url`·`urls` 가 없습니다. CB-Tumblebug 을 못 읽으면
+  `nodeStatus: unknown`, 노드가 없어졌으면 `not-found` 입니다. 포털이 쓸 주소만 받으려면 `?available=true` 를 붙입니다.
 - 배포 중이거나 실패한 것, dry-run 은 나오지 않습니다.
 - 노드 하나만 볼 때는 `?nsId=etri&infraId=travel&nodeId=vm2` 처럼 거릅니다.
 
