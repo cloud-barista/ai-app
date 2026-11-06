@@ -44,7 +44,8 @@ func (s *DockerModelRunner) Name() string { return model.OriginDockerModelRunner
 type dmrRepoPage struct {
 	Next    string `json:"next"`
 	Results []struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	} `json:"results"`
 }
 
@@ -62,7 +63,7 @@ type dmrTagPage struct {
 func (s *DockerModelRunner) Fetch(ctx context.Context, opt catalogsync.Options) ([]model.Model, error) {
 	n := limit(opt)
 	pageSize := min(n, 100)
-	var names []string
+	var names, descriptions []string
 	for page := 1; len(names) < n; page++ {
 		u := fmt.Sprintf("%s/v2/namespaces/%s/repositories?page_size=%d&page=%d", s.HubURL, dmrNamespace, pageSize, page)
 		var p dmrRepoPage
@@ -75,6 +76,7 @@ func (s *DockerModelRunner) Fetch(ctx context.Context, opt catalogsync.Options) 
 		for _, r := range p.Results {
 			if len(names) < n && r.Name != "" {
 				names = append(names, r.Name)
+				descriptions = append(descriptions, strings.TrimSpace(r.Description))
 			}
 		}
 		if p.Next == "" || len(p.Results) == 0 {
@@ -84,7 +86,7 @@ func (s *DockerModelRunner) Fetch(ctx context.Context, opt catalogsync.Options) 
 
 	results := make([]*model.Model, len(names))
 	forEach(ctx, len(names), fetchWorkers, func(i int) {
-		results[i] = s.fetchOne(ctx, opt, names[i])
+		results[i] = s.fetchOne(ctx, opt, names[i], descriptions[i])
 	})
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -98,7 +100,7 @@ func (s *DockerModelRunner) Fetch(ctx context.Context, opt catalogsync.Options) 
 	return keepValid(out), nil
 }
 
-func (s *DockerModelRunner) fetchOne(ctx context.Context, opt catalogsync.Options, name string) *model.Model {
+func (s *DockerModelRunner) fetchOne(ctx context.Context, opt catalogsync.Options, name, description string) *model.Model {
 	u := fmt.Sprintf("%s/v2/namespaces/%s/repositories/%s/tags?page_size=100", s.HubURL, dmrNamespace, url.PathEscape(name))
 	var tags dmrTagPage
 	if err := getJSON(ctx, opt, u, "", &tags); err != nil {
@@ -125,10 +127,11 @@ func (s *DockerModelRunner) fetchOne(ctx context.Context, opt catalogsync.Option
 		return nil
 	}
 	m := &model.Model{
-		ID:        catalogsync.ModelID("dmr", name),
-		Name:      name,
-		Artifacts: arts,
-		Origin:    model.OriginDockerModelRunner,
+		ID:          catalogsync.ModelID("dmr", name),
+		Name:        name,
+		Description: description,
+		Artifacts:   arts,
+		Origin:      model.OriginDockerModelRunner,
 	}
 	// Docker Hub states no task. The only task given is embedding, and only
 	// when the repository name says "embed"; that is a guess from the name.

@@ -49,6 +49,8 @@ func TestListModelsFilters(t *testing.T) {
 		{`{"origin":"ollama"}`, 0},
 		{`{"verified":true}`, 0},
 		{`{"verified":false}`, 3},
+		{`{"deployable":true}`, 3},
+		{`{"deployable":false}`, 0},
 	} {
 		out, err := registry.Call(ctx, "default", "list_models", json.RawMessage(tc.input))
 		if err != nil {

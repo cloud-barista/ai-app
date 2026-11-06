@@ -79,7 +79,7 @@ CB-Tumblebug 0.13.8 의 `POST /ns/system/resources/searchImage` 에 `"isGPUImage
 |---|---|---|---|---|
 | aws ap-northeast-1 | `g4dn.xlarge` (T4) | `ami-0e8e3e0f677c0f395` Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) | 595 | docker·compose·nvidia 런타임이 다 들어 있음. vLLM + Qwen3-Embedding 동작 |
 | azure koreacentral | `Standard_NC4as_T4_v3` (T4) | `microsoft-dsvm:ubuntu-hpc:2204:22.04.2026100101` | 580 | compose 플러그인이 없어 `moby-compose` 를 깖. Ollama 가 GPU 사용(초당 약 43 토큰) |
-| gcp us-west1 (`us-west1-c`) | `g2-standard-4` (L4) | `ubuntu-accelerator-2204-amd64-with-nvidia-595` (Canonical, Ubuntu 22.04) | 595 | docker 가 없어 AI-App 이 Docker apt 저장소로 설치(29.9.3, compose 5.7.0). vLLM + Ministral 3 8B 가 GPU 사용 |
+| gcp us-west1 (`us-west1-c`) | `g2-standard-4` (L4) | `ubuntu-accelerator-2204-amd64-with-nvidia-595-v20261104a` (Canonical, Ubuntu 22.04). 시험한 VM 은 `-v20261021` 로 떴고, 그 이미지는 시험 뒤에 deprecated 되어 이것으로 대체됨 | 595 | docker 가 없어 AI-App 이 Docker apt 저장소로 설치(29.9.3, compose 5.7.0). vLLM + Ministral 3 8B 가 GPU 사용 |
 | azure koreacentral | `Standard_NC4as_T4_v3` | `microsoft-dsvm:ubuntu-2204:2204-gen2:25.06.18` | 535 | **쓰지 말 것.** 드라이버가 오래돼 Ollama 가 CPU 로 돎(초당 약 5 토큰) |
 
 VM 이 Running 이 된 직후에는 cloud-init 이 접속 사용자를 아직 만들지 않았을 수 있습니다. `install-docker` 가 접속될 때까지 최대 10분 기다립니다.

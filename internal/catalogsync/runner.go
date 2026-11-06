@@ -125,6 +125,11 @@ type Status struct {
 	// Sources holds the last result of each configured source, in the
 	// configured order.
 	Sources []SourceResult `json:"sources"`
+	// Removed counts, by origin, the entries the last run deleted because
+	// their origin is a sync source that is not configured
+	// (AIAPP_CATALOG_SYNC_SOURCES). Entries of origin seed or manual are
+	// never deleted. Absent when the last run deleted none.
+	Removed map[string]int `json:"removed,omitempty" example:"kaggle:12"`
 }
 
 // Runner runs the configured sources against the model catalog, once at
@@ -142,6 +147,7 @@ type Runner struct {
 	offline   bool
 	nextRunAt *time.Time
 	results   []SourceResult
+	removed   map[string]int
 	// base is the context runs started by Trigger use, so that they outlive
 	// the request that asked for them and end with the service.
 	base context.Context
@@ -249,6 +255,9 @@ func (r *Runner) Trigger() bool {
 // recorded as skipped, and one whose fetch fails is recorded with its error;
 // the catalog is not touched for either, so its entries are not marked stale
 // by a source that was merely unreachable.
+//
+// After the last source, the entries of every sync origin that is not a
+// configured source are deleted; seed and manual entries are not.
 func (r *Runner) Run(ctx context.Context) error {
 	_, err := r.run(ctx)
 	return err
@@ -303,8 +312,30 @@ func (r *Runner) runAll(ctx context.Context) bool {
 	if len(unreachable) > 0 {
 		log.Warn().Strs("sources", unreachable).Msg("Catalog sync skipped sources whose host did not answer; their entries are left as they were")
 	}
+	r.removeUnconfigured(ctx)
 	log.Info().Bool("offline", !reached).Msg("Finished catalog sync")
 	return reached
+}
+
+// removeUnconfigured deletes the entries of sync origins that are not among
+// the configured sources and records the counts for Status. A configured
+// source keeps its entries even when it was skipped or failed.
+func (r *Runner) removeUnconfigured(ctx context.Context) {
+	keep := make([]string, len(r.sources))
+	for i, src := range r.sources {
+		keep[i] = src.Name()
+	}
+	removed, err := r.store.RemoveOtherOrigins(ctx, keep)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to remove catalog entries of sources that are not configured")
+	}
+	r.mu.Lock()
+	r.removed = removed
+	r.mu.Unlock()
+	if len(removed) > 0 {
+		log.Info().Interface("removed", removed).Strs("configured", keep).
+			Msg("Catalog sync removed the entries of sources that are not configured")
+	}
 }
 
 // safeFetch runs one source's Fetch and turns a panic into an error, so that
@@ -374,6 +405,13 @@ func (r *Runner) Status() Status {
 		copied := *r.nextRunAt
 		next = &copied
 	}
+	var removed map[string]int
+	if len(r.removed) > 0 {
+		removed = make(map[string]int, len(r.removed))
+		for k, v := range r.removed {
+			removed[k] = v
+		}
+	}
 	return Status{
 		Enabled:   true,
 		Running:   r.running,
@@ -381,5 +419,6 @@ func (r *Runner) Status() Status {
 		Interval:  r.interval.String(),
 		NextRunAt: next,
 		Sources:   sources,
+		Removed:   removed,
 	}
 }

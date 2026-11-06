@@ -350,6 +350,68 @@
                 }
             }
         },
+        "/catalog/sync": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Report whether the catalog sync is enabled and running, how long it waits between scheduled runs, and how the last run of each configured source went: when it started and finished, how many models the source returned, what they did to the catalog (added, updated, marked stale, skipped because another origin holds the id, dropped as invalid) and the error when the source failed. A failed source leaves its entries as they were. removed counts, by origin, the entries the last run deleted because their source is not in AIAPP_CATALOG_SYNC_SOURCES. Before a source has run once only its name is given. With AIAPP_CATALOG_SYNC_ENABLED off, enabled is false and sources is empty.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Read the catalog sync status",
+                "operationId": "GetCatalogSync",
+                "responses": {
+                    "200": {
+                        "description": "Catalog sync status",
+                        "schema": {
+                            "$ref": "#/definitions/catalogsync.Status"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Start one run of every configured source in the background and return at once with the status, running true. Poll GET /catalog/sync for the results. The sync adds the models a source lists, updates the ones it added before (keeping runtimes[].verifiedAt), marks stale the ones the source no longer lists and never changes a model of origin seed or manual or of another source. At the end of the run it deletes the models of every source that is not configured in AIAPP_CATALOG_SYNC_SOURCES; seed and manual models are never deleted. Only one run happens at a time: while one is in progress, including the scheduled one, this answers 409.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "[Model] AI Model Catalog"
+                ],
+                "summary": "Run the catalog sync now",
+                "operationId": "PostCatalogSync",
+                "responses": {
+                    "202": {
+                        "description": "Run started",
+                        "schema": {
+                            "$ref": "#/definitions/catalogsync.Status"
+                        }
+                    },
+                    "409": {
+                        "description": "A run is already in progress",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    },
+                    "503": {
+                        "description": "The catalog sync is disabled (AIAPP_CATALOG_SYNC_ENABLED is off)",
+                        "schema": {
+                            "$ref": "#/definitions/model.SimpleMsg"
+                        }
+                    }
+                }
+            }
+        },
         "/deployments": {
             "get": {
                 "security": [
@@ -1004,7 +1066,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
+                "description": "List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.",
                 "produces": [
                     "application/json"
                 ],
@@ -1064,6 +1126,12 @@
                         "description": "true: an inference deployment of some artifact succeeded on some runtime (runtimes[].verifiedAt set); false: none did",
                         "name": "verified",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: some artifact lists a runtime and can be deployed; false: none does",
+                        "name": "deployable",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1074,7 +1142,7 @@
                         }
                     },
                     "400": {
-                        "description": "origin is not a known origin, or verified is not a boolean",
+                        "description": "origin is not a known origin, or verified or deployable is not a boolean",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1125,68 +1193,6 @@
                     },
                     "500": {
                         "description": "The catalog file could not be written",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    }
-                }
-            }
-        },
-        "/models/sync": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Report whether the catalog sync is enabled and running, how long it waits between scheduled runs, and how the last run of each configured source went: when it started and finished, how many models the source returned, what they did to the catalog (added, updated, marked stale, skipped because another origin holds the id, dropped as invalid) and the error when the source failed. A failed source leaves its entries as they were. Before a source has run once only its name is given. With AIAPP_CATALOG_SYNC_ENABLED off, enabled is false and sources is empty.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "[Model] AI Model Catalog"
-                ],
-                "summary": "Read the catalog sync status",
-                "operationId": "GetModelSync",
-                "responses": {
-                    "200": {
-                        "description": "Catalog sync status",
-                        "schema": {
-                            "$ref": "#/definitions/catalogsync.Status"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Start one run of every configured source in the background and return at once with the status, running true. Poll GET /models/sync for the results. The sync adds the models a source lists, updates the ones it added before (keeping runtimes[].verifiedAt), marks stale the ones the source no longer lists and never changes a model of origin seed or manual or of another source. Only one run happens at a time: while one is in progress, including the scheduled one, this answers 409.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "[Model] AI Model Catalog"
-                ],
-                "summary": "Run the catalog sync now",
-                "operationId": "PostModelSync",
-                "responses": {
-                    "202": {
-                        "description": "Run started",
-                        "schema": {
-                            "$ref": "#/definitions/catalogsync.Status"
-                        }
-                    },
-                    "409": {
-                        "description": "A run is already in progress",
-                        "schema": {
-                            "$ref": "#/definitions/model.SimpleMsg"
-                        }
-                    },
-                    "503": {
-                        "description": "The catalog sync is disabled (AIAPP_CATALOG_SYNC_ENABLED is off)",
                         "schema": {
                             "$ref": "#/definitions/model.SimpleMsg"
                         }
@@ -1735,6 +1741,16 @@
                     "type": "boolean",
                     "example": false
                 },
+                "removed": {
+                    "description": "Removed counts, by origin, the entries the last run deleted because\ntheir origin is a sync source that is not configured\n(AIAPP_CATALOG_SYNC_SOURCES). Entries of origin seed or manual are\nnever deleted. Absent when the last run deleted none.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    },
+                    "example": {
+                        "kaggle": 12
+                    }
+                },
                 "running": {
                     "description": "Running is true while a run is in progress.",
                     "type": "boolean",
@@ -2188,6 +2204,12 @@
                 "source"
             ],
             "properties": {
+                "deployable": {
+                    "description": "Deployable is true when runtimes lists at least one runtime. It is\ncomputed and ignored on input.",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
+                },
                 "format": {
                     "description": "Format is the file format the runtime loads: hf for Hugging Face\nsafetensors, gguf for GGUF. Filter with ?format=.",
                     "type": "string",
@@ -2197,6 +2219,11 @@
                     "description": "ID identifies the artifact within its model, with the same character\nrules as a model ID.",
                     "type": "string",
                     "example": "hf-bf16"
+                },
+                "parameters": {
+                    "description": "Parameters is the parameter count of this artifact as the source\nwrites it, such as 8.2B or 751.63M. Empty means unknown.",
+                    "type": "string",
+                    "example": "8.8B"
                 },
                 "precision": {
                     "description": "Precision is the precision or quantization exactly as the source states\nit, such as BF16, FP8 or Q4_K_M. It is not normalized. Empty means\nunknown.",
@@ -2452,6 +2479,17 @@
                     "type": "integer",
                     "example": 262144
                 },
+                "deployable": {
+                    "description": "Deployable is true when some artifact is deployable. It is computed\nfrom the artifacts and ignored on input. Filter with ?deployable=.",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
+                },
+                "description": {
+                    "description": "Description is what the source says the model is, copied as written.\nEmpty when the source gives none.",
+                    "type": "string",
+                    "example": "Qwen3-VL is the vision-language model of the Qwen3 series."
+                },
                 "family": {
                     "description": "Family is the model family the model belongs to.",
                     "type": "string",
@@ -2498,7 +2536,7 @@
                     "example": "huggingface"
                 },
                 "parameters": {
-                    "description": "Parameters is the parameter count as the publisher writes it.",
+                    "description": "Parameters is the parameter count as the publisher writes it. A model\nwhose artifacts differ in size, such as the size tags of an Ollama\nmodel, leaves it empty and states it on each artifact.",
                     "type": "string",
                     "example": "8B"
                 },

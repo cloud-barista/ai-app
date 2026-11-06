@@ -17,7 +17,7 @@ var hfPipelineTags = []string{"text-generation", "image-text-to-text", "feature-
 
 // hfExpand are the fields asked of the listing. The listing refuses keys it
 // does not know with 400; usedStorage is one of them, so the download size
-// is not known.
+// is read per model from its file list instead.
 var hfExpand = []string{"safetensors", "cardData", "config", "pipeline_tag", "library_name", "tags"}
 
 var vllmArchSet = func() map[string]bool {
@@ -27,6 +27,9 @@ var vllmArchSet = func() map[string]bool {
 	}
 	return set
 }()
+
+// hfWorkers is how many file list reads run at once.
+const hfWorkers = 8
 
 // HuggingFace lists the most downloaded Hugging Face repositories of each
 // collected pipeline tag.
@@ -46,7 +49,8 @@ func (s *HuggingFace) Name() string { return model.OriginHuggingFace }
 type hfModel struct {
 	ID       string `json:"id"`
 	CardData struct {
-		License json.RawMessage `json:"license"`
+		License     json.RawMessage `json:"license"`
+		Description json.RawMessage `json:"description"`
 	} `json:"cardData"`
 	Config struct {
 		Architectures []string `json:"architectures"`
@@ -59,8 +63,20 @@ type hfModel struct {
 	PipelineTag string `json:"pipeline_tag"`
 }
 
+// hfFiles is the file list of one repository, as GET /api/models/<id>?blobs=true
+// returns it.
+type hfFiles struct {
+	Siblings []struct {
+		RFilename string `json:"rfilename"`
+		Size      int64  `json:"size"`
+	} `json:"siblings"`
+}
+
 // Fetch implements catalogsync.Source. It lists up to opt.Limit repositories
-// per pipeline tag; a repository listed under two tags is one model.
+// per pipeline tag; a repository listed under two tags is one model. The
+// download size of a repository with safetensors is the sum of its
+// *.safetensors files, read from its file list; it is left unknown when the
+// file list cannot be read.
 func (s *HuggingFace) Fetch(ctx context.Context, opt catalogsync.Options) ([]model.Model, error) {
 	var out []model.Model
 	index := map[string]int{}
@@ -97,7 +113,40 @@ func (s *HuggingFace) Fetch(ctx context.Context, opt catalogsync.Options) ([]mod
 			out = append(out, m)
 		}
 	}
+	var sized []int
+	for i := range out {
+		if out[i].Artifacts[0].Parameters != "" {
+			sized = append(sized, i)
+		}
+	}
+	forEach(ctx, len(sized), hfWorkers, func(k int) {
+		a := &out[sized[k]].Artifacts[0]
+		a.SizeGiB = s.safetensorsGiB(ctx, opt, a.Ref)
+	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return keepValid(out), nil
+}
+
+// safetensorsGiB returns the summed size of the *.safetensors files of
+// repository ref in GiB, or zero when the file list cannot be read.
+func (s *HuggingFace) safetensorsGiB(ctx context.Context, opt catalogsync.Options, ref string) float64 {
+	var files hfFiles
+	parts := strings.Split(ref, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	if err := getJSON(ctx, opt, s.BaseURL+"/api/models/"+strings.Join(parts, "/")+"?blobs=true", "", &files); err != nil {
+		return 0
+	}
+	var total int64
+	for _, f := range files.Siblings {
+		if strings.HasSuffix(f.RFilename, ".safetensors") {
+			total += f.Size
+		}
+	}
+	return gib(total)
 }
 
 func hfToModel(hm hfModel, task string) (model.Model, bool) {
@@ -122,11 +171,13 @@ func hfToModel(hm hfModel, task string) (model.Model, bool) {
 		Family:          hm.Config.ModelType,
 		Tasks:           []string{task},
 		InputModalities: modalities(task),
+		Description:     hfDescription(hm.CardData.Description),
 		License:         hfLicense(hm.CardData.License),
 		Origin:          model.OriginHuggingFace,
 	}
 	if st := hm.Safetensors; st != nil && st.Total > 0 {
 		m.Parameters = shortCount(st.Total)
+		art.Parameters = m.Parameters
 		art.Precision = topDtype(st.Parameters)
 		if slices.ContainsFunc(hm.Config.Architectures, func(a string) bool { return vllmArchSet[a] }) {
 			art.Runtimes = []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}}
@@ -146,6 +197,16 @@ func topDtype(params map[string]int64) string {
 		}
 	}
 	return best
+}
+
+// hfDescription reads cardData.description when it is a string. The listing
+// gives one only when the model card states it in its front matter.
+func hfDescription(raw json.RawMessage) string {
+	var s string
+	if len(raw) == 0 || json.Unmarshal(raw, &s) != nil {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 // hfLicense reads cardData.license, which is a string or a list of strings.

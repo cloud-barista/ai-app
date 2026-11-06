@@ -82,6 +82,8 @@ func TestFilter(t *testing.T) {
 		{"verified", Filter{Verified: &verified}, []string{"qwen3-vl-8b"}},
 		{"not verified", Filter{Verified: &notVerified}, []string{"ministral-3-8b", "qwen3-embedding-0.6b"}},
 		{"verified and origin", Filter{Verified: &verified, Origin: "manual"}, nil},
+		{"deployable", Filter{Deployable: &verified}, []string{"ministral-3-8b", "qwen3-embedding-0.6b", "qwen3-vl-8b"}},
+		{"not deployable", Filter{Deployable: &notVerified}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ids(store.List(ctx, tc.filter))
@@ -248,6 +250,68 @@ func TestFileWithoutOriginReadsAsManual(t *testing.T) {
 	}
 	if got := ids(store.List(ctx, Filter{Source: "ngc"})); len(got) != 1 {
 		t.Errorf("source=ngc = %v, want the artifact without runtimes listed", got)
+	}
+	if !m.Deployable || !m.Artifacts[0].Deployable || m.Artifacts[1].Deployable {
+		t.Errorf("deployable = model %v, a %v, b %v; want true, true, false", m.Deployable, m.Artifacts[0].Deployable, m.Artifacts[1].Deployable)
+	}
+}
+
+// TestFileWithoutOriginReadsSeedIDsAsSeed reads an entry with no origin as
+// seed when its ID is a built-in model ID, as in a file written by the seed
+// before origin existed, and every other entry with no origin as manual.
+func TestFileWithoutOriginReadsSeedIDsAsSeed(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	old := `{"models":[` +
+		`{"id":"qwen3-vl-8b","name":"Qwen3-VL-8B-Instruct","artifacts":[{"id":"hf-bf16","source":"huggingface","ref":"Qwen/Qwen3-VL-8B-Instruct","format":"hf","runtimes":[{"runtimeId":"vllm"}]}]},` +
+		`{"id":"ministral-3-8b","name":"Ministral","origin":"manual","artifacts":[{"id":"hf-fp8","source":"huggingface","ref":"mistralai/Ministral-3-8B-Instruct-2512","format":"hf","runtimes":[]}]},` +
+		`{"id":"mine","name":"Mine","artifacts":[{"id":"a","source":"huggingface","ref":"org/mine","format":"hf","runtimes":[]}]}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for id, want := range map[string]string{
+		"qwen3-vl-8b":    model.OriginSeed,
+		"ministral-3-8b": model.OriginManual,
+		"mine":           model.OriginManual,
+	} {
+		m, err := store.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("Get %s: %v", id, err)
+		}
+		if m.Origin != want {
+			t.Errorf("%s origin = %q, want %q", id, m.Origin, want)
+		}
+	}
+	if got := ids(store.List(ctx, Filter{Origin: "seed"})); strings.Join(got, ",") != "qwen3-vl-8b" {
+		t.Errorf("origin=seed = %v, want [qwen3-vl-8b]", got)
+	}
+}
+
+// TestDeployableIsComputed ignores a deployable the caller sends and
+// computes it from the runtimes.
+func TestDeployableIsComputed(t *testing.T) {
+	store := seeded(t, "")
+	ctx := context.Background()
+	claimed := model.Model{ID: "claims", Name: "Claims", Deployable: true, Artifacts: []model.Artifact{{
+		ID: "a", Source: "ngc", Ref: "nvidia/claims", Format: "hf", Deployable: true,
+	}}}
+	got, err := store.Register(ctx, claimed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Deployable || got.Artifacts[0].Deployable {
+		t.Errorf("registered = model %v, artifact %v; want false, false", got.Deployable, got.Artifacts[0].Deployable)
+	}
+	vl, err := store.Get(ctx, "qwen3-vl-8b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vl.Deployable || !vl.Artifacts[0].Deployable || !vl.Artifacts[1].Deployable {
+		t.Errorf("qwen3-vl-8b deployable = %+v", vl)
 	}
 }
 

@@ -55,16 +55,20 @@ func TestParseOllamaLibrary(t *testing.T) {
 	}
 	got := parseOllamaLibrary(string(page) + string(page))
 	want := []ollamaEntry{
-		{name: "nomic-embed-text", capabilities: []string{"embedding"}},
-		{name: "qwen3", capabilities: []string{"tools", "thinking"}, sizes: []string{"0.6b", "8b"}},
-		{name: "gemma3", capabilities: []string{"vision"}, sizes: []string{"1b", "4b"}},
-		{name: "minimax-m2.7", capabilities: []string{"tools", "thinking"}},
+		{name: "nomic-embed-text", capabilities: []string{"embedding"},
+			description: "A high-performing open embedding model with a large token context window."},
+		{name: "qwen3", capabilities: []string{"tools", "thinking"}, sizes: []string{"0.6b", "8b"},
+			description: "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models."},
+		{name: "gemma3", capabilities: []string{"vision"}, sizes: []string{"1b", "4b"},
+			description: "The current, most capable model that runs on a single GPU."},
+		{name: "minimax-m2.7", capabilities: []string{"tools", "thinking"},
+			description: "MiniMax's M2-series model for coding, agentic workflows, and professional productivity."},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v", got)
 	}
 	for i := range want {
-		if got[i].name != want[i].name || !slices.Equal(got[i].capabilities, want[i].capabilities) || !slices.Equal(got[i].sizes, want[i].sizes) {
+		if got[i].name != want[i].name || got[i].description != want[i].description || !slices.Equal(got[i].capabilities, want[i].capabilities) || !slices.Equal(got[i].sizes, want[i].sizes) {
 			t.Errorf("entry %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
@@ -94,7 +98,11 @@ func TestOllamaFetch(t *testing.T) {
 		!slices.Equal(nomic.Tasks, []string{"embedding"}) || len(nomic.Artifacts) != 1 {
 		t.Fatalf("nomic = %+v", nomic)
 	}
-	if a := nomic.Artifacts[0]; a.ID != "latest" || a.Ref != "nomic-embed-text:latest" || a.Precision != "F16" || a.SizeGiB != 0.3 {
+	if nomic.Description != "A high-performing open embedding model with a large token context window." {
+		t.Errorf("nomic description = %q", nomic.Description)
+	}
+	if a := nomic.Artifacts[0]; a.ID != "latest" || a.Ref != "nomic-embed-text:latest" || a.Precision != "F16" || a.SizeGiB != 0.3 ||
+		a.Parameters != "137M" {
 		t.Errorf("nomic artifact = %+v", a)
 	}
 
@@ -104,17 +112,18 @@ func TestOllamaFetch(t *testing.T) {
 		t.Fatalf("qwen3 = %+v", qwen)
 	}
 	type art struct {
-		id, ref, format, precision string
-		size                       float64
+		id, ref, format, precision, parameters string
+		size                                   float64
 	}
 	var arts []art
 	for _, a := range qwen.Artifacts {
-		arts = append(arts, art{a.ID, a.Ref, a.Format, a.Precision, a.SizeGiB})
+		arts = append(arts, art{a.ID, a.Ref, a.Format, a.Precision, a.Parameters, a.SizeGiB})
 		if a.Source != "ollama" || !slices.Equal(runtimeIDs(a), []string{"ollama"}) {
 			t.Errorf("qwen3 artifact %+v", a)
 		}
 	}
-	if want := []art{{"0.6b", "qwen3:0.6b", "gguf", "Q4_K_M", 0.5}, {"8b", "qwen3:8b", "gguf", "Q4_K_M", 4.9}}; !slices.Equal(arts, want) {
+	// Model.Parameters stays empty with two size tags; each artifact has its own.
+	if want := []art{{"0.6b", "qwen3:0.6b", "gguf", "Q4_K_M", "751.63M", 0.5}, {"8b", "qwen3:8b", "gguf", "Q4_K_M", "8.2B", 4.9}}; !slices.Equal(arts, want) {
 		t.Errorf("qwen3 artifacts = %+v, want %+v", arts, want)
 	}
 
@@ -123,7 +132,7 @@ func TestOllamaFetch(t *testing.T) {
 		t.Errorf("gemma3 tasks %v modalities %v", gemma.Tasks, gemma.InputModalities)
 	}
 	// The model layer is the size, not the projector after it.
-	if a, ok := gemma.Artifact("4b"); !ok || a.SizeGiB != 2.3 {
+	if a, ok := gemma.Artifact("4b"); !ok || a.SizeGiB != 2.3 || a.Parameters != "3.9B" {
 		t.Errorf("gemma3:4b = %+v", a)
 	}
 }

@@ -52,7 +52,7 @@ type AppDependencies struct {
 	// one from the configuration with clients of its own.
 	Status *StatusChecker
 	// Sync fills the model catalog from public model sources. Nil leaves the
-	// catalog sync disabled: GET /models/sync says so and POST answers 503.
+	// catalog sync disabled: GET /catalog/sync says so and POST answers 503.
 	Sync *catalogsync.Runner
 }
 
@@ -106,8 +106,8 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// inference runtime profiles those artifacts run on.
 	g.GET("/models", handler.RestGetAllModels)
 	g.POST("/models", handler.RestPostModel)
-	g.GET("/models/sync", handler.RestGetModelSync)
-	g.POST("/models/sync", handler.RestPostModelSync)
+	g.GET("/catalog/sync", handler.RestGetCatalogSync)
+	g.POST("/catalog/sync", handler.RestPostCatalogSync)
 	g.GET("/models/:modelId", handler.RestGetModel)
 	g.DELETE("/models/:modelId", handler.RestDeleteModel)
 	g.GET("/models/:modelId/artifacts/:artifactId/compose", handler.RestGetModelCompose)

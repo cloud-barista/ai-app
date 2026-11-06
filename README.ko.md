@@ -29,7 +29,7 @@ CB-Tumblebug 노드에 설치하고, 서빙 포트를 열고, 그 주소를 알�
 
 | 하려는 것 | AI-App 이 주는 것 |
 |---|---|
-| 무엇을 배포할 수 있는지 알기 | **모델 카탈로그**(모델, 출처·형식별 아티팩트, 호환 런타임). Hugging Face, Ollama, Docker Model Runner, NGC, Kaggle 에서 매일 수집하고, 직접 등록도 됨 |
+| 무엇을 배포할 수 있는지 알기 | **모델 카탈로그**(모델, 출처·형식별 아티팩트, 호환 런타임). Hugging Face, Ollama 에서 매일 수집하고(Docker Model Runner, NGC, Kaggle 은 켜면 수집), 직접 등록도 됨 |
 | 모델 서빙 | `POST /aiapp/deployments` 에 `type: inference`. 노드 하나에 런타임(`vllm` 또는 `ollama`)이 모델 아티팩트 하나를 띄우고 OpenAI 호환 API 를 엶 |
 | AI 응용 실행 | 파일과 `deploy.sh` 를 한 번 올리고(`POST /aiapp/apps`, 버전 관리) `type: app` 으로 배포. Open WebUI, Langflow, Dify 예시가 들어 있음 |
 | 어디서 서비스되는지 알기 | `GET /aiapp/endpoints` 가 지금 떠 있는 추론 서비스·응용의 주소를 돌려줌 |
@@ -215,7 +215,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 분류 | 경로 |
 |---|---|
 | 상태 | `GET /readyz`, `GET /status` |
-| 카탈로그 | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /models/sync` |
+| 카탈로그 | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /catalog/sync` |
 | 응용 | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | 배포 | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
 | 주소 | `GET /endpoints` (필터 `nsId`, `infraId`, `nodeId`, `type`, `available`). 부를 때마다 CB-Tumblebug 에서 노드를 읽어 지금 IP 로 주소를 만들고, 노드가 `Running` 일 때만 주소를 줌 |
@@ -247,7 +247,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 |---|---|
 | 런타임 | `vllm` (`vllm/vllm-openai:v0.32.0`, Hugging Face safetensors), `ollama` (`ollama/ollama:0.40.13`, GGUF) |
 | 기본 모델 | `qwen3-embedding-0.6b` (임베딩), `qwen3-vl-8b` (이미지 입력 대화), `ministral-3-8b` (대화). 각각 필요한 런타임 인자가 들어 있음 |
-| 카탈로그 수집 | Hugging Face, Ollama, Docker Model Runner, NGC, Kaggle. 뒤의 셋에서 받은 아티팩트는 목록에는 나오지만 맞는 런타임이 없어 배포하면 `422` |
+| 카탈로그 수집 | 기본은 Hugging Face, Ollama. Docker Model Runner, NGC, Kaggle 은 맞는 런타임이 아직 없어 기본으로 꺼 둠. 켜면 그 아티팩트는 `deployable: false` 로 목록에만 나오고 배포하면 `422`. 다시 끄면 다음 수집이 끝날 때 그 모델을 지움 |
 | 예시 응용 | Open WebUI `v0.12.4`, Langflow `1.13.0`, Dify `1.18.0` |
 | 클라우드 | AI-App 은 CB-Tumblebug 과 SSH 로만 일하므로 CB-Tumblebug 이 지원하는 CSP 면 대상이 됨. 실제 VM 으로 돌려 본 곳은 **AWS**(T4, L4), **Azure**(T4), **GCP**(L4)이고 RHEL 9, Amazon Linux 2023, AlmaLinux 9 노드도 포함 |
 | 연동 | CB-Tumblebug 0.13.8, Semaphore UI v2.12.17, AI-App 도구 13개와 엔진 도구 5개의 MCP(Streamable HTTP), 엔진 카드를 등록하는 에이전트 레지스트리(`POST {registry}/agents`) |
@@ -331,7 +331,7 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | `AIAPP_MODEL_STORE_FILE` | | App | 모델 카탈로그 파일. 파일이 아직 없을 때만 기본 모델 3개를 넣음 |
 | `AIAPP_CATALOG_SYNC_ENABLED` | `true` | App | 카탈로그 수집 켜기·끄기 |
 | `AIAPP_CATALOG_SYNC_INTERVAL` | `24h` | App | 수집 주기. 닿는 출처가 없으면 5분, 15분, 1시간 뒤 먼저 다시 시도 |
-| `AIAPP_CATALOG_SYNC_SOURCES` | 다섯 개 전부 | App | 쉼표로 나눈 출처: `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle` |
+| `AIAPP_CATALOG_SYNC_SOURCES` | `huggingface,ollama` | App | 쉼표로 나눈 출처: `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle`. 뒤의 셋은 띄울 런타임이 아직 없어 기본으로 꺼 둠. 빠진 출처의 모델은 수집이 끝날 때마다 지움(`seed`, `manual` 은 지우지 않음) |
 | `AIAPP_CATALOG_SYNC_LIMIT` | `100` | App | 출처마다(HF 는 태스크마다) 받는 모델 수 |
 | `AIAPP_APP_STORE_DIR` | `./data/apps` | App | 업로드한 응용, `<name>/<version>/` |
 | `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` | App | 업로드 크기 상한 (256 MiB) |

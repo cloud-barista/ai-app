@@ -43,13 +43,14 @@ func TestLiveSources(t *testing.T) {
 			mustValid(t, src.Name(), models)
 			artifacts, deployable := 0, 0
 			for _, m := range models {
+				t.Logf("  %s (%s) tasks=%v artifacts=%d description=%q", m.ID, m.Name, m.Tasks, len(m.Artifacts), m.Description)
 				for _, a := range m.Artifacts {
 					artifacts++
 					if len(a.Runtimes) > 0 {
 						deployable++
 					}
+					t.Logf("    %s parameters=%q sizeGiB=%v runtimes=%d", a.ID, a.Parameters, a.SizeGiB, len(a.Runtimes))
 				}
-				t.Logf("  %s (%s) tasks=%v artifacts=%d", m.ID, m.Name, m.Tasks, len(m.Artifacts))
 			}
 			t.Logf("%s: limit %d, %d models, %d artifacts, %d with a runtime, %s", src.Name(), limit, len(models), artifacts, deployable, took.Round(time.Millisecond))
 			if len(models) == 0 {

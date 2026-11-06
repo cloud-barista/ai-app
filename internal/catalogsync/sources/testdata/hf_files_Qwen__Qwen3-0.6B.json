@@ -1,0 +1,45 @@
+{
+ "id": "Qwen/Qwen3-0.6B",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1570
+  },
+  {
+   "rfilename": "LICENSE",
+   "size": 11343
+  },
+  {
+   "rfilename": "README.md",
+   "size": 13965
+  },
+  {
+   "rfilename": "config.json",
+   "size": 726
+  },
+  {
+   "rfilename": "generation_config.json",
+   "size": 239
+  },
+  {
+   "rfilename": "merges.txt",
+   "size": 1671853
+  },
+  {
+   "rfilename": "model.safetensors",
+   "size": 1503300328
+  },
+  {
+   "rfilename": "tokenizer.json",
+   "size": 11422654
+  },
+  {
+   "rfilename": "tokenizer_config.json",
+   "size": 9732
+  },
+  {
+   "rfilename": "vocab.json",
+   "size": 2776833
+  }
+ ]
+}

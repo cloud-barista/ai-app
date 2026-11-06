@@ -28,6 +28,16 @@ func Seed(ctx context.Context, store *Store) error {
 	return nil
 }
 
+// isSeedID reports whether id is the ID of a built-in model.
+func isSeedID(id string) bool {
+	for _, m := range builtinModels() {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func builtinModels() []model.Model {
 	return []model.Model{
 		{

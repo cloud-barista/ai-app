@@ -51,6 +51,9 @@ func TestKaggleFetch(t *testing.T) {
 		!slices.Equal(g.Tasks, []string{"chat"}) || !slices.Equal(g.InputModalities, []string{"text"}) {
 		t.Errorf("gemma = %+v", g)
 	}
+	if g.Description != "Gemma is a family of lightweight, open models built from the research and technology that Google used to create the Gemini models." {
+		t.Errorf("gemma description = %q", g.Description)
+	}
 	type art struct{ id, ref, format string }
 	var arts []art
 	for _, a := range g.Artifacts {

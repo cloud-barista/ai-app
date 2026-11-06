@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
@@ -35,6 +36,7 @@ type ngcResource struct {
 	ResourceID  string `json:"resourceId"`
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
 	Labels      []struct {
 		Key    string   `json:"key"`
 		Values []string `json:"values"`
@@ -120,10 +122,11 @@ func ngcToModel(r *ngcResource) (model.Model, bool) {
 		art.SizeGiB = gib(size)
 	}
 	m := model.Model{
-		ID:        catalogsync.ModelID("ngc", r.ResourceID),
-		Name:      name,
-		Artifacts: []model.Artifact{art},
-		Origin:    model.OriginNGC,
+		ID:          catalogsync.ModelID("ngc", r.ResourceID),
+		Name:        name,
+		Description: strings.TrimSpace(r.Description),
+		Artifacts:   []model.Artifact{art},
+		Origin:      model.OriginNGC,
 	}
 	if p := r.label("publisher"); len(p) > 0 {
 		m.Publisher = p[0]

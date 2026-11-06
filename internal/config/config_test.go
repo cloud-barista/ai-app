@@ -324,21 +324,21 @@ func TestCatalogSyncDefaultsAndOverrides(t *testing.T) {
 	}
 	got := cfg.CatalogSync
 	if !got.Enabled || got.Interval != 24*time.Hour || got.Limit != 100 ||
-		strings.Join(got.Sources, ",") != "huggingface,ollama,docker-model-runner,ngc,kaggle" {
-		t.Errorf("catalog sync = %+v, want on, 24h, 100 and every source by default", got)
+		strings.Join(got.Sources, ",") != "huggingface,ollama" {
+		t.Errorf("catalog sync = %+v, want on, 24h, 100, huggingface and ollama by default", got)
 	}
 
 	t.Setenv("AIAPP_CATALOG_SYNC_ENABLED", "false")
 	t.Setenv("AIAPP_CATALOG_SYNC_INTERVAL", "6h")
-	t.Setenv("AIAPP_CATALOG_SYNC_SOURCES", " ollama , huggingface,")
+	t.Setenv("AIAPP_CATALOG_SYNC_SOURCES", " ollama , huggingface,kaggle")
 	t.Setenv("AIAPP_CATALOG_SYNC_LIMIT", "20")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	got = cfg.CatalogSync
-	if got.Enabled || got.Interval != 6*time.Hour || got.Limit != 20 || strings.Join(got.Sources, ",") != "ollama,huggingface" {
-		t.Errorf("catalog sync = %+v, want off, 6h, 20, ollama and huggingface", got)
+	if got.Enabled || got.Interval != 6*time.Hour || got.Limit != 20 || strings.Join(got.Sources, ",") != "ollama,huggingface,kaggle" {
+		t.Errorf("catalog sync = %+v, want off, 6h, 20, ollama, huggingface and kaggle", got)
 	}
 
 	for _, tc := range []struct{ key, value, want string }{

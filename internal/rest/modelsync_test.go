@@ -38,13 +38,13 @@ func newSyncServer(t *testing.T, runner *catalogsync.Runner, store *modelcat.Sto
 
 func syncStatus(t *testing.T, s *Server) catalogsync.Status {
 	t.Helper()
-	rec := do(s, http.MethodGet, "/aiapp/models/sync", "")
+	rec := do(s, http.MethodGet, "/aiapp/catalog/sync", "")
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /models/sync = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /catalog/sync = %d: %s", rec.Code, rec.Body.String())
 	}
 	var st catalogsync.Status
 	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
-		t.Fatalf("GET /models/sync: %v", err)
+		t.Fatalf("GET /catalog/sync: %v", err)
 	}
 	return st
 }
@@ -65,15 +65,15 @@ func TestModelSyncRoutes(t *testing.T) {
 		t.Errorf("status before a run = %+v", st)
 	}
 
-	rec := do(s, http.MethodPost, "/aiapp/models/sync", "")
+	rec := do(s, http.MethodPost, "/aiapp/catalog/sync", "")
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("POST /models/sync = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("POST /catalog/sync = %d: %s", rec.Code, rec.Body.String())
 	}
 	var started catalogsync.Status
 	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil || !started.Running {
 		t.Errorf("POST body = %s (%v), want running", rec.Body.String(), err)
 	}
-	if rec := do(s, http.MethodPost, "/aiapp/models/sync", ""); rec.Code != http.StatusConflict {
+	if rec := do(s, http.MethodPost, "/aiapp/catalog/sync", ""); rec.Code != http.StatusConflict {
 		t.Errorf("POST while running = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
 	close(gate)
@@ -85,7 +85,14 @@ func TestModelSyncRoutes(t *testing.T) {
 		t.Errorf("status after the run = %+v", st)
 	}
 
-	// sync is a route, not a model ID, and the synced model is listed.
+	// The old route is gone: GET /models/sync reads a model named sync and
+	// POST /models/sync has no route.
+	if rec := do(s, http.MethodGet, "/aiapp/models/sync", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /models/sync = %d, want 404", rec.Code)
+	}
+	if rec := do(s, http.MethodPost, "/aiapp/models/sync", ""); rec.Code == http.StatusAccepted {
+		t.Errorf("POST /models/sync = %d, want no sync run", rec.Code)
+	}
 	if got := modelIDs(t, s, "/aiapp/models?origin=huggingface"); len(got) != 1 || got[0] != "hf-synced" {
 		t.Errorf("origin=huggingface = %v, want hf-synced", got)
 	}
@@ -101,7 +108,7 @@ func TestModelSyncDisabled(t *testing.T) {
 	if st := syncStatus(t, s); st.Enabled || st.Running || st.Sources == nil || len(st.Sources) != 0 {
 		t.Errorf("disabled status = %+v, want enabled false and no sources", st)
 	}
-	if rec := do(s, http.MethodPost, "/aiapp/models/sync", ""); rec.Code != http.StatusServiceUnavailable {
+	if rec := do(s, http.MethodPost, "/aiapp/catalog/sync", ""); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("POST disabled = %d, want 503: %s", rec.Code, rec.Body.String())
 	}
 }

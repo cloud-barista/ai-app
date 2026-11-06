@@ -3,6 +3,7 @@ package modelcat
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,6 +135,68 @@ func TestApplySyncLeavesOtherSourcesAlone(t *testing.T) {
 	}
 	if m, _ := store.Get(ctx, "ollama-a"); m.Stale || m.Origin != model.OriginOllama {
 		t.Errorf("ollama entry = %+v, want untouched by a huggingface run", m)
+	}
+}
+
+// TestApplySyncKeepsDescriptionAndParameters stores the description and the
+// artifact parameters a source returns, through the file.
+func TestApplySyncKeepsDescriptionAndParameters(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	m := fetched("hf-a", "A", "vllm")
+	m.Description = "A small model."
+	m.Artifacts[0].Parameters = "8.2B"
+	m.Artifacts[0].SizeGiB = 16.3
+	if _, err := store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{m}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reopened.Get(ctx, "hf-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != "A small model." || got.Artifacts[0].Parameters != "8.2B" || got.Artifacts[0].SizeGiB != 16.3 ||
+		!got.Deployable || !got.Artifacts[0].Deployable {
+		t.Errorf("stored = %+v", got)
+	}
+}
+
+// TestRemoveOtherOrigins deletes the entries of sync origins not kept and
+// never seed or manual ones.
+func TestRemoveOtherOrigins(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	if _, err := store.Register(ctx, model.Model{ID: "mine", Name: "Mine", Origin: model.OriginManual,
+		Artifacts: []model.Artifact{{ID: "a", Source: "ngc", Ref: "nvidia/mine", Format: "hf"}}}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	for origin, id := range map[string]string{model.OriginHuggingFace: "hf-a", model.OriginNGC: "ngc-a", model.OriginKaggle: "kaggle-a"} {
+		if _, err := store.ApplySync(ctx, origin, []model.Model{fetched(id, id)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := store.RemoveOtherOrigins(ctx, []string{model.OriginHuggingFace, model.OriginOllama})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 2 || removed[model.OriginNGC] != 1 || removed[model.OriginKaggle] != 1 {
+		t.Errorf("removed = %v", removed)
+	}
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(reopened.List(ctx, Filter{})); strings.Join(got, ",") != "hf-a,mine,ministral-3-8b,qwen3-embedding-0.6b,qwen3-vl-8b" {
+		t.Errorf("left in the file = %v, want hf-a, the seed models and mine", got)
+	}
+	if removed, err := store.RemoveOtherOrigins(ctx, []string{model.OriginHuggingFace}); err != nil || removed != nil {
+		t.Errorf("second removal = %v, %v; want nothing", removed, err)
 	}
 }
 

@@ -42,10 +42,11 @@ type kagglePage struct {
 }
 
 type kaggleModel struct {
-	Ref    string `json:"ref"`
-	Title  string `json:"title"`
-	Author string `json:"author"`
-	Tags   []struct {
+	Ref      string `json:"ref"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"`
+	Author   string `json:"author"`
+	Tags     []struct {
 		FullPath string `json:"fullPath"`
 	} `json:"tags"`
 	Instances []struct {
@@ -101,11 +102,14 @@ func kaggleToModel(km kaggleModel) (model.Model, bool) {
 	if name == "" {
 		name = km.Ref
 	}
+	// The subtitle is the one line summary; the description field is the
+	// full model card in Markdown and is not copied.
 	m := model.Model{
-		ID:        catalogsync.ModelID("kaggle", km.Ref),
-		Name:      name,
-		Publisher: km.Author,
-		Origin:    model.OriginKaggle,
+		ID:          catalogsync.ModelID("kaggle", km.Ref),
+		Name:        name,
+		Description: strings.TrimSpace(km.Subtitle),
+		Publisher:   km.Author,
+		Origin:      model.OriginKaggle,
 	}
 	seen := map[string]bool{}
 	for _, inst := range km.Instances {

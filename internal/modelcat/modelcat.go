@@ -45,15 +45,17 @@ var ErrArtifactNotFound = errors.New("model artifact not found")
 //
 // Origin matches the model, an absent origin as manual. Verified, when set,
 // keeps the models for which some artifact has some runtime with verifiedAt
-// set (true) or none has (false).
+// set (true) or none has (false). Deployable, when set, keeps the models for
+// which some artifact lists a runtime (true) or none does (false).
 type Filter struct {
-	Task      string
-	Modality  string
-	Format    string
-	RuntimeID string
-	Source    string
-	Origin    string
-	Verified  *bool
+	Task       string
+	Modality   string
+	Format     string
+	RuntimeID  string
+	Source     string
+	Origin     string
+	Verified   *bool
+	Deployable *bool
 }
 
 // Store holds registered models, keyed by ID.
@@ -97,6 +99,9 @@ func Open(path string) (*Store, bool, error) {
 	}
 	for i := range body.Models {
 		m := body.Models[i]
+		if m.Origin == "" && isSeedID(m.ID) {
+			m.Origin = model.OriginSeed
+		}
 		if err := m.Validate(); err != nil {
 			return nil, false, fmt.Errorf("model catalog %q holds an invalid model %q: %w", path, m.ID, err)
 		}
@@ -356,6 +361,39 @@ func (s *Store) ApplySync(ctx context.Context, origin string, models []model.Mod
 	return counts, nil
 }
 
+// RemoveOtherOrigins deletes every entry whose origin is one the catalog sync
+// collects from but is not in keep, and writes the file once when it
+// deleted any. Entries of origin seed or manual are never deleted. It
+// returns how many entries it deleted per origin; nil when none.
+func (s *Store) RemoveOtherOrigins(ctx context.Context, keep []string) (map[string]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var removed map[string]int
+	next := make(map[string]model.Model, len(s.models))
+	for id, m := range s.models {
+		if syncOrigin(m.Origin) && !slices.Contains(keep, m.Origin) {
+			if removed == nil {
+				removed = map[string]int{}
+			}
+			removed[m.Origin]++
+			continue
+		}
+		next[id] = m
+	}
+	if removed == nil {
+		return nil, nil
+	}
+
+	previous := s.models
+	s.models = next
+	if err := s.save(); err != nil {
+		s.models = previous
+		return nil, err
+	}
+	return removed, nil
+}
+
 // clearVerified drops every verifiedAt of m. Only a deployment on a node
 // records one; a source cannot know it.
 func clearVerified(m *model.Model) {
@@ -443,6 +481,9 @@ func (f Filter) matches(m *model.Model) bool {
 	if f.Verified != nil && m.Verified() != *f.Verified {
 		return false
 	}
+	if f.Deployable != nil && m.Deployable != *f.Deployable {
+		return false
+	}
 	if f.Modality != "" && !containsFold(m.InputModalities, f.Modality) {
 		return false
 	}
@@ -481,7 +522,8 @@ func containsFold(values []string, want string) bool {
 //
 // It also fills in what an older or hand-written record leaves out: an absent
 // origin becomes manual, and an artifact without runtimes holds an empty list
-// so that it is written as [] rather than null.
+// so that it is written as [] rather than null. Deployable is computed again
+// from the runtimes.
 func clone(m model.Model) model.Model {
 	if m.Origin == "" {
 		m.Origin = model.OriginManual
@@ -502,6 +544,7 @@ func clone(m model.Model) model.Model {
 		artifacts[i] = a
 	}
 	m.Artifacts = artifacts
+	m.SetDeployable()
 	return m
 }
 

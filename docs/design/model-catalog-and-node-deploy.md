@@ -53,13 +53,15 @@
 |------------|----|----|
 | `id` | 카탈로그 ID | `qwen3-vl-8b` |
 | `name` | 표시 이름 | `Qwen3-VL-8B-Instruct` |
+| `description` | 출처가 적은 설명 그대로 (없으면 비움) | `Qwen3 is the latest generation of ...` |
 | `family`, `publisher` | 계열, 공개 주체 | `qwen3-vl`, `Qwen` |
-| `parameters` | 파라미터 수 (원래 표기) | `8B` |
+| `parameters` | 파라미터 수 (원래 표기). 아티팩트마다 다르면 비우고 아티팩트에 둔다 | `8B` |
 | `tasks` | 용도 | `chat`, `vision-chat`, `embedding` |
 | `inputModalities` | 받는 입력 | `text`, `image` |
 | `contextLength` | 문맥 길이 (모르면 비움) | `262144` |
 | `license` | 라이선스 | `apache-2.0` |
 | `artifacts[]` | 아래 표 | |
+| `deployable` | 계산값. 아티팩트 중 하나라도 `deployable` 이면 `true`. 입력은 무시 | `true` |
 
 | Artifact 필드 | 뜻 | 예 |
 |---------------|----|----|
@@ -68,23 +70,28 @@
 | `ref` | 출처에서의 이름 | `Qwen/Qwen3-VL-8B-Instruct`, `qwen3-vl:8b`, `ai/qwen3-vl` |
 | `format` | 파일 형식 | `hf`(safetensors), `gguf` |
 | `precision` | 정밀도·양자화, **원래 값 그대로** | `BF16`, `FP8`, `Q4_K_M` |
-| `sizeGiB` | 받을 크기 (모르면 0) | `6.2` |
+| `parameters` | 이 아티팩트의 파라미터 수, 출처 표기 그대로 (모르면 비움) | `8.2B`, `751.63M` |
+| `sizeGiB` | 받을 크기 (모르면 0). HF 는 저장소의 `*.safetensors` 파일 합 | `6.2` |
 | `runtimes[]` | 호환 런타임과 최소 버전, 그 런타임에 필요한 인자(`args`, 서비스 인자 뒤·요청 `inference.args` 앞에 붙음. `ollama` 는 받지 않음) | `{runtimeId: vllm, minVersion: 0.11.0, args: [--max-model-len, "32768"]}` |
+| `deployable` | 계산값. `runtimes[]` 가 비어 있지 않으면 `true`. 입력은 무시 | `false` |
 
 - 호환 런타임은 포맷만으로 정하지 않고 명시한다. 같은 safetensors 라도 아키텍처 지원 여부가 런타임 버전마다 다르다.
 - 정밀도로 VRAM 을 계산하는 등의 추천 로직은 넣지 않는다(경희대 몫).
+- `deployable` 은 저장하는 값이 아니라 `runtimes[]` 에서 계산한다. 배포할 수 있는 것만 보려면 `GET /aiapp/models?deployable=true` 다.
 
 ### 3.1.1 카탈로그를 채우는 길
 
 | 길 | `origin` | 누가 |
 |------|------|------|
 | 기본 모델 (시드) | `seed` | 코드. 카탈로그 파일이 없을 때 한 번 |
-| 자동 수집 | `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle` | AI-App 이 기동 때와 주기마다 출처 API 를 읽어 넣는다 |
+| 자동 수집 | `huggingface`, `ollama` (기본). `docker-model-runner`, `ngc`, `kaggle` 은 켜야 돈다 | AI-App 이 기동 때와 주기마다 출처 API 를 읽어 넣는다 |
 | 등록 | `manual` | 운영자·협력 기관이 `POST /aiapp/models` |
 
 - 수집은 출처가 적은 값을 그대로 넣고, 모델이 쓸 만한지는 판단하지 않는다(경희대 몫). 우리가 정하는 것은 띄울 수 있는지 하나다.
   HF 는 고정한 vLLM 버전의 지원 아키텍처면 `vllm`, Ollama 라이브러리는 `ollama`, 나머지는 런타임 없음.
 - 수집은 자기 출처의 항목만 바꾼다. `seed`·`manual` 은 건드리지 않고, 사라진 항목은 `stale` 로 둔다. 배포가 성공하면 `verifiedAt` 이 남고 수집이 그 값을 지우지 않는다.
+- `docker-model-runner`, `ngc`, `kaggle` 은 그 아티팩트를 띄울 런타임이 아직 없어 기본으로 끈다. 설정(`AIAPP_CATALOG_SYNC_SOURCES`)에서 빠진 출처의 항목은 수집이 끝날 때 지운다. 켜 두었다가 끄면 목록에서 사라진다.
+- 카탈로그 파일에 `origin` 이 없는 항목은 `manual` 로 읽는다. 다만 ID 가 시드 모델 ID 면 `origin` 이 생기기 전에 시드가 쓴 것이라 `seed` 로 읽는다.
 - 출처가 닿지 않으면 그 출처만 건너뛴다. 동작과 설정은 [docs/api/README.md](../api/README.md) 9-2 에 있다.
 
 ### 3.2 Runtime 프로필
@@ -256,7 +263,8 @@ dry-run 이면 1·2 까지만 한다(조회와 파일 배치). Semaphore 에 아
 
 | 리소스 | 경로 | 비고 |
 |--------|------|------|
-| 모델 | `GET/POST /aiapp/models`, `GET/DELETE /aiapp/models/{modelId}` | 필터 `task`, `modality`, `format`, `runtimeId`, `source` |
+| 모델 | `GET/POST /aiapp/models`, `GET/DELETE /aiapp/models/{modelId}` | 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable` |
+| 카탈로그 수집 | `GET/POST /aiapp/catalog/sync` | 수집 상태 조회, 지금 바로 수집 |
 | 런타임 | `GET /aiapp/runtimes`, `GET /aiapp/runtimes/{runtimeId}` | 조회만 |
 | 응용 | `POST /aiapp/apps` (multipart: name, files, script), `GET /aiapp/apps`, `GET /aiapp/apps/{name}`, `DELETE /aiapp/apps/{name}` | 버전 목록 포함 |
 | 배포 | `POST /aiapp/deployments`, `GET /aiapp/deployments`, `GET /aiapp/deployments/{id}`, `GET /aiapp/deployments/{id}/progress`, `GET /aiapp/deployments/{id}/logs` | `/progress` 는 폴링용 요약: `done`·`succeeded`, 노드별 `phase`·현재 playbook·Ansible 태스크 |

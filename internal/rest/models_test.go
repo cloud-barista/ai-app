@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,18 @@ func TestArtifactWithoutRuntimes(t *testing.T) {
 	}
 	if got := modelIDs(t, s, "/aiapp/models?source=ngc"); strings.Join(got, ",") != "listed" {
 		t.Errorf("source=ngc = %v, want [listed]", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"deployable":false`) || strings.Contains(rec.Body.String(), `"deployable":true`) {
+		t.Errorf("POST /models body does not say deployable false: %s", rec.Body.String())
+	}
+	if got := modelIDs(t, s, "/aiapp/models?deployable=false"); strings.Join(got, ",") != "listed" {
+		t.Errorf("deployable=false = %v, want [listed]", got)
+	}
+	if got := modelIDs(t, s, "/aiapp/models?deployable=TRUE"); slices.Contains(got, "listed") || len(got) == 0 {
+		t.Errorf("deployable=TRUE = %v, want the seed models without listed", got)
+	}
+	if rec := do(s, http.MethodGet, "/aiapp/models?deployable=maybe", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("deployable=maybe = %d, want 400", rec.Code)
 	}
 
 	for _, path := range []string{

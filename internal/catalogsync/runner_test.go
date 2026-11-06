@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -332,5 +333,66 @@ func TestUnreachableSourceRecordsWhy(t *testing.T) {
 	got := r.Status().Sources[0]
 	if got.Skipped != SkippedUnreachable || got.Unreachable != "x509: certificate signed by unknown authority" {
 		t.Fatalf("result = %+v, want skipped unreachable with the check error", got)
+	}
+}
+
+// TestRunRemovesEntriesOfSourcesNotConfigured deletes the entries of sync
+// origins left out of the configured sources, counts them by origin and
+// leaves seed, manual and configured sources alone, a failing or unreachable
+// configured source included.
+func TestRunRemovesEntriesOfSourcesNotConfigured(t *testing.T) {
+	hf := &fakeSource{name: model.OriginHuggingFace, err: errors.New("503")}
+	ollama := &fakeSource{name: model.OriginOllama, models: []model.Model{fakeModel(model.OriginOllama, "ollama-a")}}
+	r, stub, store := newTestRunner([]Source{hf, ollama}, time.Hour)
+	ctx := context.Background()
+
+	for _, m := range []model.Model{fakeModel(model.OriginSeed, "seed-a"), fakeModel(model.OriginManual, "manual-a")} {
+		if _, err := store.Register(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Now()
+	for origin, ids := range map[string][]string{
+		model.OriginHuggingFace:       {"hf-a"},
+		model.OriginOllama:            {"ollama-old"},
+		model.OriginKaggle:            {"kaggle-a", "kaggle-b"},
+		model.OriginDockerModelRunner: {"dmr-a"},
+	} {
+		var models []model.Model
+		for _, id := range ids {
+			models = append(models, fakeModel(origin, id))
+		}
+		if _, err := store.ApplySync(ctx, origin, models, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// huggingface fails its fetch on this run: it keeps its entry.
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := r.Status()
+	if len(st.Removed) != 2 || st.Removed[model.OriginKaggle] != 2 || st.Removed[model.OriginDockerModelRunner] != 1 {
+		t.Errorf("removed = %v, want kaggle 2 and docker-model-runner 1", st.Removed)
+	}
+	var ids []string
+	for _, m := range store.List(ctx, modelcat.Filter{}) {
+		ids = append(ids, m.ID)
+	}
+	if got := strings.Join(ids, ","); got != "hf-a,manual-a,ollama-a,ollama-old,seed-a" {
+		t.Errorf("left = %s", got)
+	}
+
+	// ollama is unreachable on the next run: it keeps its entries, and a
+	// run that removes nothing reports no counts.
+	stub.set(model.OriginOllama)
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := r.Status(); st.Removed != nil {
+		t.Errorf("removed on a run with nothing to remove = %v, want absent", st.Removed)
+	}
+	if n := len(store.List(ctx, modelcat.Filter{Origin: model.OriginOllama})); n != 2 {
+		t.Errorf("ollama entries after an unreachable run = %d, want 2", n)
 	}
 }

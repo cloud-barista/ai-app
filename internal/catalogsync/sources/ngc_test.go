@@ -65,6 +65,20 @@ func TestNGCFetch(t *testing.T) {
 	}
 }
 
+// TestNGCDescription copies the description NGC writes on a resource. The
+// recorded search holds no description, so the resource is inline.
+func TestNGCDescription(t *testing.T) {
+	var r ngcResource
+	if err := json.Unmarshal([]byte(`{"resourceId":"nim/nvidia/audio2emotion_model","displayName":"Audio2Emotion Model",
+		"description":" Audio2Emotion TRT Engine. ","attributes":[{"key":"format","value":"SavedModel"}]}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := ngcToModel(&r)
+	if !ok || m.Description != "Audio2Emotion TRT Engine." {
+		t.Errorf("model = %+v", m)
+	}
+}
+
 func TestNGCLimit(t *testing.T) {
 	fs := newFixtureServer(t, ngcRoute)
 	models, err := (&NGC{APIURL: fs.URL}).Fetch(context.Background(), opts(fs, 2))

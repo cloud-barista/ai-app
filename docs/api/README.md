@@ -405,10 +405,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 |---|---|---|
 | GET | `/aiapp/runtimes` | 런타임 목록 (`id`, `image`, `formats`, `port`, `healthPath`, `apiBasePath`) |
 | GET | `/aiapp/runtimes/{runtimeId}` | 런타임 하나 |
-| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified` |
+| GET | `/aiapp/models` | 모델 목록과 아티팩트. 필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable` |
 | POST | `/aiapp/models` | 모델 등록. 같은 `id` 면 바꿔 씀. 언제나 `origin: manual` 로 저장되고 수집이 더는 건드리지 않음 |
-| GET | `/aiapp/models/sync` | 카탈로그 자동 수집 상태: 켜짐, 실행 중, 다음 실행 시각, 출처마다 닿는지·받은 수·결과 |
-| POST | `/aiapp/models/sync` | 지금 바로 수집. `202`, 이미 도는 중이면 `409`, 꺼져 있으면 `503` |
 | GET | `/aiapp/models/{modelId}` | 모델 하나 |
 | DELETE | `/aiapp/models/{modelId}` | 모델 삭제. 이미 떠 있는 추론 서비스는 그대로 |
 | GET | `/aiapp/models/{modelId}/artifacts/{artifactId}/compose` | 노드에 갈 compose 파일 미리 보기 (쿼리 `runtimeId`, `gpu`, 되풀이하는 `arg`) |
@@ -417,42 +415,65 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 | GET | `/aiapp/apps/{name}` | 응용 하나 (모든 버전) |
 | GET | `/aiapp/apps/{name}/versions/{version}` | 응용 한 버전 |
 | DELETE | `/aiapp/apps/{name}` | 응용 삭제 (모든 버전). 노드에 올라간 것은 그대로 |
+| GET | `/aiapp/catalog/sync` | 카탈로그 자동 수집 상태: 켜짐, 실행 중, 다음 실행 시각, 출처마다 닿는지·받은 수·결과, 지운 수(`removed`) |
+| POST | `/aiapp/catalog/sync` | 지금 바로 수집. `202`, 이미 도는 중이면 `409`, 꺼져 있으면 `503` |
+
+모델 응답에서 눈여겨볼 필드입니다. 값이 없으면 "모름" 이지 0 이 아닙니다.
+
+| 필드 | 뜻 |
+|---|---|
+| `description` | 출처가 적은 모델 설명 그대로. 출처가 주지 않으면 없음 |
+| `parameters` | 모델의 파라미터 수. 크기 태그가 여럿인 Ollama 모델처럼 아티팩트마다 다르면 없고, 아티팩트의 `parameters` 를 봄 |
+| `artifacts[].parameters` | 그 아티팩트의 파라미터 수, 출처 표기 그대로(예: `8.2B`, `751.63M`) |
+| `artifacts[].sizeGiB` | 내려받을 크기(GiB) |
+| `artifacts[].deployable` | `runtimes[]` 에 런타임이 하나라도 있으면 `true`. 계산한 값이라 등록할 때 보내도 무시 |
+| `deployable` | 아티팩트 중 하나라도 `deployable` 이면 `true`. 계산한 값이라 등록할 때 보내도 무시 |
+
+`GET /aiapp/models?deployable=true` 는 지금 배포할 수 있는 모델만, `deployable=false` 는 목록에만 있는 모델만 돌려줍니다.
+MCP 도구 `list_models` 도 같은 `deployable` 입력을 받습니다.
 
 #### 모델 카탈로그 자동 수집
 
-AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYNC_INTERVAL`) 공개 모델 출처 다섯 곳에서 모델 정보를 받아 카탈로그에 넣습니다.
+AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYNC_INTERVAL`) 공개 모델 출처에서 모델 정보를 받아 카탈로그에 넣습니다.
 받은 값은 **출처가 적은 그대로** 넣습니다. 어떤 모델이 요청이나 GPU 에 맞는지 고르는 일은 하지 않습니다(추천 몫, [khu.md](khu.md)).
 
-| 출처 (`origin`) | 읽는 곳 | 넣는 것 | 배포 가능 (`runtimes[]`) |
-|---|---|---|---|
-| `huggingface` | Hugging Face 모델 API. 태스크마다 내려받기 순 상위 N개 (`text-generation`→chat, `image-text-to-text`→vision-chat, `feature-extraction`→embedding) | 이름, 공개 주체, 파라미터 수, 정밀도(safetensors 표기 그대로), 라이선스 | 아키텍처가 AI-App 이 쓰는 vLLM 버전의 지원 목록에 있으면 `vllm` |
-| `ollama` | Ollama 라이브러리와 레지스트리 | 태그마다 양자화, 파라미터 수, 크기 | `ollama` (GGUF) |
-| `docker-model-runner` | Docker Hub `ai/` | 태그마다 형식과 양자화 | 없음 |
-| `ngc` | NVIDIA NGC 카탈로그 | 이름, 라벨, 형식 | 없음 |
-| `kaggle` | Kaggle 모델 | 프레임워크별 변형 | 없음 |
+기본으로 도는 출처는 `huggingface`, `ollama` 둘입니다. `docker-model-runner`, `ngc`, `kaggle` 은 그 아티팩트를 띄울 런타임이 아직 없어서 기본으로 꺼 두었고,
+`AIAPP_CATALOG_SYNC_SOURCES` 에 이름을 넣으면 켜집니다(예: `huggingface,ollama,kaggle`).
 
-- 런타임이 없는 아티팩트는 목록에는 나오지만, 배포하면 `422` 입니다. 지금 런타임(vLLM, Ollama)이 그 형식을 읽지 못합니다.
+| 출처 (`origin`) | 기본 | 읽는 곳 | 넣는 것 | 배포 가능 (`runtimes[]`) |
+|---|---|---|---|---|
+| `huggingface` | 켜짐 | Hugging Face 모델 API. 태스크마다 내려받기 순 상위 N개 (`text-generation`→chat, `image-text-to-text`→vision-chat, `feature-extraction`→embedding) | 이름, 공개 주체, 파라미터 수, 정밀도(safetensors 표기 그대로), 라이선스, 크기(저장소의 `*.safetensors` 파일 합), 모델 카드 앞머리에 있으면 설명 | 아키텍처가 AI-App 이 쓰는 vLLM 버전의 지원 목록에 있으면 `vllm` |
+| `ollama` | 켜짐 | Ollama 라이브러리와 레지스트리 | 라이브러리 페이지의 설명, 태그마다 양자화, 파라미터 수, 크기 | `ollama` (GGUF) |
+| `docker-model-runner` | 꺼짐 | Docker Hub `ai/` | 저장소 설명, 태그마다 형식과 양자화 | 없음 |
+| `ngc` | 꺼짐 | NVIDIA NGC 카탈로그 | 이름, 설명, 라벨, 형식 | 없음 |
+| `kaggle` | 꺼짐 | Kaggle 모델 | 한 줄 설명(`subtitle`), 프레임워크별 변형 | 없음 |
+
+- 런타임이 없는 아티팩트는 목록에는 나오지만(`deployable: false`), 배포하면 `422` 입니다. 지금 런타임(vLLM, Ollama)이 그 형식을 읽지 못합니다.
+- Hugging Face 크기는 모델마다 파일 목록을 한 번 더 읽어 구합니다. 그 요청이 실패하면 크기는 비워 둡니다.
+- **설정에서 뺀 출처의 모델은 수집이 끝날 때 지웁니다.** 지운 수는 `GET /aiapp/catalog/sync` 의 `removed` 에 출처별로 남습니다.
+  `seed`, `manual` 모델은 지우지 않고, 설정에 있는 출처는 그 회차에 닿지 않거나 실패해도 모델을 그대로 둡니다.
 - **사람이 등록한 모델(`manual`)과 기본 모델(`seed`)은 수집이 건드리지 않습니다.** 수집한 모델을 `POST /aiapp/models` 로 고치면 그 모델은 `manual` 이 됩니다.
 - 출처에서 사라진 모델은 지우지 않고 `stale: true` 로 둡니다. `syncedAt` 은 출처에서 마지막으로 본 시각입니다.
 - 런타임 인자(`runtimes[].args`)는 수집이 채우지 않습니다. 모델마다 띄워 봐야 아는 값이기 때문입니다.
 - **`runtimes[].verifiedAt`** 은 그 아티팩트를 그 런타임으로 배포해 노드가 `running` 이 된 마지막 시각입니다. 실제로 떠 본 적이 있는 모델만 보려면
   `GET /aiapp/models?verified=true` 입니다. dry-run 과 응용 배포는 남기지 않습니다.
 - 매번 출처마다 그 서버가 응답하는지 먼저 봅니다(5초). 응답하지 않는 출처는 건너뛰고 그 출처의 모델은 그대로 둡니다. 이유는
-  `GET /aiapp/models/sync` 의 `sources[].unreachable` 에 남습니다(예: 인증서 오류, 시간 초과). 다섯 곳 모두 닿지 않으면 5분, 15분, 1시간
+  `GET /aiapp/catalog/sync` 의 `sources[].unreachable` 에 남습니다(예: 인증서 오류, 시간 초과). 설정한 출처가 모두 닿지 않으면 5분, 15분, 1시간
   뒤에 먼저 다시 시도하고, 한 곳이라도 닿으면 원래 주기로 돌아갑니다.
 - 출처마다 받는 수의 상한은 `AIAPP_CATALOG_SYNC_LIMIT`(기본 100)입니다. 양을 줄이는 값이지 거르는 기준이 아닙니다. 끄려면
   `AIAPP_CATALOG_SYNC_ENABLED=false` 입니다.
 
-`GET /aiapp/models/sync` 응답 예(줄임):
+`GET /aiapp/catalog/sync` 응답 예(줄임). 앞서 켜 두었던 `kaggle` 을 설정에서 뺀 뒤의 첫 회차입니다:
 
 ```json
 {"enabled": true, "running": false, "offline": false, "interval": "24h0m0s", "nextRunAt": "...",
  "sources": [
   {"name": "huggingface", "reachable": true, "fetched": 300,
    "counts": {"added": 300, "updated": 0, "staled": 0, "skipped": 0, "invalid": 0}},
-  {"name": "kaggle", "reachable": false, "skipped": "unreachable",
-   "unreachable": "Head \"https://www.kaggle.com\": context deadline exceeded", "fetched": 0, "counts": {"added": 0, "updated": 0, "staled": 0, "skipped": 0, "invalid": 0}}
- ]}
+  {"name": "ollama", "reachable": false, "skipped": "unreachable",
+   "unreachable": "Head \"https://ollama.com\": context deadline exceeded", "fetched": 0, "counts": {"added": 0, "updated": 0, "staled": 0, "skipped": 0, "invalid": 0}}
+ ],
+ "removed": {"kaggle": 100}}
 ```
 
 ### 9-3. 배포와 주소
@@ -576,7 +597,7 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 | 무엇 | 어디에 정해져 있나 | 어떻게 늘리나 | 조회 |
 |---|---|---|---|
 | 런타임 (`vllm`, `ollama`) | AI-App 코드에 들어 있음 (이미지 태그 고정) | 코드 변경 | `GET /aiapp/runtimes` |
-| 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 출처 다섯 곳에서 자동으로 수집한 것과 사람이 등록한 것이 카탈로그 파일에 저장 (9-2) | 자동 수집, `POST /aiapp/models` | `GET /aiapp/models` |
+| 모델 · 아티팩트 | 모델 카탈로그. 기본 3개(시드)가 코드에 있고, 공개 모델 출처(기본 Hugging Face, Ollama)에서 자동으로 수집한 것과 사람이 등록한 것이 카탈로그 파일에 저장 (9-2) | 자동 수집, `POST /aiapp/models` | `GET /aiapp/models` |
 | 응용 (Dify, Open WebUI, Langflow, 그 밖의 것) | **응용 카탈로그(응용 저장소).** 처음에는 비어 있고, 업로드한 파일 묶음과 스크립트가 버전마다 AI-App 의 저장 폴더(`AIAPP_APP_STORE_DIR`)에 남음 | `POST /aiapp/apps` (multipart: `name`, `script`, `files`, `ports`) | `GET /aiapp/apps` |
 
 `examples/apps/` 는 이 repo 에 들어 있는 업로드용 예시 묶음일 뿐이고, AI-App 이 저절로 읽지 않습니다. 쓰려면 누군가 한 번 업로드합니다
@@ -612,7 +633,7 @@ env 값은 배포 기록과 노드의 `.env` 에 평문으로 남습니다(10절
 |---|---|---|---|---|---|
 | vm1 (`vm1-2`) | aws `ap-northeast-1` 도쿄 (`ap-northeast-1a`) | `g4dn.xlarge`: 4 vCPU, 16 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `ami-0e8e3e0f677c0f395`, Ubuntu 22.04.5 LTS | 595.112.07 · 29.9.2 |
 | vm2 (`vm2b-2`) | azure `koreacentral` (존 1) | `Standard_NC4as_T4_v3`: 4 vCPU, 28 GiB, NVIDIA T4 1장(16 GB), 디스크 150 GB | x86_64 | `microsoft-dsvm:ubuntu-hpc:2204:22.04.2026100101`, Ubuntu 22.04.5 LTS | 580.178.04 · 29.8.1 |
-| vm3 (`vm3gc-2`) | gcp `us-west1` (`us-west1-c`) | `g2-standard-4`: 4 vCPU, 16 GiB, NVIDIA L4 1장(24 GB), 디스크 150 GB | x86_64 | `ubuntu-accelerator-2204-amd64-with-nvidia-595`, Ubuntu 22.04.5 LTS | 595.91.07 · 29.9.3 (AI-App 이 설치) |
+| vm3 (`vm3gc-2`) | gcp `us-west1` (`us-west1-c`) | `g2-standard-4`: 4 vCPU, 16 GiB, NVIDIA L4 1장(24 GB), 디스크 150 GB | x86_64 | `ubuntu-accelerator-2204-amd64-with-nvidia-595-v20261021`, Ubuntu 22.04.5 LTS. 이 이미지는 시험 뒤 deprecated 되었고, 새로 만들 때는 `ubuntu-accelerator-2204-amd64-with-nvidia-595-v20261104a` 를 씀 | 595.91.07 · 29.9.3 (AI-App 이 설치) |
 
 | 노드 | 런타임 (엔진) 버전 | 모델 · 아티팩트 | 응용 · 버전 |
 |---|---|---|---|

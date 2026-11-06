@@ -227,18 +227,24 @@ type CatalogSyncConfig struct {
 	// (AIAPP_CATALOG_SYNC_INTERVAL, 24h by default).
 	Interval time.Duration
 	// Sources are the sources to run, in order, by origin name
-	// (AIAPP_CATALOG_SYNC_SOURCES, a comma separated list, every source by
-	// default).
+	// (AIAPP_CATALOG_SYNC_SOURCES, a comma separated list,
+	// DefaultSyncSources by default). The entries of a sync source left out
+	// are deleted from the catalog at the end of each run.
 	Sources []string
 	// Limit caps how many models one listing of a source returns
 	// (AIAPP_CATALOG_SYNC_LIMIT, 100 by default).
 	Limit int
 }
 
-// SyncSources are the origins the catalog sync can collect from, in the
-// order they run by default.
+// SyncSources are the origins the catalog sync can collect from.
 var SyncSources = []string{model.OriginHuggingFace, model.OriginOllama, model.OriginDockerModelRunner,
 	model.OriginNGC, model.OriginKaggle}
+
+// DefaultSyncSources are the sources the catalog sync runs when
+// AIAPP_CATALOG_SYNC_SOURCES is not set, in order. docker-model-runner, ngc
+// and kaggle are left out because no runtime profile serves their artifacts
+// yet; setting the variable turns them on.
+var DefaultSyncSources = []string{model.OriginHuggingFace, model.OriginOllama}
 
 // ArchiveConfig holds the deployment/control archive location.
 type ArchiveConfig struct {
@@ -297,7 +303,7 @@ func Load() (*Config, error) {
 	v.SetDefault("deployment.open_ports", true)
 	v.SetDefault("catalog_sync.enabled", true)
 	v.SetDefault("catalog_sync.interval", 24*time.Hour)
-	v.SetDefault("catalog_sync.sources", strings.Join(SyncSources, ","))
+	v.SetDefault("catalog_sync.sources", strings.Join(DefaultSyncSources, ","))
 	v.SetDefault("catalog_sync.limit", 100)
 
 	// AutomaticEnv only resolves keys that viper already knows about.

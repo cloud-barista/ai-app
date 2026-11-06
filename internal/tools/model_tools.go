@@ -27,7 +27,9 @@ func listModelsTool(models *modelcat.Store) Tool {
 			"task and modality match the model; format, runtimeId and source match an artifact, and a model is " +
 			"listed only when one artifact matches all three. origin matches who put the model in the catalog; " +
 			"verified=true keeps models with an artifact that has deployed on a runtime (runtimes[].verifiedAt " +
-			"set), verified=false the others. An artifact with no runtimes cannot be deployed. An absent " +
+			"set), verified=false the others. An artifact with no runtimes cannot be deployed: its deployable is " +
+			"false, and a model is deployable when some artifact is; deployable=true keeps the deployable models, " +
+			"deployable=false the others. An absent " +
 			"contextLength, sizeGiB or precision means unknown, not zero.",
 		InputSchema: object(map[string]any{
 			"task":      stringProp("Model task, such as chat, vision-chat or embedding"),
@@ -39,18 +41,21 @@ func listModelsTool(models *modelcat.Store) Tool {
 				"collected it from", model.Origins...),
 			"verified": map[string]any{"type": "boolean", "description": "true keeps models with an artifact that " +
 				"has deployed on a runtime, false the others"},
+			"deployable": map[string]any{"type": "boolean", "description": "true keeps models with an artifact that " +
+				"lists a runtime, false the others"},
 		}),
 		Handle: func(ctx context.Context, nsID string, input json.RawMessage) (any, error) {
 			var args modelcat.Filter
 			if len(input) > 0 {
 				var raw struct {
-					Task      string `json:"task"`
-					Modality  string `json:"modality"`
-					Format    string `json:"format"`
-					RuntimeID string `json:"runtimeId"`
-					Source    string `json:"source"`
-					Origin    string `json:"origin"`
-					Verified  *bool  `json:"verified"`
+					Task       string `json:"task"`
+					Modality   string `json:"modality"`
+					Format     string `json:"format"`
+					RuntimeID  string `json:"runtimeId"`
+					Source     string `json:"source"`
+					Origin     string `json:"origin"`
+					Verified   *bool  `json:"verified"`
+					Deployable *bool  `json:"deployable"`
 				}
 				if err := decode(input, &raw); err != nil {
 					return nil, err

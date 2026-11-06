@@ -82,6 +82,11 @@ func TestDockerModelRunnerFetch(t *testing.T) {
 		}
 	}
 
+	// The repository description is copied; smollm2 states none.
+	if smol.Description != "" || mx.Description != "mxbai-embed-large-v1 is a top English embed model by Mixedbread AI, great for RAG and more." {
+		t.Errorf("descriptions %q, %q", smol.Description, mx.Description)
+	}
+
 	if reqs := fs.requests(); reqs[0].URL.Query().Get("page_size") != "10" {
 		t.Errorf("first request %s", reqs[0].URL)
 	}

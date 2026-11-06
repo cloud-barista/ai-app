@@ -17,7 +17,7 @@ import (
 // RestGetAllModels godoc
 // @ID GetAllModels
 // @Summary List AI models
-// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.
+// @Description List the AI models in the model catalog with every artifact each is published as. Each filter is optional and compared without regard to case; all given filters must match. task, modality and origin match the model; verified=true keeps the models for which some artifact has some runtime with verifiedAt set, verified=false the others. deployable=true keeps the models for which some artifact lists a runtime, deployable=false the others; deployable is also given on each model and artifact and is ignored on input. format, runtimeId and source match an artifact, and a model is listed only when one of its artifacts matches all three of them at once. Values are returned as the source states them: an absent contextLength, sizeGiB or precision means unknown, not zero. Sizing nodes from these values is left to the caller.
 // @Tags [Model] AI Model Catalog
 // @Produce json
 // @Param task query string false "Model task, such as chat, vision-chat or embedding"
@@ -28,7 +28,8 @@ import (
 // @Param origin query string false "Who put the model in the catalog. An absent origin is read as manual" Enums(seed,manual,huggingface,ollama,docker-model-runner,ngc,kaggle)
 // @Param verified query bool false "true: an inference deployment of some artifact succeeded on some runtime (runtimes[].verifiedAt set); false: none did"
 // @Success 200 {object} model.ModelListResp "AI model list, ordered by id"
-// @Failure 400 {object} model.SimpleMsg "origin is not a known origin, or verified is not a boolean"
+// @Param deployable query bool false "true: some artifact lists a runtime and can be deployed; false: none does"
+// @Failure 400 {object} model.SimpleMsg "origin is not a known origin, or verified or deployable is not a boolean"
 // @Security BearerAuth
 // @Router /models [get]
 func (h *Handler) RestGetAllModels(c echo.Context) error {
@@ -50,6 +51,13 @@ func (h *Handler) RestGetAllModels(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: "verified must be true or false"})
 		}
 		filter.Verified = &verified
+	}
+	if raw := c.QueryParam("deployable"); raw != "" {
+		deployable, err := strconv.ParseBool(raw)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: "deployable must be true or false"})
+		}
+		filter.Deployable = &deployable
 	}
 	return c.JSON(http.StatusOK, model.ModelListResp{Models: h.models.List(ctx, filter)})
 }

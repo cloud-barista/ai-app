@@ -62,7 +62,12 @@ type Model struct {
 	Family string `json:"family,omitempty" example:"qwen3-vl"`
 	// Publisher is who released the model.
 	Publisher string `json:"publisher,omitempty" example:"Qwen"`
-	// Parameters is the parameter count as the publisher writes it.
+	// Description is what the source says the model is, copied as written.
+	// Empty when the source gives none.
+	Description string `json:"description,omitempty" example:"Qwen3-VL is the vision-language model of the Qwen3 series."`
+	// Parameters is the parameter count as the publisher writes it. A model
+	// whose artifacts differ in size, such as the size tags of an Ollama
+	// model, leaves it empty and states it on each artifact.
 	Parameters string `json:"parameters,omitempty" example:"8B"`
 	// Tasks are what the model is used for, such as chat, vision-chat or
 	// embedding. Filter with ?task=.
@@ -90,6 +95,9 @@ type Model struct {
 	// Stale is true when the source of a collected model no longer lists it.
 	// The entry is kept, and turns false again when the source lists it again.
 	Stale bool `json:"stale,omitempty" example:"false"`
+	// Deployable is true when some artifact is deployable. It is computed
+	// from the artifacts and ignored on input. Filter with ?deployable=.
+	Deployable bool `json:"deployable" readonly:"true" example:"true"`
 }
 
 // Artifact is one published form of a model: where it comes from, in which
@@ -111,6 +119,9 @@ type Artifact struct {
 	// it, such as BF16, FP8 or Q4_K_M. It is not normalized. Empty means
 	// unknown.
 	Precision string `json:"precision,omitempty" example:"BF16"`
+	// Parameters is the parameter count of this artifact as the source
+	// writes it, such as 8.2B or 751.63M. Empty means unknown.
+	Parameters string `json:"parameters,omitempty" example:"8.8B"`
 	// SizeGiB is the download size in GiB (2^30 bytes). Zero or absent means
 	// unknown.
 	SizeGiB float64 `json:"sizeGiB,omitempty" example:"16.3"`
@@ -120,6 +131,9 @@ type Artifact struct {
 	// list means no runtime is known to load the artifact: it is listed but
 	// cannot be deployed.
 	Runtimes []RuntimeCompat `json:"runtimes"`
+	// Deployable is true when runtimes lists at least one runtime. It is
+	// computed and ignored on input.
+	Deployable bool `json:"deployable" readonly:"true" example:"true"`
 }
 
 // RuntimeCompat names one inference runtime an artifact runs on.
@@ -255,6 +269,17 @@ func (m *Model) Verified() bool {
 		}
 	}
 	return false
+}
+
+// SetDeployable computes Deployable on the model and each of its artifacts
+// from the runtimes the artifacts list.
+func (m *Model) SetDeployable() {
+	m.Deployable = false
+	for i := range m.Artifacts {
+		a := &m.Artifacts[i]
+		a.Deployable = len(a.Runtimes) > 0
+		m.Deployable = m.Deployable || a.Deployable
+	}
 }
 
 // RuntimeArgs returns the catalog arguments the artifact lists for runtimeID.

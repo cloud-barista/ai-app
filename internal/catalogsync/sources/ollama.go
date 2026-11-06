@@ -19,11 +19,14 @@ const ollamaManifestType = "application/vnd.docker.distribution.manifest.v2+json
 const ollamaWorkers = 8
 
 // The library page lists each model as an <li> holding a link to
-// /library/<name>, then capability spans (text-indigo-600: tools, thinking,
-// vision, embedding ...) and size spans (text-blue-600: 0.6b, 8b ...).
+// /library/<name>, a <p> with the model description, then capability spans
+// (text-indigo-600: tools, thinking, vision, embedding ...) and size spans
+// (text-blue-600: 0.6b, 8b ...). The description is the first <p> holding
+// text only; the pull count <p> after it holds spans.
 var (
 	ollamaItem = regexp.MustCompile(`(?s)<li\b[^>]*>\s*<a href="/library/([A-Za-z0-9._-]+)"(.*?)</li>`)
 	ollamaSpan = regexp.MustCompile(`<span\s[^>]*class="[^"]*\btext-(indigo|blue)-600\b[^"]*"[^>]*>([^<]*)</span>`)
+	ollamaDesc = regexp.MustCompile(`<p\b[^>]*>([^<]*)</p>`)
 )
 
 // Ollama lists the Ollama library page and reads each size tag's manifest
@@ -52,6 +55,7 @@ func (s *Ollama) Name() string { return model.OriginOllama }
 // ollamaEntry is one model on the library page.
 type ollamaEntry struct {
 	name         string
+	description  string
 	capabilities []string
 	sizes        []string
 }
@@ -134,13 +138,15 @@ func (s *Ollama) Fetch(ctx context.Context, opt catalogsync.Options) ([]model.Mo
 		m := model.Model{
 			ID:              catalogsync.ModelID("ollama", e.name),
 			Name:            e.name,
+			Description:     e.description,
 			Family:          found[0].family,
 			Tasks:           []string{task},
 			InputModalities: modalities(task),
 			Origin:          model.OriginOllama,
 		}
 		// Model.Parameters is one value; it is set only when the model has
-		// one artifact, since each size tag has its own count.
+		// one artifact, since each size tag has its own count. Each
+		// artifact carries the count of its tag.
 		if len(found) == 1 {
 			m.Parameters = found[0].parameters
 		}
@@ -166,6 +172,9 @@ func parseOllamaLibrary(page string) []ollamaEntry {
 			continue
 		}
 		seen[e.name] = true
+		if d := ollamaDesc.FindStringSubmatch(item[2]); d != nil {
+			e.description = strings.TrimSpace(html.UnescapeString(d[1]))
+		}
 		for _, span := range ollamaSpan.FindAllStringSubmatch(item[2], -1) {
 			text := strings.TrimSpace(html.UnescapeString(span[2]))
 			if text == "" {
@@ -201,11 +210,12 @@ func (s *Ollama) fetchTag(ctx context.Context, opt catalogsync.Options, name, ta
 		format = model.FormatGGUF
 	}
 	art := model.Artifact{
-		Source:    model.OriginOllama,
-		Ref:       name + ":" + tag,
-		Format:    format,
-		Precision: cfg.FileType,
-		Runtimes:  []model.RuntimeCompat{},
+		Source:     model.OriginOllama,
+		Ref:        name + ":" + tag,
+		Format:     format,
+		Precision:  cfg.FileType,
+		Parameters: cfg.ModelType,
+		Runtimes:   []model.RuntimeCompat{},
 	}
 	for _, l := range man.Layers {
 		if strings.HasSuffix(l.MediaType, "image.model") {

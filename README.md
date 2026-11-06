@@ -29,7 +29,7 @@ An automation engine on top runs fixed deploy, heal, control and status workflow
 
 | You want to | AI-App gives you |
 |---|---|
-| Know what can be deployed | A **model catalog** (models, their artifacts per source and format, compatible runtimes), synced daily from Hugging Face, Ollama, Docker Model Runner, NGC and Kaggle, plus models you register yourself |
+| Know what can be deployed | A **model catalog** (models, their artifacts per source and format, compatible runtimes), synced daily from Hugging Face and Ollama (Docker Model Runner, NGC and Kaggle can be turned on), plus models you register yourself |
 | Serve a model | `POST /aiapp/deployments` with `type: inference`: a runtime (`vllm` or `ollama`) serving one model artifact on a node, exposing an OpenAI compatible API |
 | Run an AI application | Upload files and a `deploy.sh` once (`POST /aiapp/apps`, versioned), then deploy it with `type: app`. Examples for Open WebUI, Langflow and Dify are included |
 | Know where things serve | `GET /aiapp/endpoints` returns the URL of every inference service and application running now |
@@ -233,7 +233,7 @@ All paths are under `/aiapp`. Field level documentation is in Swagger (`/aiapp/a
 | Area | Routes |
 |---|---|
 | Status | `GET /readyz`, `GET /status` |
-| Catalog | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /models/sync` |
+| Catalog | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /catalog/sync` |
 | Applications | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | Deployments | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
 | Endpoints | `GET /endpoints` (filters `nsId`, `infraId`, `nodeId`, `type`, `available`). Reads each node from CB-Tumblebug on every call: URLs use the node's current IP and are given only while it is `Running` |
@@ -267,7 +267,7 @@ The documents under `docs/` are written in Korean.
 |---|---|
 | Runtimes | `vllm` (`vllm/vllm-openai:v0.32.0`, Hugging Face safetensors) and `ollama` (`ollama/ollama:0.40.13`, GGUF) |
 | Built-in models | `qwen3-embedding-0.6b` (embedding), `qwen3-vl-8b` (vision chat), `ministral-3-8b` (chat), each with the runtime arguments it needs |
-| Catalog sync | Hugging Face, Ollama, Docker Model Runner, NGC, Kaggle. Artifacts from the last three are listed but have no runtime yet, so deploying them answers `422` |
+| Catalog sync | Hugging Face and Ollama by default. Docker Model Runner, NGC and Kaggle are off by default because no runtime serves their artifacts yet; turned on, their artifacts are listed with `deployable: false` and deploying them answers `422`. Turning a source off again deletes its models at the end of the next run |
 | Example apps | Open WebUI `v0.12.4`, Langflow `1.13.0`, Dify `1.18.0` |
 | Clouds | Any CSP CB-Tumblebug supports, since AI-App only talks to CB-Tumblebug and SSH. Run on real VMs on **AWS** (T4, L4), **Azure** (T4) and **GCP** (L4), including RHEL 9, Amazon Linux 2023 and AlmaLinux 9 nodes |
 | Integrations | CB-Tumblebug 0.13.8, Semaphore UI v2.12.17, MCP (Streamable HTTP) for the 13 AI-App tools and 5 engine tools, an agent registry (`POST {registry}/agents`) for the engine card |
@@ -351,7 +351,7 @@ was deployed with the API alone and every service answered from outside. See [th
 | `AIAPP_MODEL_STORE_FILE` | | App | Model catalog file. Seeds 3 models only when the file does not exist yet |
 | `AIAPP_CATALOG_SYNC_ENABLED` | `true` | App | Catalog sync on or off |
 | `AIAPP_CATALOG_SYNC_INTERVAL` | `24h` | App | Sync interval. With no source reachable it retries after 5m, 15m, 1h |
-| `AIAPP_CATALOG_SYNC_SOURCES` | all five | App | Comma separated: `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle` |
+| `AIAPP_CATALOG_SYNC_SOURCES` | `huggingface,ollama` | App | Comma separated: `huggingface`, `ollama`, `docker-model-runner`, `ngc`, `kaggle`. The last three are off by default because no runtime serves them yet. Models of a source left out are deleted at the end of each run (never `seed` or `manual` ones) |
 | `AIAPP_CATALOG_SYNC_LIMIT` | `100` | App | Models per source (per task for Hugging Face) |
 | `AIAPP_APP_STORE_DIR` | `./data/apps` | App | Uploaded applications, `<name>/<version>/` |
 | `AIAPP_APP_UPLOAD_MAX_BYTES` | `268435456` | App | Upload size limit (256 MiB) |
