@@ -561,7 +561,7 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 - 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 의 named volume
   `catalog`, `/app/data/catalog/models.json`)은 아티팩트 필드가 `engines` 라 새 코드가 읽지 못해 기동이 실패합니다. 그 파일을 지우면 기본
   모델 3개로 다시 시작합니다. 옛 배포 기록의 `type: model-service` 는 `inference` 로 읽히지 않습니다(목록에는 남지만 필터와 주소 조회에서 빠짐).
-  자세한 것은 저장소 README 의 "업그레이드" 절.
+  자세한 것은 저장소 [README.ko.md 의 "업그레이드" 절](../../README.ko.md#업그레이드).
 
 ## 12. 예시 응용 셋은 어떻게 동작하나
 
