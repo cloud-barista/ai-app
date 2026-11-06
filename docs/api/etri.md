@@ -246,6 +246,10 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 | Open WebUI | `OLLAMA_BASE_URL` (필수), `OPEN_WEBUI_PORT`(기본 3000) | `http://<vm2>:3000` |
 | Langflow | `LANGFLOW_SUPERUSER_PASSWORD`(필수), `MODEL_BASE_URL`, `MODEL_API_KEY`(vm3 의 `apiKey`, Credential 전역 변수로 들어감), `LANGFLOW_PORT`(기본 7860) | `http://<vm3>:7860`. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 전역 변수 `MODEL_BASE_URL`, `OpenAI API Key` 칸에서 `MODEL_API_KEY` 를 고름 ([README.md](README.md) 12-3절) |
 
+Langflow 의 관리자 비밀번호는 **처음 배포할 때** Langflow DB 에 저장되고, 그 DB 는 볼륨에 남습니다. 같은 노드에 다시 배포할 때는
+처음과 같은 `LANGFLOW_SUPERUSER_PASSWORD` 를 줍니다. 다른 값을 주면 `deploy.sh` 의 로그인이 거절되어 배포가 `failed`
+(`Langflow refused the admin login: check LANGFLOW_SUPERUSER_PASSWORD`)가 됩니다. 비밀번호를 바꾸려면 Langflow 화면에서 바꾼 뒤 그 값으로 배포합니다.
+
 포트를 기본값과 다르게 쓰면(`OPEN_WEBUI_PORT=8080` 처럼) 열 포트도 같이 바꿔야 합니다: `"app": {..., "ports": [8080]}`.
 
 ## 4. 포털이 주소를 찾는 법
