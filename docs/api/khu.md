@@ -253,6 +253,7 @@ REST 경로까지 묶어 시험하는 예는 `internal/rest/recommendations_test
 | 응용 카탈로그는 이름·버전·파일·포트뿐 | `GET /aiapp/apps` 에 용도·설명·태그·필요 자원이 없습니다. 응용 추천은 이름이나 구현이 따로 가진 정보로 판단해야 합니다 |
 | 노드 스펙은 카탈로그에 없음 | `targetNodes` 는 이름(`nsId`/`infraId`/`nodeId`)만 넘어갑니다. GPU 종류·메모리가 필요하면 구현이 CB-Tumblebug 에서 직접 읽어야 합니다(노드 `GET /ns/{nsId}/infra/{infraId}/node/{nodeId}` 의 `specId`, 스펙 `GET /ns/system/resources/spec/{specId}`). `Catalog` 는 노드를 읽지 않습니다 |
 | 모델 메타데이터는 원래 값 그대로 | `precision`(`BF16`, `FP8`, `Q4_K_M`)은 출처 표기 그대로이고 정규화하지 않습니다. `sizeGiB`·`contextLength` 가 비어 있으면 "모름" 입니다. VRAM 계산은 구현 몫입니다 |
+| 크기와 배포 가능 여부 | 아티팩트마다 `parameters`(출처 표기 그대로, 예 `8.2B`)와 `sizeGiB`(받을 크기)가 있습니다. 같은 모델도 태그·양자화마다 아티팩트가 따로라 크기가 다릅니다. `deployable` 이 false 인 모델·아티팩트는 지금 런타임으로 띄울 수 없으니 추천 후보에서 뺍니다(`GET /aiapp/models?deployable=true`) |
 | 추천 결과로 배포하지 않음 | 추천 경로는 후보만 돌려줍니다. 배포는 호출자가 그 값으로 `POST /aiapp/deployments` 를 따로 부릅니다 |
 | MCP 도구 없음 | 추천은 REST 경로만 있고 MCP 도구는 없습니다 |
 
