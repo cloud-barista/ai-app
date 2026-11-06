@@ -8,7 +8,10 @@
 #   DIFY_PORT       host port of the Dify web interface (default 80)
 #   VLLM_BASE_URL   OpenAI compatible model server, e.g. http://10.0.0.5:8000/v1.
 #                   Dify takes model servers in its web interface, so this is
-#                   printed at the end to be entered there.
+#                   printed at the end to be entered there. A vLLM service
+#                   also needs its API key there: the apiKey of that
+#                   inference service on GET /aiapp/endpoints. The key is not
+#                   taken here and never printed.
 #   DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN
 #                   token the agent backend and the local sandbox of Dify share.
 #                   Both refuse to start without one and Dify ships it empty,
@@ -69,4 +72,5 @@ docker compose ps
 echo "Dify ${DIFY_VERSION} listens on port ${DIFY_PORT:-80} of this node; open /install there to create the admin account."
 if [ -n "${VLLM_BASE_URL:-}" ]; then
 	echo "Add the model server in Settings > Model Provider > OpenAI-API-compatible with API endpoint URL ${VLLM_BASE_URL}"
+	echo "and, for a vLLM service, API Key: the apiKey of that inference service on GET /aiapp/endpoints."
 fi

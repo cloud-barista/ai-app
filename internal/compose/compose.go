@@ -35,6 +35,13 @@ var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // file so that it never appears in the rendered file itself.
 const hfTokenEnv = "HF_TOKEN"
 
+// APIKeyEnv is the variable `vllm serve` reads its API key from when no
+// --api-key is given. With it set, vLLM answers 401 on /v1 paths without
+// `Authorization: Bearer <key>` and leaves /health open. The key goes into
+// the environment rather than the command, so that it shows in neither
+// `docker ps` nor the process list nor the arguments vLLM logs at start.
+const APIKeyEnv = "VLLM_API_KEY"
+
 // ollamaPullService is the one-shot service of the ollama template that pulls
 // the model into the server.
 const ollamaPullService = "model-pull"
@@ -109,6 +116,9 @@ type Options struct {
 	// service sets and the artifact's catalog arguments for the runtime. Only
 	// vllm takes them.
 	Args []string
+	// APIKey is the key a vllm engine requires on its /v1 paths, set as
+	// APIKeyEnv. Only vllm takes one.
+	APIKey string
 }
 
 // envVar is one rendered environment entry.
@@ -156,14 +166,24 @@ func Render(m *model.Model, artifact *model.Artifact, engine *model.RuntimeProfi
 		v.Args = append(v.Args, artifact.RuntimeArgs(engine.ID)...)
 		v.Args = append(v.Args, opts.Args...)
 		defaults[hfTokenEnv] = "${" + hfTokenEnv + ":-}"
+		if _, ok := opts.Env[APIKeyEnv]; ok {
+			return "", fmt.Errorf("%w: env must not set %s; give the key as apiKey", ErrInvalidOption, APIKeyEnv)
+		}
 	default:
 		if len(opts.Args) > 0 {
 			return "", fmt.Errorf("%w: args are not supported by runtime %s", ErrInvalidOption, engine.ID)
+		}
+		if opts.APIKey != "" {
+			return "", fmt.Errorf("%w: apiKey is not supported by runtime %s, which has no API key", ErrInvalidOption, engine.ID)
 		}
 	}
 	env, err := mergeEnv(defaults, opts.Env)
 	if err != nil {
 		return "", err
+	}
+	if opts.APIKey != "" {
+		env = append(env, envVar{Name: APIKeyEnv, Value: escapeDollar(opts.APIKey)})
+		sort.Slice(env, func(i, j int) bool { return env[i].Name < env[j].Name })
 	}
 	v.Env = env
 

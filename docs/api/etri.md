@@ -30,7 +30,7 @@ AI-App 은 CB-Tumblebug 의 노드 정보(`GET /ns/{nsId}/infra/{infraId}/node/{
 | GPU | 노드 스펙(`specId`, 네임스페이스 `system`)의 `acceleratorType` 이 `gpu` 면 GPU 노드로 봄. **NVIDIA 드라이버는 이미지에 들어 있어야** 하고 **550 이상**이어야 함(Ollama `0.40.13` 이 요구). AI-App 은 NVIDIA Container Toolkit 을 깔고, docker 에 nvidia 런타임이 없으면 등록함 | 스펙을 못 읽으면 GPU 없이 배포(`gpuSource: default`). 드라이버가 없거나 550 미만이면 런타임이 CPU 로 돌고, GPU 를 쓰기로 한 배포는 그 노드가 **`failed`** 가 됨(아래 3-2절) |
 | 바깥 통신 | 노드에서 Docker Hub, `ghcr.io`, Hugging Face, `registry.ollama.ai`, `download.docker.com`, GitHub(Dify, 직접 받는 compose 플러그인), `nvidia.github.io` 로 나갈 수 있어야 함 | docker 설치, 이미지·모델 받기 실패 |
 | 디스크 | 런타임 이미지와 모델 가중치가 들어갈 만큼. 모델 크기는 `GET /aiapp/models` 의 `sizeGiB` (모르면 비어 있음) | 받는 중 실패 |
-| 응용이 쓰는 도구 | `install-docker` 는 docker 와 compose 플러그인만 깖. 예시 응용의 `deploy.sh` 가 쓰는 도구는 이미지에 있어야 함. Dify(vm1)는 `git` 이 꼭 있어야 함(Dify 공식 compose 를 노드에서 받아 띄움). `openssl` 은 있으면 비밀값을 만드는 데 쓰고 없으면 `/dev/urandom` 으로 대신함. Langflow 는 `MODEL_BASE_URL` 을 줄 때 `python3` 이 있어야 함(그 값을 Langflow 에 넣는 API 호출). Open WebUI 는 더 필요한 것이 없음 | `git` 이 없으면 Dify 배포 실패(`git is not installed on this node`). `python3` 이 없으면 Langflow 는 뜨지만 배포 실패(`python3 is not installed on this node`) |
+| 응용이 쓰는 도구 | `install-docker` 는 docker 와 compose 플러그인만 깖. 예시 응용의 `deploy.sh` 가 쓰는 도구는 이미지에 있어야 함. Dify(vm1)는 `git` 이 꼭 있어야 함(Dify 공식 compose 를 노드에서 받아 띄움). `openssl` 은 있으면 비밀값을 만드는 데 쓰고 없으면 `/dev/urandom` 으로 대신함. Langflow 는 `MODEL_BASE_URL` 이나 `MODEL_API_KEY` 를 줄 때 `python3` 이 있어야 함(그 값을 Langflow 에 넣는 API 호출). Open WebUI 는 더 필요한 것이 없음 | `git` 이 없으면 Dify 배포 실패(`git is not installed on this node`). `python3` 이 없으면 Langflow 는 뜨지만 배포 실패(`python3 is not installed on this node`) |
 
 지원하는 배포판과 `install-docker` 가 까는 방법입니다. `ID_LIKE` 가 이 중 하나를 가리키는 파생 배포판도 같은 방법으로 다룹니다.
 
@@ -96,9 +96,9 @@ AUTH="Authorization: Bearer $AIAPP_AUTH_TOKEN"
 
 | 노드 | 추론 서비스 (`inference`) | 응용 (`app`) | 응용에 넘길 env |
 |---|---|---|---|
-| vm1 | `vllm` + `qwen3-embedding-0.6b` / `hf-bf16` (포트 8000) | `dify` (포트 80) | `VLLM_BASE_URL=http://<vm1>:8000/v1` |
+| vm1 | `vllm` + `qwen3-embedding-0.6b` / `hf-bf16` (포트 8000) | `dify` (포트 80) | `VLLM_BASE_URL=http://<vm1>:8000/v1` (API 키는 Dify 화면에 넣음) |
 | vm2 | `ollama` + `qwen3-vl-8b` / `ollama-gguf` (포트 11434) | `open-webui` (포트 3000) | `OLLAMA_BASE_URL=http://<vm2>:11434` (`/v1` 없이) |
-| vm3 | `vllm` + `ministral-3-8b` / `hf-fp8` (포트 8000) | `langflow` (포트 7860) | `MODEL_BASE_URL=http://<vm3>:8000/v1` |
+| vm3 | `vllm` + `ministral-3-8b` / `hf-fp8` (포트 8000) | `langflow` (포트 7860) | `MODEL_BASE_URL=http://<vm3>:8000/v1`, `MODEL_API_KEY=<vm3 의 apiKey>` |
 
 ### 3-1. 응용 올리기 (한 번만)
 
@@ -168,6 +168,10 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
   오류(`estimated maximum model length is 71760`)로 vLLM 이 뜨지 않았습니다. 다른 값을 쓰려면 `"args": ["--max-model-len", "16384"]` 처럼
   요청에 주면 카탈로그 인자 뒤에 붙어 덮어씁니다.
 - 세 노드를 한 요청에 넣을 수도 있지만(`targets` 여러 개), 모델이 노드마다 달라 위처럼 따로 보냅니다.
+- vm1·vm3 의 vLLM 은 API 키를 요구합니다. 위처럼 `apiKey` 를 빼면 AI-App 이 노드마다 키를 만들고, 같은 노드에 다시 배포하면 그 키를
+  그대로 씁니다. 정한 키를 쓰려면 `"inference": {..., "apiKey": "<16~128자 [A-Za-z0-9._~-]>"}` 를 줍니다. 키는 3-3 의 `apiKey` 로
+  읽습니다. vLLM 을 부를 때는 `Authorization: Bearer <apiKey>` 를 붙이고, 없으면 `/v1/*` 가 `401` 입니다. 헬스(`/health`)는 키 없이
+  응답하므로 배포 확인은 키와 상관없습니다. vm2 의 Ollama 는 키 기능이 없어 `apiKey` 를 주면 `400` 입니다.
 
 ```sh
 id=<위 응답의 id>
@@ -197,6 +201,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel&type=inferenc
       "deploymentId": "3f9b2c4e-8a51-4d27-9e0c-5b1f6a7d2e48",
       "runtimeId": "vllm", "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16",
       "url": "http://203.0.113.10:8000/v1", "healthUrl": "http://203.0.113.10:8000/health",
+      "apiKey": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e",
       "ports": [8000], "portsOpened": true,
       "openedPorts": [{"securityGroupId": "etri-shared-aws-ap-northeast-2", "port": 8000, "protocol": "TCP", "result": "added"}]
     }
@@ -209,6 +214,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel&type=inferenc
 ### 3-4. 응용 배포
 
 `env` 에 3-3 의 주소를 넣습니다. Open WebUI 는 Ollama 의 루트 주소를 받으므로 `url` 에서 `/v1` 을 뺍니다.
+Langflow 에는 vm3 항목의 `apiKey` 를 `MODEL_API_KEY` 로 넘깁니다. Dify 는 키를 env 로 받지 않으므로 화면에서 넣습니다.
 
 ```sh
 # vm1: Dify
@@ -229,15 +235,16 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments"
 curl -sS -H "$AUTH" -H 'Content-Type: application/json' "$AIAPP_URL/deployments" -d '{
   "type": "app",
   "targets": [{"kind": "node", "nsId": "etri", "infraId": "travel", "nodeId": "vm3"}],
-  "app": {"name": "langflow", "env": {"MODEL_BASE_URL": "http://203.0.113.13:8000/v1"}}
+  "app": {"name": "langflow", "env": {"LANGFLOW_SUPERUSER_PASSWORD": "<관리자 비밀번호>",
+                                     "MODEL_BASE_URL": "http://203.0.113.13:8000/v1", "MODEL_API_KEY": "<vm3 의 apiKey>"}}
 }'
 ```
 
 | 응용 | env | 끝난 뒤 |
 |---|---|---|
-| Dify | `VLLM_BASE_URL` (화면에 넣을 값을 로그에 찍기만 함), `DIFY_PORT`(기본 80) | `http://<vm1>/install` 에서 관리자 계정을 만들고, 설정 > Model Provider > OpenAI-API-compatible 에 `VLLM_BASE_URL` 을 넣음 |
+| Dify | `VLLM_BASE_URL` (화면에 넣을 값을 로그에 찍기만 함), `DIFY_PORT`(기본 80) | `http://<vm1>/install` 에서 관리자 계정을 만들고, 설정 > Model Provider > OpenAI-API-compatible 에 `VLLM_BASE_URL` 을, API Key 칸에 vm1 의 `apiKey`(3-3)를 넣음. 스크립트는 키 값을 찍지 않음 |
 | Open WebUI | `OLLAMA_BASE_URL` (필수), `OPEN_WEBUI_PORT`(기본 3000) | `http://<vm2>:3000` |
-| Langflow | `LANGFLOW_SUPERUSER_PASSWORD`(필수), `MODEL_BASE_URL`, `LANGFLOW_PORT`(기본 7860) | `http://<vm3>:7860`. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 전역 변수 `MODEL_BASE_URL` 을 고름 ([README.md](README.md) 12-3절) |
+| Langflow | `LANGFLOW_SUPERUSER_PASSWORD`(필수), `MODEL_BASE_URL`, `MODEL_API_KEY`(vm3 의 `apiKey`, Credential 전역 변수로 들어감), `LANGFLOW_PORT`(기본 7860) | `http://<vm3>:7860`. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 전역 변수 `MODEL_BASE_URL`, `OpenAI API Key` 칸에서 `MODEL_API_KEY` 를 고름 ([README.md](README.md) 12-3절) |
 
 포트를 기본값과 다르게 쓰면(`OPEN_WEBUI_PORT=8080` 처럼) 열 포트도 같이 바꿔야 합니다: `"app": {..., "ports": [8080]}`.
 
@@ -254,6 +261,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri&infraId=travel"
 | `nodeId`, `workKey` | 어느 노드의 무엇인지. 노드 하나·작업 키 하나에 항목 하나 |
 | `nodeStatus`, `available` | 부를 때 CB-Tumblebug 에서 읽은 노드 상태(`Running`, `Suspended` 등). `Running` 일 때만 `available: true` 이고 주소가 있음 |
 | `type: inference` 의 `url` | OpenAI 호환 API (`/v1/chat/completions`, `/v1/embeddings`) |
+| `type: inference` 의 `apiKey` | vLLM 을 부를 때 `Authorization: Bearer <apiKey>`. 노드가 `Running` 이 아니어도 나옴. Ollama 항목에는 없음 |
 | `type: app` 의 `urls[].url` | 응용 화면 (`http://<노드>:<포트>`) |
 | `portsOpened` | `false` 면 보안 그룹에 포트가 안 열렸을 수 있음. `portsError`·`notes` 를 봄 |
 | `deploymentId` | 이 주소를 만든 배포. 내릴 때 씀 |

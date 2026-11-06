@@ -35,6 +35,7 @@ package nodedeploy
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -183,6 +184,9 @@ type plan struct {
 	appPorts []int
 	// place is where the deployment lands on every node.
 	place placement
+	// apiKeys are the API keys of the runtime on each target, by target
+	// index, for a runtime that takes one (see assignAPIKeys).
+	apiKeys []string
 }
 
 // Create accepts a deployment request.
@@ -205,6 +209,9 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 	if err := s.checkTargets(ctx, req.Targets); err != nil {
 		return nil, err
 	}
+	if err := s.assignAPIKeys(&req, p); err != nil {
+		return nil, err
+	}
 	id, err := newUUID()
 	if err != nil {
 		return nil, err
@@ -217,6 +224,9 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 	}
 	for i, t := range req.Targets {
 		d.Nodes[i] = model.NodeDeployResult{Target: t, Status: model.NodeDeployPending}
+		if p.apiKeys != nil {
+			d.Nodes[i].APIKey = p.apiKeys[i]
+		}
 	}
 	if err := s.store.Create(d); err != nil {
 		return nil, err
@@ -308,7 +318,7 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 	}
 	// A render up front refuses an incompatible pairing, env or args before the
 	// request is accepted. The GPU block is decided per node later.
-	if _, err := compose.Render(m, artifact, runtime, compose.Options{Env: inf.Env, Args: inf.Args}); err != nil {
+	if _, err := compose.Render(m, artifact, runtime, compose.Options{Env: inf.Env, Args: inf.Args, APIKey: inf.APIKey}); err != nil {
 		return nil, err
 	}
 	req.Inference = &inf
@@ -317,6 +327,63 @@ func (s *Service) resolve(ctx context.Context, req *model.NodeDeploymentReq) (*p
 		return nil, err
 	}
 	return &plan{model: m, artifact: artifact, runtime: runtime, place: place}, nil
+}
+
+// assignAPIKeys decides the API key of every target of an inference request
+// whose runtime takes one (vllm). The key the request gives goes to every
+// target. Without one, a target keeps the key of the latest deployment record
+// of the same work key on the same node that has one, so that applications
+// configured with it keep working after a redeploy, and otherwise gets a new
+// random key.
+func (s *Service) assignAPIKeys(req *model.NodeDeploymentReq, p *plan) error {
+	if req.Type != model.NodeDeployTypeInference || p.runtime.ID != model.RuntimeVLLM {
+		return nil
+	}
+	p.apiKeys = make([]string, len(req.Targets))
+	for i, t := range req.Targets {
+		key := req.Inference.APIKey
+		if key == "" {
+			key = s.previousAPIKey(t, p.place.WorkKey)
+		}
+		if key == "" {
+			generated, err := newAPIKey()
+			if err != nil {
+				return err
+			}
+			key = generated
+		}
+		p.apiKeys[i] = key
+	}
+	return nil
+}
+
+// previousAPIKey is the API key of the latest deployment record of workKey on
+// target that has one, or "".
+func (s *Service) previousAPIKey(target model.NodeDeployTarget, workKey string) string {
+	for _, d := range s.store.List() {
+		if d.Type != model.NodeDeployTypeInference {
+			continue
+		}
+		place, err := placementFor(&d.Request)
+		if err != nil || place.WorkKey != workKey {
+			continue
+		}
+		for _, n := range d.Nodes {
+			if n.Target.Key() == target.Key() && n.APIKey != "" {
+				return n.APIKey
+			}
+		}
+	}
+	return ""
+}
+
+// newAPIKey returns 32 random hexadecimal characters (128 bits).
+func newAPIKey() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate an API key: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // execute runs every node of a deployment and records the outcome.
@@ -463,7 +530,7 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		setPhase(n, PhaseStaging, time.Now().UTC())
 	})
 
-	rendered, err := s.stage(id, dir, req, p, gpu)
+	rendered, err := s.stage(id, dir, req, p, gpu, nodeAPIKey(p, idx))
 	if err != nil {
 		fail(err)
 		return
@@ -695,7 +762,7 @@ func (s *Service) decideGPU(ctx context.Context, req *model.NodeDeploymentReq, n
 
 // stage places the files of one node and returns the rendered compose file of
 // an inference service.
-func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, gpu bool) (string, error) {
+func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, gpu bool, apiKey string) (string, error) {
 	if !filepath.IsAbs(s.opts.StageRoot) {
 		return "", fmt.Errorf("stage root %q is not an absolute path", s.opts.StageRoot)
 	}
@@ -716,7 +783,7 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 		return "", writeManifest(dir)
 	}
 
-	rendered, err := compose.Render(p.model, p.artifact, p.runtime, compose.Options{GPU: gpu, Env: req.Inference.Env, Args: req.Inference.Args})
+	rendered, err := compose.Render(p.model, p.artifact, p.runtime, compose.Options{GPU: gpu, Env: req.Inference.Env, Args: req.Inference.Args, APIKey: apiKey})
 	if err != nil {
 		return "", err
 	}
@@ -727,6 +794,14 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 		return "", err
 	}
 	return rendered, writeManifest(dir)
+}
+
+// nodeAPIKey is the API key assigned to target idx of p, or "".
+func nodeAPIKey(p *plan, idx int) string {
+	if idx < len(p.apiKeys) {
+		return p.apiKeys[idx]
+	}
+	return ""
 }
 
 // healthURL is the runtime health endpoint as seen from the node itself.

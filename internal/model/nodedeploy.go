@@ -75,6 +75,11 @@ var nodeTargetIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$
 // 1 to 32 characters.
 var sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
+// apiKeyPattern is what an inference API key given in a request may look
+// like: 16 to 128 characters a bearer token, a .env file and a YAML scalar
+// all carry as they are.
+var apiKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{16,128}$`)
+
 // ErrUnsupportedTarget marks a target kind that is reserved but not deployed
 // to yet.
 var ErrUnsupportedTarget = errors.New("unsupported deployment target")
@@ -139,6 +144,14 @@ type NodeInferenceReq struct {
 	// without control characters; --model, --port and --host are set by the
 	// service and refused. Runtime ollama takes none and refuses them.
 	Args []string `json:"args,omitempty" example:"--max-model-len,32768"`
+	// APIKey is the key callers of a vllm service send as
+	// `Authorization: Bearer <apiKey>` on /v1 paths; /health stays open. It
+	// is 16 to 128 characters of [A-Za-z0-9._~-]. Omitted, each node keeps
+	// the key of its previous deployment of the same work key, or gets a
+	// new random one. The key is given to vLLM as the VLLM_API_KEY
+	// environment variable and shown in the node results and on
+	// GET /endpoints. Runtime ollama has no key and refuses one.
+	APIKey string `json:"apiKey,omitempty" example:"3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"`
 }
 
 // NodeAppReq says which uploaded application version to deploy.
@@ -197,6 +210,9 @@ func (r *NodeDeploymentReq) Validate() error {
 		}
 		if err := ValidateRuntimeArgs("inference.args", r.Inference.Args); err != nil {
 			return err
+		}
+		if r.Inference.APIKey != "" && !apiKeyPattern.MatchString(r.Inference.APIKey) {
+			return errInvalid("inference.apiKey", "must be 16 to 128 characters of [A-Za-z0-9._~-]")
 		}
 	case NodeDeployTypeApp:
 		if r.App == nil {
@@ -407,6 +423,12 @@ type NodeDeployResult struct {
 	// private IP the node was reached at, the runtime port and its API base
 	// path. Inference services only.
 	ServiceURL string `json:"serviceUrl,omitempty" example:"http://203.0.113.10:8000/v1"`
+	// APIKey is the key the vllm service on the node takes as
+	// `Authorization: Bearer <apiKey>`: the one the request gave, or the one
+	// this node kept from its previous deployment of the work key, or a new
+	// random one. It is kept in plain text in the deployment store, as env
+	// values are. Absent for runtimes without a key.
+	APIKey string `json:"apiKey,omitempty" example:"3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"`
 	// Ports are the TCP ports the deployment serves on the node: the runtime
 	// port of an inference service, the ports of an application. They are
 	// opened inbound from 0.0.0.0/0 in every security group of the node once

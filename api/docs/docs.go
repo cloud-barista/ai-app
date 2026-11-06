@@ -2294,6 +2294,11 @@ const docTemplate = `{
         "model.Endpoint": {
             "type": "object",
             "properties": {
+                "apiKey": {
+                    "description": "APIKey is what callers of url send as ` + "`" + `Authorization: Bearer\n\u003capiKey\u003e` + "`" + `. Inference only, for runtimes that take a key (vllm), and\nset whether or not the endpoint is available: the key does not change\nwith the address.",
+                    "type": "string",
+                    "example": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"
+                },
                 "artifactId": {
                     "description": "ArtifactID is the artifact of that model. Inference only.",
                     "type": "string",
@@ -2742,6 +2747,11 @@ const docTemplate = `{
         "model.NodeDeployResult": {
             "type": "object",
             "properties": {
+                "apiKey": {
+                    "description": "APIKey is the key the vllm service on the node takes as\n` + "`" + `Authorization: Bearer \u003capiKey\u003e` + "`" + `: the one the request gave, or the one\nthis node kept from its previous deployment of the work key, or a new\nrandom one. It is kept in plain text in the deployment store, as env\nvalues are. Absent for runtimes without a key.",
+                    "type": "string",
+                    "example": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"
+                },
                 "compose": {
                     "description": "Compose is the rendered docker-compose.yml of an inference service.",
                     "type": "string"
@@ -3255,6 +3265,11 @@ const docTemplate = `{
                 "modelId"
             ],
             "properties": {
+                "apiKey": {
+                    "description": "APIKey is the key callers of a vllm service send as\n` + "`" + `Authorization: Bearer \u003capiKey\u003e` + "`" + ` on /v1 paths; /health stays open. It\nis 16 to 128 characters of [A-Za-z0-9._~-]. Omitted, each node keeps\nthe key of its previous deployment of the same work key, or gets a\nnew random one. The key is given to vLLM as the VLLM_API_KEY\nenvironment variable and shown in the node results and on\nGET /endpoints. Runtime ollama has no key and refuses one.",
+                    "type": "string",
+                    "example": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"
+                },
                 "args": {
                     "description": "Args are appended to the runtime command after the arguments this\nservice sets and the catalog arguments of the artifact\n(runtimes[].args). For vllm they follow ` + "`" + `vllm serve --model \u003cref\u003e\n--port \u003cport\u003e` + "`" + ` (and --runner pooling for an embedding model) and the\ncatalog arguments, for example [\"--max-model-len\", \"32768\"]; vllm takes\nthe last value of a repeated flag, so they override the catalog\narguments. At most 32, each 1 to 256 characters\nwithout control characters; --model, --port and --host are set by the\nservice and refused. Runtime ollama takes none and refuses them.",
                     "type": "array",

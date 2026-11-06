@@ -31,7 +31,8 @@ const (
 )
 
 // Stage files are read by Semaphore, which runs as another user (uid 1001 in
-// its image), so they are world readable. They hold no key.
+// its image), so they are world readable. They hold no SSH key; the compose
+// file of a vllm service holds its API key, as it holds env values.
 const (
 	stageDirPerm    = 0o755
 	stageFilePerm   = 0o644

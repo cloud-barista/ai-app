@@ -524,6 +524,14 @@ definitions:
     type: object
   model.Endpoint:
     properties:
+      apiKey:
+        description: |-
+          APIKey is what callers of url send as `Authorization: Bearer
+          <apiKey>`. Inference only, for runtimes that take a key (vllm), and
+          set whether or not the endpoint is available: the key does not change
+          with the address.
+        example: 3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e
+        type: string
       artifactId:
         description: ArtifactID is the artifact of that model. Inference only.
         example: hf-bf16
@@ -934,6 +942,15 @@ definitions:
     type: object
   model.NodeDeployResult:
     properties:
+      apiKey:
+        description: |-
+          APIKey is the key the vllm service on the node takes as
+          `Authorization: Bearer <apiKey>`: the one the request gave, or the one
+          this node kept from its previous deployment of the work key, or a new
+          random one. It is kept in plain text in the deployment store, as env
+          values are. Absent for runtimes without a key.
+        example: 3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e
+        type: string
       compose:
         description: Compose is the rendered docker-compose.yml of an inference service.
         type: string
@@ -1424,6 +1441,17 @@ definitions:
     type: object
   model.NodeInferenceReq:
     properties:
+      apiKey:
+        description: |-
+          APIKey is the key callers of a vllm service send as
+          `Authorization: Bearer <apiKey>` on /v1 paths; /health stays open. It
+          is 16 to 128 characters of [A-Za-z0-9._~-]. Omitted, each node keeps
+          the key of its previous deployment of the same work key, or gets a
+          new random one. The key is given to vLLM as the VLLM_API_KEY
+          environment variable and shown in the node results and on
+          GET /endpoints. Runtime ollama has no key and refuses one.
+        example: 3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e
+        type: string
       args:
         description: |-
           Args are appended to the runtime command after the arguments this

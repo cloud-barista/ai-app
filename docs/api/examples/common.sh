@@ -68,13 +68,15 @@ wait_deployment() {
 }
 
 # summarize_deployment reads a deployment record on stdin and prints one line
-# per node.
+# per node. The API key of a vLLM node is masked down to its last 4
+# characters; read it whole from GET /endpoints.
 summarize_deployment() {
 	jq -r '"deployment \(.id) \(.type) status=\(.status) dryRun=\(.dryRun)",
 		(.nodes[] | "  \(.target.nsId)/\(.target.infraId)/\(.target.nodeId) \(.status)"
 			+ (if .phase then " phase=\(.phase)" else "" end)
 			+ (if .sshUser then " sshUser=\(.sshUser)" else "" end)
 			+ (if .serviceUrl then " serviceUrl=\(.serviceUrl)" else "" end)
+			+ (if .apiKey then " apiKey=****\(.apiKey[-4:])" else "" end)
 			+ (if .ports then " ports=\(.ports | map(tostring) | join(","))" else "" end)
 			+ (if .error then " error=\(.error)" else "" end)),
 		(.nodes[] | .notes[]? | "  note: \(.)")'

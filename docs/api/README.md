@@ -17,7 +17,7 @@
 | 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
 | 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절). Semaphore 는 Ansible playbook 을 웹 화면·API 로 돌려 주는 서버이고, 노드에서 무슨 일이 있었는지 화면으로 볼 수 있습니다 (3-1절) |
 | 언제 `running` 인가 | 추론 서비스는 헬스 경로가 응답하고, GPU 노드면 런타임이 실제로 GPU 위에 있어야 합니다. 응용은 포트가 HTTP 로 응답하고 컨테이너가 재시작 없이 돌아야 합니다 (7절) |
-| API 는 어디로 열려 있나 | 관리 API 는 AI-App(`:8090/aiapp`, Bearer 토큰), 모델 호출(vLLM `:8000/v1`, Ollama `:11434`)과 응용 화면은 노드가 직접 엽니다. AI-App 은 중계하지 않습니다 (1-1절) |
+| API 는 어디로 열려 있나 | 관리 API 는 AI-App(`:8090/aiapp`, Bearer 토큰), 모델 호출(vLLM `:8000/v1`, Ollama `:11434`)과 응용 화면은 노드가 직접 엽니다. AI-App 은 중계하지 않습니다. vLLM 은 배포마다 API 키를 요구하고 그 키는 `GET /aiapp/endpoints` 의 `apiKey` 입니다. Ollama 에는 인증이 없습니다 (1-1절) |
 | 주소는 어디서 얻나 | `GET /aiapp/endpoints` 입니다. 서빙 포트는 배포가 성공하면 노드 보안 그룹에 자동으로 열립니다 (8절) |
 | 내리기는 | `DELETE /aiapp/deployments/{id}` 입니다. 노드에서 `docker compose down` 을 하고 named volume 은 남깁니다 (7절) |
 | 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](live-test-2026-11-03.md)). 각 응용에서 모델을 실제로 부른 화면은 12절입니다 |
@@ -61,14 +61,17 @@ API 는 두 층입니다. **관리 API** 는 AI-App 서버 하나가 열고, 무
 |---|---|---|---|
 | 관리 API | `http://<AI-App 호스트>:8090/aiapp/...` (9절 목록) | `Authorization: Bearer <토큰>` (5절). `readyz`·Swagger·콘솔은 토큰 없이 | AI-Web, ETRI 스크립트, MCP 클라이언트 |
 | Swagger | `http://<AI-App 호스트>:8090/aiapp/api/index.html` | 없음 (화면에서 Authorize 로 토큰을 넣고 바로 불러 볼 수 있음) | 개발자 |
-| 추론 서비스 (vLLM) | `http://<노드>:8000/v1` (OpenAI 호환: `/v1/models`, `/v1/chat/completions`, `/v1/embeddings`) | 없음 | 응용, 포털 |
-| 추론 서비스 (Ollama) | `http://<노드>:11434` (Ollama API `/api/*`), `http://<노드>:11434/v1` (OpenAI 호환) | 없음 | 응용, 포털 |
+| 추론 서비스 (vLLM) | `http://<노드>:8000/v1` (OpenAI 호환: `/v1/models`, `/v1/chat/completions`, `/v1/embeddings`) | `/v1/*` 는 `Authorization: Bearer <apiKey>`, 없거나 틀리면 `401`. `apiKey` 는 `GET /aiapp/endpoints` 에서 받음. `/health` 는 키 없이 열림 | 응용, 포털 |
+| 추론 서비스 (Ollama) | `http://<노드>:11434` (Ollama API `/api/*`), `http://<노드>:11434/v1` (OpenAI 호환) | 없음 (Ollama 에는 API 키 기능이 없음) | 응용, 포털 |
 | 응용 | `http://<노드>:<응용 포트>` (Dify `80`, Open WebUI `3000`, Langflow `7860`) | 응용 자체의 로그인 | 사람 (브라우저), 응용 API |
 
 - 노드 쪽 주소는 직접 조립하지 않고 `GET /aiapp/endpoints` 로 받습니다. 추론 서비스는 `url`·`healthUrl`, 응용은 `urls[]` 입니다.
-- 노드 쪽 포트는 배포가 성공하면 AI-App 이 노드의 보안 그룹에 엽니다(8절). **출처 제한 없이(`0.0.0.0/0`) 열리고 추론 서비스에는
-  인증이 없습니다.** 시험 환경 기준이며 운영에서 막을 방법은 열린 문제입니다.
-- AI-App 의 토큰은 노드 쪽 서비스에 쓰이지 않습니다.
+- 노드 쪽 포트는 배포가 성공하면 AI-App 이 노드의 보안 그룹에 엽니다(8절). **출처 제한 없이(`0.0.0.0/0`) 열립니다.**
+  vLLM 은 API 키로 막지만 Ollama 에는 인증이 없습니다. 시험 환경 기준이며 운영에서 Ollama 를 막을 방법은 열린 문제입니다.
+- vLLM 의 API 키는 배포 요청의 `inference.apiKey` 로 줄 수 있고, 빼면 AI-App 이 만듭니다(10절). 같은 노드에 vLLM 을 다시 배포할 때
+  키를 빼면 그 노드의 앞 키를 그대로 씁니다. 그래서 키를 넣어 둔 응용은 다시 배포해도 고칠 것이 없습니다.
+  키는 `GET /aiapp/endpoints` 의 `apiKey`, `GET /aiapp/deployments/{id}` 의 `nodes[].apiKey` 에 그대로(가리지 않고) 나옵니다.
+- AI-App 의 토큰은 노드 쪽 서비스에 쓰이지 않습니다. vLLM 의 API 키도 AI-App 관리 API 에는 쓰이지 않습니다.
 - 노드를 정지했다가 다시 켜면 CSP 에 따라 공인 IP 가 바뀝니다(aws 에서 확인). 그래서 `GET /aiapp/endpoints` 는 부를 때마다
   CB-Tumblebug 에서 노드를 읽어 **지금 IP** 로 주소를 만듭니다. 다시 켠 뒤에 다시 배포하지 않아도 새 주소가 나옵니다.
 - 노드 상태는 `nodeStatus` 에 CB-Tumblebug 이 준 그대로(`Running`, `Suspended`, `Terminated`, `Failed` 등) 들어갑니다.
@@ -95,10 +98,21 @@ curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/endpoints?node
 ]}
 ```
 
-받은 `url` 로 모델을 바로 부릅니다. 아래는 vm1 의 vLLM 임베딩 서비스를 부른 실제 결과입니다.
+vLLM 추론 서비스 항목에는 `apiKey` 가 붙습니다. 노드가 `Running` 이 아니어서 주소가 없을 때도 키는 나옵니다(IP 가 바뀌어도 키는 그대로).
+
+```json
+  {"nodeId": "vm1-2", "csp": "aws", "nodeStatus": "Running", "available": true, "host": "<vm1>",
+   "type": "inference", "workKey": "ms-vllm",
+   "runtimeId": "vllm", "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16",
+   "url": "http://<vm1>:8000/v1", "healthUrl": "http://<vm1>:8000/health",
+   "apiKey": "<apiKey>", "portsOpened": true}
+```
+
+받은 `url` 과 `apiKey` 로 모델을 바로 부릅니다. 아래는 vm1 의 vLLM 임베딩 서비스를 부른 실제 결과입니다.
 
 ```sh
 curl -sS http://<vm1>:8000/v1/embeddings -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $VLLM_API_KEY" \
   -d '{"model":"Qwen/Qwen3-Embedding-0.6B","input":["남산서울타워 야경"]}'
 # 결과: model Qwen/Qwen3-Embedding-0.6B, 1024차원 벡터 하나, prompt_tokens 10
 ```
@@ -190,7 +204,8 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 2. 추론 서비스를 먼저 배포합니다. 응용이 추론 서비스 주소를 env 로 받아야 하기 때문입니다.
 3. 끝나면 `GET /aiapp/endpoints` 로 추론 서비스 주소(`url`)를 읽습니다.
 4. 응용을 배포하면서 `app.env` 에 그 주소를 넣습니다. 이름은 응용마다 다릅니다(Open WebUI `OLLAMA_BASE_URL`,
-   Dify `VLLM_BASE_URL`, Langflow `MODEL_BASE_URL`, [etri.md](etri.md) 3절).
+   Dify `VLLM_BASE_URL`, Langflow `MODEL_BASE_URL`, [etri.md](etri.md) 3절). vLLM 이면 같은 항목의 `apiKey` 도 넘깁니다
+   (Langflow `MODEL_API_KEY`. Dify 는 화면에서 넣음, 12절).
 5. 응용 주소도 `GET /aiapp/endpoints` 로 읽습니다.
 6. 내릴 때는 `DELETE /aiapp/deployments/{id}` 입니다.
 
@@ -201,9 +216,9 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 | `00-status.sh` | `GET /readyz`, `GET /status` |
 | `01-catalog.sh` | `GET /runtimes`, `GET /models`, `GET /apps` |
 | `02-upload-app.sh [폴더] [이름] [포트]` | `POST /apps` (기본 `examples/apps/open-webui`, 포트 `3000`) |
-| `03-deploy-inference.sh nsId infraId nodeId [modelId] [artifactId] [runtimeId]` | `POST /deployments` (type inference) 후 끝날 때까지 `GET /deployments/{id}/progress` 로 노드별 `phase` 를 찍고, 끝나면 기록 |
+| `03-deploy-inference.sh nsId infraId nodeId [modelId] [artifactId] [runtimeId]` | `POST /deployments` (type inference) 후 끝날 때까지 `GET /deployments/{id}/progress` 로 노드별 `phase` 를 찍고, 끝나면 기록. `API_KEY` 를 주면 `inference.apiKey`. 기록의 `apiKey` 는 끝 4자만 찍음 |
 | `04-deploy-app.sh nsId infraId nodeId 이름 [KEY=VALUE ...]` | `POST /deployments` (type app) 후 같은 대기 |
-| `05-endpoints.sh [nsId] [infraId] [nodeId]` | `GET /endpoints`. 노드마다 `nodeStatus`·`available` 과 주소. `TYPE`, `AVAILABLE` 로 거름 |
+| `05-endpoints.sh [nsId] [infraId] [nodeId]` | `GET /endpoints`. 노드마다 `nodeStatus`·`available` 과 주소. `TYPE`, `AVAILABLE` 로 거름. vLLM 의 `apiKey` 는 끝 4자만 보이고 `SHOW_API_KEY=true` 면 전부 |
 | `06-logs.sh 배포ID [줄 수]` | `GET /deployments/{id}/logs` |
 | `07-remove.sh 배포ID` | `DELETE /deployments/{id}` 후 끝날 때까지 대기 |
 
@@ -487,7 +502,7 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | GET | `/aiapp/deployments/{id}/logs` | 노드·단계별 Semaphore 태스크 출력과 `taskUrl`. 도는 중인 단계는 그때까지의 출력 |
 | DELETE | `/aiapp/deployments/{id}` | 노드에서 내림 (`docker compose down`, named volume 유지) |
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`·`resume`·`reboot`·`terminate`). `terminate` 는 VM 을 지움 |
-| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). 필터 `nsId`, `infraId`, `nodeId`, `type`, `available` |
+| GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). vLLM 이면 `apiKey`. 필터 `nsId`, `infraId`, `nodeId`, `type`, `available` |
 
 ### 9-4. 추천 (자리만)
 
@@ -548,6 +563,7 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | `targets[].sshUser` | 생략 가능. 1~32자, `[a-z_][a-z0-9_-]*`, 어기면 `400`. 주면 그 노드의 Semaphore 인벤토리에 CB-Tumblebug 의 사용자(`nodeUserName`) 대신 이 사용자를 쓰고, 아래의 사용자 시도를 하지 않음(`nodes[].sshUserSource: request`). 빼면 AI-App 이 SSH 인증을 해 보고 사용자를 고름(아래). SSH 키는 어느 쪽이든 CB-Tumblebug 이 가진 키. 실제로 접속한 사용자는 `nodes[].sshUser` 와 `nodes[].steps[].sshUser`(`GET .../logs` 의 단계에도)에 남고, `nodes[].node.user` 는 CB-Tumblebug 이 알려 준 사용자 그대로. 같은 배포의 `DELETE`(compose-down)도 배포 때 남긴 사용자로 접속함 |
 | `inference.runtimeId` | 빼면 아티팩트의 첫 런타임 |
 | `inference.gpu` | 빼면 노드 스펙의 `acceleratorType` 이 `gpu` 인지로 정함. 스펙을 못 읽으면 `false` 이고 `notes` 에 이유. `true` 로 정해지면 런타임이 GPU 위에 있는지 확인하고, 아니면 노드가 `failed`(7절 헬스) |
+| `inference.apiKey` | vLLM 의 API 키. 생략 가능. 16~128자, `[A-Za-z0-9._~-]`, 어기면 `400`. 빼면 그 노드에 같은 런타임으로 앞서 배포한 기록의 키를 그대로 쓰고, 없으면 AI-App 이 난수 32자(16진수)를 만듦. 대상 노드가 여럿이면 준 키는 모든 노드에 같고, 만든 키는 노드마다 다름. vLLM 에는 컨테이너 환경 변수 `VLLM_API_KEY` 로 넘겨 `docker ps`·프로세스 인자에 안 보임. 배포 기록(`nodes[].apiKey`, `nodes[].compose`)과 노드의 compose 파일에 **평문으로** 남음. `inference.env` 에 `VLLM_API_KEY` 를 넣으면 `400`. Ollama 는 키 기능이 없어 주면 `400` |
 | `inference.args` | 런타임 명령 뒤에 붙는 인자. vLLM 이면 서비스가 넣는 `--model`·`--port` 와 카탈로그 아티팩트의 `runtimes[].args` 가 먼저 오고 그 뒤에 붙음. 같은 플래그가 되풀이되면 vLLM 은 마지막 값을 써서 요청이 카탈로그 인자를 덮어씀. 예 `["--max-model-len", "16384"]`. 32개까지, 하나에 1~256자, 제어 문자·줄바꿈 불가, `--model`·`--port`·`--host` 는 `400`. Ollama 는 받지 않아 `400` |
 | `app.version` | 빼거나 `0` 이면 최신 버전 |
 | `app.ports` | 이 배포에서만 업로드 때의 `ports` 를 바꿈 |
@@ -582,7 +598,7 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 
 - 노드의 배포판은 Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023 중 하나여야 합니다(`/etc/os-release` 의 `ID`, 파생 배포판은 `ID_LIKE`). 그 밖이면 노드가 `failed` 가 되고 로그에 `install-docker supports only ...` 가 남습니다. 배포판마다 어떻게 까는지는 [etri.md 2절](etri.md#2-vm-이-갖춰야-할-것) 에 있습니다.
 - docker 는 있는데 compose 플러그인이 없으면 노드의 저장소에서 `docker-compose-plugin` 이나 `moby-compose` 를 깝니다. 둘 다 없을 때 apt 를 쓰는 노드는 실패하고, dnf 를 쓰는 노드는 compose 플러그인을 GitHub 에서 직접 받아 깝니다.
-- `install-docker` 는 docker 와 compose 플러그인만 깝니다. 예시 응용이 노드에서 쓰는 도구는 이미지에 있어야 합니다. Dify 는 `git`(`openssl` 은 없으면 `/dev/urandom` 으로 대신함), Langflow 는 `MODEL_BASE_URL` 을 줄 때 `python3` 입니다.
+- `install-docker` 는 docker 와 compose 플러그인만 깝니다. 예시 응용이 노드에서 쓰는 도구는 이미지에 있어야 합니다. Dify 는 `git`(`openssl` 은 없으면 `/dev/urandom` 으로 대신함), Langflow 는 `MODEL_BASE_URL` 이나 `MODEL_API_KEY` 를 줄 때 `python3` 입니다.
 - 주소(`url`, `urls`)는 `GET /aiapp/endpoints` 를 부를 때 CB-Tumblebug 에서 읽은 노드의 지금 공인 IP 로 만듭니다. 공인 IP 가 없으면 사설 IP 입니다. 노드가 `Running` 이 아니면 주소가 없습니다(1-1절).
 - 한 런타임(Ollama 포함)에 모델은 하나입니다. 같은 노드에 같은 런타임으로 다른 모델을 배포하면 앞의 모델을 바꿉니다.
 - 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 의 named volume
@@ -618,7 +634,8 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 | 컨테이너 | 16개 (nginx, web, api, worker, postgres, redis, weaviate, sandbox, plugin_daemon 등) | 1개 | 1개 (내장 SQLite) |
 | 포트 | `80` | `3000` | `7860` |
 | 모델 주소 env | `VLLM_BASE_URL` (안내용) | `OLLAMA_BASE_URL` (필수) | `MODEL_BASE_URL` |
-| 모델에 붙는 방법 | Dify 는 모델 공급자를 화면이나 콘솔 API 로 등록합니다. 스크립트는 넣을 주소를 출력만 합니다 | 기동할 때 그 Ollama 를 붙입니다. 모델 목록이 바로 보입니다. 주소는 `/v1` 없이 `:11434` 까지입니다 | `deploy.sh` 가 Langflow 가 뜬 뒤 그 API 로 Generic 전역 변수 `MODEL_BASE_URL` 을 만들고, 그 호스트를 `LANGFLOW_SSRF_ALLOWED_HOSTS` 에 넣습니다. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 그 변수를 고릅니다 |
+| 모델 키 env | 없음. 화면에서 넣음 | 없음 (Ollama 는 키가 없음) | `MODEL_API_KEY` (vLLM 의 `apiKey`) |
+| 모델에 붙는 방법 | Dify 는 모델 공급자를 화면이나 콘솔 API 로 등록합니다. 스크립트는 넣을 주소를 출력하고, API Key 칸에는 `GET /aiapp/endpoints` 의 `apiKey` 를 넣으라고 안내합니다. 키 값은 출력하지 않습니다 | 기동할 때 그 Ollama 를 붙입니다. 모델 목록이 바로 보입니다. 주소는 `/v1` 없이 `:11434` 까지입니다 | `deploy.sh` 가 Langflow 가 뜬 뒤 그 API 로 Generic 전역 변수 `MODEL_BASE_URL` 과 Credential 전역 변수 `MODEL_API_KEY` 를 만들고, 주소의 호스트를 `LANGFLOW_SSRF_ALLOWED_HOSTS` 에 넣습니다. OpenAI 컴포넌트의 `OpenAI API Base` 칸에서 `MODEL_BASE_URL`, `OpenAI API Key` 칸에서 `MODEL_API_KEY` 를 고릅니다 |
 | 그 밖의 env | `DIFY_PORT`, `DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN` (없으면 노드에서 만들어 둠) | `OPEN_WEBUI_PORT` | `LANGFLOW_SUPERUSER_PASSWORD` (필수), `LANGFLOW_SUPERUSER`, `LANGFLOW_PORT`, `LANGFLOW_SSRF_ALLOWED_HOSTS` (없으면 `MODEL_BASE_URL` 의 호스트) |
 | 첫 화면에서 할 일 | `/install` 에서 관리자 계정 만들기 | 처음 가입한 계정이 관리자 | env 로 준 관리자로 로그인 |
 
@@ -657,7 +674,8 @@ vm1 의 모델은 임베딩 모델이라, Dify 의 **지식(Knowledge)** 기능�
 
 1. `/install` 에서 관리자를 만들고 로그인합니다.
 2. 플러그인 `langgenius/openai_api_compatible` 를 설치하고, 모델 공급자 OpenAI-API-compatible 에 Text Embedding 모델
-   `Qwen/Qwen3-Embedding-0.6B`, API endpoint `http://<vm1>:8000/v1` 을 등록합니다. Dify 는 등록할 때 그 주소를 실제로 불러 봅니다.
+   `Qwen/Qwen3-Embedding-0.6B`, API endpoint `http://<vm1>:8000/v1` 을 등록합니다. API Key 칸에는 `GET /aiapp/endpoints` 에서 그
+   vLLM 항목의 `apiKey` 를 넣습니다. Dify 는 등록할 때 그 주소를 실제로 불러 봅니다.
 3. 관광 안내 문서(경복궁, 북촌, 남산서울타워, 한강공원, 광장시장 다섯 단락)를 지식으로 올립니다. 인덱스 방식은 고품질(임베딩)입니다.
    단락마다 vLLM 이 1024차원 벡터를 만들고 Dify 의 weaviate 에 저장합니다.
 4. 검색 테스트에서 "밤에 서울 야경을 보려면 어디로 가야 해?" 를 넣으면 남산서울타워 단락이 맨 위(점수 0.44)로 나옵니다.
@@ -677,8 +695,9 @@ vLLM 을 같은 방법으로 LLM 공급자로 등록합니다.
 `Chat Input → Prompt → OpenAI(모델 mistralai/Ministral-3-8B-Instruct-2512, OpenAI API Base = 변수 MODEL_BASE_URL) → Chat Output` 을
 만들고 Playground 에서 여행 일정을 물으면 같은 노드의 vLLM 이 답합니다.
 
-- Langflow 1.13 의 기본 모델 컴포넌트(Language Model)에는 OpenAI 호환 주소를 넣는 칸이 없습니다. **OpenAI 컴포넌트**를 쓰고, API Key 칸에는
-  아무 값이나 넣습니다(vLLM 은 키를 보지 않습니다).
+- Langflow 1.13 의 기본 모델 컴포넌트(Language Model)에는 OpenAI 호환 주소를 넣는 칸이 없습니다. **OpenAI 컴포넌트**를 쓰고, API Key 칸에서
+  전역 변수 `MODEL_API_KEY` 를 고릅니다. 배포할 때 `app.env` 에 `MODEL_API_KEY`(그 vLLM 의 `apiKey`)를 주면 `deploy.sh` 가 Credential 전역 변수로
+  만들어 둡니다(`created the Langflow global variable MODEL_API_KEY`). 키 값은 출력하지 않습니다.
 - 만든 흐름은 API 로도 부를 수 있습니다: `POST http://<vm3>:7860/api/v1/run/<flow id>` (헤더 `x-api-key`, Langflow 화면에서 만든 키).
 
 예시를 고치기 전(버전 2)에는 세 가지 때문에 Langflow 가 모델을 부르지 못하거나 흐름을 잃었습니다. 2026-11-03 에 확인하고 고쳤습니다.

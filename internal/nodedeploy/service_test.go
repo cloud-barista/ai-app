@@ -18,6 +18,7 @@ import (
 
 	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/compose"
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
@@ -1318,5 +1319,135 @@ func TestModelDeletedDuringTheDeploymentLeavesTheNodeSucceeded(t *testing.T) {
 	}
 	if _, err := f.svc.models.Get(context.Background(), "tiny"); !errors.Is(err, modelcat.ErrNotFound) {
 		t.Errorf("deleted model came back: %v", err)
+	}
+}
+
+// vllmReq deploys a vllm artifact registered as tiny-hf to nodes.
+func vllmReq(t *testing.T, f *fixture, nodes ...string) model.NodeDeploymentReq {
+	t.Helper()
+	if _, err := f.svc.models.Get(context.Background(), "tiny-hf"); err != nil {
+		if _, err := f.svc.models.Register(context.Background(), model.Model{
+			ID: "tiny-hf", Name: "Tiny HF", Tasks: []string{"embedding"},
+			Artifacts: []model.Artifact{{
+				ID: "hf", Source: "huggingface", Ref: "org/tiny", Format: model.FormatHF,
+				Runtimes: []model.RuntimeCompat{{RuntimeID: model.RuntimeVLLM}},
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := modelReq(nodes...)
+	req.Inference = &model.NodeInferenceReq{ModelID: "tiny-hf", ArtifactID: "hf"}
+	return req
+}
+
+func TestVLLMDeploymentGetsAnAPIKeyInItsEnvironment(t *testing.T) {
+	f := newFixture(t, false)
+	d := deployed(t, f, vllmReq(t, f, "vm1", "vm2"))
+	if d.Status != model.NodeDeployRunning {
+		t.Fatalf("status = %q, nodes = %+v", d.Status, d.Nodes)
+	}
+	generated := regexp.MustCompile(`^[0-9a-f]{32}$`)
+	vm1, vm2 := d.Nodes[0], d.Nodes[1]
+	if !generated.MatchString(vm1.APIKey) || !generated.MatchString(vm2.APIKey) || vm1.APIKey == vm2.APIKey {
+		t.Errorf("keys = %q, %q, want a new random one per node", vm1.APIKey, vm2.APIKey)
+	}
+	if d.Request.Inference.APIKey != "" {
+		t.Errorf("request apiKey = %q, want what the caller sent (nothing)", d.Request.Inference.APIKey)
+	}
+	if !strings.Contains(vm1.Compose, `"VLLM_API_KEY": "`+vm1.APIKey+`"`) {
+		t.Errorf("compose lacks the key of the node\n%s", vm1.Compose)
+	}
+	staged, err := os.ReadFile(filepath.Join(vm1.StageDir, ComposeFile))
+	if err != nil || !strings.Contains(string(staged), vm1.APIKey) {
+		t.Errorf("staged compose = %v, want the key", err)
+	}
+
+	f.runner.mu.Lock()
+	runs := append([]semaphore.RunSpec(nil), f.runner.runs...)
+	f.runner.mu.Unlock()
+	for _, run := range runs {
+		vars, _ := json.Marshal(run.ExtraVars)
+		if strings.Contains(string(vars), vm1.APIKey) || strings.Contains(string(vars), vm2.APIKey) {
+			t.Errorf("%s vars carry the key: %s", run.Playbook, vars)
+		}
+		if run.Playbook == PlaybookComposeUp && run.ExtraVars["health_url"] != "http://127.0.0.1:8000/health" {
+			t.Errorf("health url = %v, want /health, which vLLM leaves open", run.ExtraVars["health_url"])
+		}
+	}
+
+	list := endpointsOf(f, EndpointFilter{})
+	if len(list) != 2 || list[0].APIKey != vm1.APIKey || list[1].APIKey != vm2.APIKey {
+		t.Errorf("endpoints = %+v, want the key of each node", list)
+	}
+	f.tb.edit("vm1", map[string]any{"status": "Suspended"})
+	list = endpointsOf(f, EndpointFilter{NodeID: "vm1"})
+	if len(list) != 1 || list[0].Available || list[0].APIKey != vm1.APIKey {
+		t.Errorf("suspended endpoint = %+v, want the key kept while not available", list)
+	}
+}
+
+func TestVLLMRedeployKeepsTheKeyOfTheNode(t *testing.T) {
+	f := newFixture(t, false)
+	first := deployed(t, f, vllmReq(t, f, "vm1"))
+	key := first.Nodes[0].APIKey
+	if key == "" {
+		t.Fatal("first deployment got no key")
+	}
+
+	again := deployed(t, f, vllmReq(t, f, "vm1", "vm2"))
+	if again.Nodes[0].APIKey != key {
+		t.Errorf("redeploy key = %q, want the previous key %q", again.Nodes[0].APIKey, key)
+	}
+	if again.Nodes[1].APIKey == "" || again.Nodes[1].APIKey == key {
+		t.Errorf("vm2 key = %q, want a new one of its own", again.Nodes[1].APIKey)
+	}
+
+	given := vllmReq(t, f, "vm1")
+	given.Inference.APIKey = "Given.Key_of-Caller~01"
+	replaced := deployed(t, f, given)
+	if replaced.Nodes[0].APIKey != given.Inference.APIKey || replaced.Request.Inference.APIKey != given.Inference.APIKey {
+		t.Errorf("key = %q, request %q, want the one given", replaced.Nodes[0].APIKey, replaced.Request.Inference.APIKey)
+	}
+	if !strings.Contains(replaced.Nodes[0].Compose, given.Inference.APIKey) {
+		t.Error("compose does not carry the given key")
+	}
+
+	after := deployed(t, f, vllmReq(t, f, "vm1"))
+	if after.Nodes[0].APIKey != given.Inference.APIKey {
+		t.Errorf("key after the given one = %q, want it kept", after.Nodes[0].APIKey)
+	}
+
+	ollama := deployed(t, f, modelReq("vm1"))
+	if ollama.Nodes[0].APIKey != "" || strings.Contains(ollama.Nodes[0].Compose, compose.APIKeyEnv) {
+		t.Errorf("ollama node = %q, want no key", ollama.Nodes[0].APIKey)
+	}
+	if e := endpointsOf(f, EndpointFilter{NodeID: "vm1", Type: model.NodeDeployTypeInference}); len(e) != 2 ||
+		e[0].WorkKey != "ms-ollama" || e[0].APIKey != "" || e[1].WorkKey != "ms-vllm" || e[1].APIKey != given.Inference.APIKey {
+		t.Errorf("endpoints = %+v", e)
+	}
+}
+
+func TestAPIKeyRequestsRefused(t *testing.T) {
+	f := newFixture(t, false)
+	ollama := modelReq("vm1")
+	ollama.Inference.APIKey = "0123456789abcdef"
+	if _, err := f.svc.Create(context.Background(), ollama); !errors.Is(err, compose.ErrInvalidOption) {
+		t.Errorf("ollama with a key = %v, want ErrInvalidOption", err)
+	}
+	for _, key := range []string{"short", strings.Repeat("k", 129), "0123456789abcdef with space", "0123456789abcdef'"} {
+		req := vllmReq(t, f, "vm1")
+		req.Inference.APIKey = key
+		if _, err := f.svc.Create(context.Background(), req); !errors.Is(err, model.ErrValidation) {
+			t.Errorf("key %q = %v, want a validation error", key, err)
+		}
+	}
+	inEnv := vllmReq(t, f, "vm1")
+	inEnv.Inference.Env = map[string]string{compose.APIKeyEnv: "0123456789abcdef"}
+	if _, err := f.svc.Create(context.Background(), inEnv); !errors.Is(err, compose.ErrInvalidOption) {
+		t.Errorf("key in env = %v, want ErrInvalidOption", err)
+	}
+	if f.runner.count() != 0 || len(f.svc.List(context.Background(), ListFilter{})) != 0 {
+		t.Error("a refused request left a run or a record")
 	}
 }

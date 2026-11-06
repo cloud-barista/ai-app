@@ -17,7 +17,8 @@
 #
 # MODEL_BASE_URL is not passed to the container: Langflow turns environment
 # variables into Credential variables, which a base URL field refuses.
-# deploy.sh stores it as a Generic global variable through the Langflow API.
+# deploy.sh stores it as a Generic global variable through the Langflow API,
+# and MODEL_API_KEY, the key of a vLLM service, as a Credential one.
 services:
   langflow:
     image: langflowai/langflow:1.13.0

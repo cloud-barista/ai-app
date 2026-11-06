@@ -69,6 +69,11 @@ type Endpoint struct {
 	// http://<host>:<runtime port><runtime healthPath>. Inference only, and
 	// only when available and the runtime profile names a health path.
 	HealthURL string `json:"healthUrl,omitempty" example:"http://203.0.113.10:8000/health"`
+	// APIKey is what callers of url send as `Authorization: Bearer
+	// <apiKey>`. Inference only, for runtimes that take a key (vllm), and
+	// set whether or not the endpoint is available: the key does not change
+	// with the address.
+	APIKey string `json:"apiKey,omitempty" example:"3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e"`
 
 	// Name is the uploaded application. App only.
 	Name string `json:"name,omitempty" example:"open-webui"`

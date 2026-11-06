@@ -43,7 +43,7 @@ AI-App 이 **하지 않는** 것:
 
 - **VM 을 만들지 않습니다.** Infra 는 CB-Tumblebug 으로(직접 또는 인프라 추천을 거쳐) 만들고, AI-App 에는 `nsId` / `infraId` / `nodeId` 를 넘깁니다.
 - 모델·인프라 추천을 하지 않습니다. 추천 경로는 협력 기관 구현을 끼울 자리만 있고 지금은 `501` 을 돌려줍니다.
-- 모델 호출을 중계하지 않습니다. 클라이언트는 노드를 직접 부르고(`http://<노드>:8000/v1`), AI-App 은 그 주소만 알려 줍니다.
+- 모델 호출을 중계하지 않습니다. 클라이언트는 노드를 직접 부르고(`http://<노드>:8000/v1`), AI-App 은 그 주소와 vLLM 의 API 키만 알려 줍니다.
 
 ## 구조
 
@@ -205,7 +205,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 층 | 주소 | 인증 |
 |---|---|---|
 | 관리 API | `http://<AI-App 호스트>:8090/aiapp/...` | `Authorization: Bearer <AIAPP_AUTH_TOKEN>` (준비 상태, 콘솔, Swagger 는 열려 있음) |
-| 추론 서비스 | vLLM `http://<노드>:8000/v1`, Ollama `http://<노드>:11434` (`/v1` 아래 OpenAI 호환) | 없음 |
+| 추론 서비스 | vLLM `http://<노드>:8000/v1`, Ollama `http://<노드>:11434` (`/v1` 아래 OpenAI 호환) | vLLM: `/v1/*` 에 `Authorization: Bearer <apiKey>` (없으면 401, `/health` 는 열림). 키는 배포마다 `inference.apiKey` 로 주거나 AI-App 이 만들고, 다시 배포해도 유지되며, `GET /aiapp/endpoints` 에서 읽음. Ollama: 없음 (API 키 기능이 없음) |
 | 응용 | `http://<노드>:<포트>` (Dify `80`, Open WebUI `3000`, Langflow `7860`) | 응용 자체 로그인 |
 
 ## API
@@ -218,7 +218,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 카탈로그 | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /catalog/sync` |
 | 응용 | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | 배포 | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
-| 주소 | `GET /endpoints` (필터 `nsId`, `infraId`, `nodeId`, `type`, `available`). 부를 때마다 CB-Tumblebug 에서 노드를 읽어 지금 IP 로 주소를 만들고, 노드가 `Running` 일 때만 주소를 줌 |
+| 주소 | `GET /endpoints` (필터 `nsId`, `infraId`, `nodeId`, `type`, `available`). 부를 때마다 CB-Tumblebug 에서 노드를 읽어 지금 IP 로 주소를 만들고, 노드가 `Running` 일 때만 주소를 줌. vLLM 항목에는 `apiKey` |
 | 추천 (자리만) | `POST /recommendations/models`, `POST /recommendations/apps` (구현을 등록하기 전까지 `501`) |
 | 도구와 감사 | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | 자동화 엔진 (넘겨 줌) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |

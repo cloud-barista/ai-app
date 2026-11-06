@@ -211,6 +211,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
     "gpu": true, "gpuSource": "spec",
     "workKey": "ms-vllm", "nodeDir": "/opt/aiapp/ms-vllm",
     "serviceUrl": "http://203.0.113.10:8000/v1",
+    "apiKey": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e",
     "ports": [8000],
     "openedPorts": [{"securityGroupId": "etri-shared-aws-ap-northeast-2", "port": 8000, "protocol": "TCP", "result": "added"}],
     "steps": [
@@ -231,6 +232,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/deployments/$id/progress"
 | 지금 어느 단계인지 | `nodes[].phase`, 단계 안에서는 `nodes[].steps[]` 마지막 항목의 `currentTask` |
 | Semaphore 화면 링크 | `nodes[].steps[].taskUrl` (AI-App 에 `AIAPP_SEMAPHORE_UI_URL` 이 있을 때만) |
 | 연 포트 | `nodes[].openedPorts[]`, 실패하면 `nodes[].portsError` |
+| vLLM API 키 | `nodes[].apiKey` (vLLM 만). 8절의 `apiKey` 와 같은 값 |
 
 ## 7. 로그
 
@@ -268,6 +270,7 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri"
    "nodeStatus": "Running", "available": true, "host": "203.0.113.10",
    "runtimeId": "vllm", "modelId": "qwen3-embedding-0.6b", "artifactId": "hf-bf16",
    "url": "http://203.0.113.10:8000/v1", "healthUrl": "http://203.0.113.10:8000/health",
+   "apiKey": "3f1c9a7e5b2d4f6a8c0e1b3d5f7a9c2e",
    "ports": [8000], "portsOpened": true, "deployedAt": "2026-11-03T12:05:00Z"},
   {"nsId": "etri", "infraId": "travel", "nodeId": "vm2", "type": "app", "workKey": "app-open-webui",
    "deploymentId": "...", "nodeStatus": "Running", "available": true, "host": "203.0.113.12",
@@ -287,6 +290,8 @@ curl -sS -H "$AUTH" "$AIAPP_URL/endpoints?nsId=etri"
   링크를 걸지 않습니다. CB-Tumblebug 을 못 읽으면 `unknown`, 노드가 없어졌으면 `not-found` 입니다. 주소 있는 것만 보려면 `?available=true`.
 - 노드 하나·작업 키 하나(런타임당 하나, 응용 이름당 하나)에 항목 하나입니다. 다시 배포하면 바뀌고, 내리면 빠집니다.
 - `portsOpened: false` 면 밖에서 안 닿을 수 있다고 표시합니다(`portsError`, `notes`).
+- vLLM 항목의 `apiKey` 는 그 서비스를 부를 때 `Authorization: Bearer <apiKey>` 로 붙이는 키입니다. 가리지 않은 값이 그대로 오므로
+  화면에 보여 줄 때는 가리고 복사만 하게 합니다. 노드가 `Running` 이 아니어도 키는 옵니다. Ollama 항목에는 없습니다(Ollama 는 인증이 없음).
 
 ## 9. 내리기와 노드 제어
 

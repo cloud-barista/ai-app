@@ -74,6 +74,9 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 						"such as [\"--max-model-len\", \"32768\"] for vllm. At most 32, each 1 to 256 characters without control " +
 						"characters; --model, --port and --host are refused. Runtime ollama refuses args",
 				},
+				"apiKey": stringProp("API key callers of a vllm service send as Authorization: Bearer <apiKey>, 16 to 128 " +
+					"characters of [A-Za-z0-9._~-]. Omit to keep each node's key from its previous vllm deployment or get a new " +
+					"random one; the node results and list_endpoints show it. Runtime ollama has no key and refuses one"),
 			}, "modelId", "artifactId"),
 			"app": object(map[string]any{
 				"name":    stringProp("Uploaded application name from list_apps"),

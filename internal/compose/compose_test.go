@@ -312,3 +312,42 @@ func composeCommand(t *testing.T, rendered string) []string {
 	}
 	return command
 }
+
+func TestRenderGivesTheAPIKeyAsEnvNotAsArgument(t *testing.T) {
+	m, a := artifactOf(t, "qwen3-embedding-0.6b", "hf-bf16")
+	const key = "k3y-Of.Test~0123456789"
+	rendered, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{APIKey: key, Env: map[string]string{"A_FIRST": "1"}})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(rendered, `"VLLM_API_KEY": "`+key+`"`) {
+		t.Errorf("rendered file lacks the VLLM_API_KEY entry\n%s", rendered)
+	}
+	command := regexp.MustCompile(`(?m)^\s+command: .*$`).FindString(rendered)
+	if command == "" || strings.Contains(command, key) || strings.Contains(command, "--api-key") {
+		t.Errorf("command = %q, want one without the key", command)
+	}
+	if strings.Count(rendered, key) != 1 {
+		t.Errorf("the key shows %d times, want once\n%s", strings.Count(rendered, key), rendered)
+	}
+	if i, j := strings.Index(rendered, `"A_FIRST"`), strings.Index(rendered, `"VLLM_API_KEY"`); i < 0 || j < i {
+		t.Errorf("environment is not in name order\n%s", rendered)
+	}
+	dockerComposeConfig(t, rendered)
+
+	without, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{})
+	if err != nil || strings.Contains(without, APIKeyEnv) {
+		t.Errorf("without a key: %v\n%s", err, without)
+	}
+}
+
+func TestRenderRefusesAnAPIKeyItCannotGive(t *testing.T) {
+	m, a := artifactOf(t, "qwen3-vl-8b", "ollama-gguf")
+	if _, err := Render(m, a, engineOf(t, model.RuntimeOllama), Options{APIKey: "0123456789abcdef"}); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("ollama with a key: error = %v, want ErrInvalidOption", err)
+	}
+	m, a = artifactOf(t, "qwen3-embedding-0.6b", "hf-bf16")
+	if _, err := Render(m, a, engineOf(t, model.RuntimeVLLM), Options{Env: map[string]string{APIKeyEnv: "x"}}); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("vllm with %s in env: error = %v, want ErrInvalidOption", APIKeyEnv, err)
+	}
+}

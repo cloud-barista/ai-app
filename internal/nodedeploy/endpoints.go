@@ -199,6 +199,7 @@ func endpointOf(d *model.NodeDeployment, n *model.NodeDeployResult, workKey stri
 	case model.NodeDeployTypeInference:
 		inf := d.Request.Inference
 		e.RuntimeID, e.ModelID, e.ArtifactID = inf.RuntimeID, inf.ModelID, inf.ArtifactID
+		e.APIKey = n.APIKey
 		if !e.Available {
 			break
 		}

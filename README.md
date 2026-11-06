@@ -43,7 +43,7 @@ What AI-App does **not** do:
 
 - **It does not create VMs.** Create the infra with CB-Tumblebug (directly or through an infra recommender) and hand AI-App the `nsId` / `infraId` / `nodeId`.
 - It does not recommend models or infrastructure. Recommendation routes exist as a placeholder for a partner implementation and answer `501` today.
-- It does not proxy model traffic. Clients call the node directly (`http://<node>:8000/v1`); AI-App only tells them the address.
+- It does not proxy model traffic. Clients call the node directly (`http://<node>:8000/v1`); AI-App only tells them the address and, for vLLM, the API key.
 
 ## Architecture
 
@@ -223,7 +223,7 @@ Two API layers, two kinds of callers:
 | Layer | Address | Auth |
 |---|---|---|
 | Management API | `http://<ai-app-host>:8090/aiapp/...` | `Authorization: Bearer <AIAPP_AUTH_TOKEN>` (readiness, console and Swagger are open) |
-| Inference service | vLLM `http://<node>:8000/v1`, Ollama `http://<node>:11434` (OpenAI compatible under `/v1`) | none |
+| Inference service | vLLM `http://<node>:8000/v1`, Ollama `http://<node>:11434` (OpenAI compatible under `/v1`) | vLLM: `Authorization: Bearer <apiKey>` on `/v1/*` (401 without it; `/health` is open). The key is per deployment, given as `inference.apiKey` or generated, kept on redeploy, and read from `GET /aiapp/endpoints`. Ollama: none, it has no API key support |
 | Application | `http://<node>:<port>` (Dify `80`, Open WebUI `3000`, Langflow `7860`) | the application's own login |
 
 ## API
@@ -236,7 +236,7 @@ All paths are under `/aiapp`. Field level documentation is in Swagger (`/aiapp/a
 | Catalog | `GET /runtimes`, `GET /runtimes/{runtimeId}`, `GET/POST /models`, `GET/DELETE /models/{modelId}`, `GET /models/{modelId}/artifacts/{artifactId}/compose`, `GET/POST /catalog/sync` |
 | Applications | `GET/POST /apps`, `GET/DELETE /apps/{name}`, `GET /apps/{name}/versions/{version}` |
 | Deployments | `GET/POST /deployments`, `GET/DELETE /deployments/{id}`, `GET /deployments/{id}/progress`, `GET /deployments/{id}/logs`, `POST /deployments/{id}/control` |
-| Endpoints | `GET /endpoints` (filters `nsId`, `infraId`, `nodeId`, `type`, `available`). Reads each node from CB-Tumblebug on every call: URLs use the node's current IP and are given only while it is `Running` |
+| Endpoints | `GET /endpoints` (filters `nsId`, `infraId`, `nodeId`, `type`, `available`). Reads each node from CB-Tumblebug on every call: URLs use the node's current IP and are given only while it is `Running`. vLLM entries carry `apiKey` |
 | Recommendation (placeholder) | `POST /recommendations/models`, `POST /recommendations/apps` (`501` until an implementation is registered) |
 | Tools and audit | `GET /tools`, `/mcp` (MCP, Streamable HTTP), `GET /archive`, `GET /archive/{runId}` |
 | Automation engine (forwarded) | `POST /engine/workflows/{deploy\|heal\|control\|status}`, `GET /engine/runs`, `GET /engine/runs/{runId}`, `GET /engine/card`, `/engine/mcp` |
