@@ -1,4 +1,4 @@
-<p align="right"><b>English</b> | <a href="README.ko.md">한국어</a></p>
+<p align="left"><b>English</b> | <a href="README.ko.md">한국어</a></p>
 
 # AI-App
 
