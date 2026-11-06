@@ -269,8 +269,8 @@ curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" "$AIAPP_URL/apps"
 ```
 
 MCP: `http://<AI-App 호스트>:8090/aiapp/mcp` (Streamable HTTP, 같은 `Authorization` 헤더). 카탈로그를 읽는 도구는
-`list_models`(필터 `task`, `modality`, `format`, `runtimeId`, `source`), `get_model`(`modelId`), `list_runtimes`, `get_runtime`(`runtimeId`),
-`list_apps`, `get_app` 이고 모두 읽기 등급이라 dry-run 과 무관하게 실행됩니다. 도구 목록과 입력 형식은 `GET /aiapp/tools` 로 볼 수 있습니다.
+`list_models`(필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable`, 페이지 `limit`·`offset`), `get_model`(`modelId`),
+`list_runtimes`, `get_runtime`(`runtimeId`), `list_apps`(페이지 `limit`·`offset`), `get_app` 이고 모두 읽기 등급이라 dry-run 과 무관하게 실행됩니다. 도구 목록과 입력 형식은 `GET /aiapp/tools` 로 볼 수 있습니다.
 
 다만 **AI-App 은 바깥 추천 서비스를 부르지 않습니다.** `POST /aiapp/recommendations/*` 가 그 서비스의 답을 내게 하려면 3절의 구현
 안에서 그 서비스를 HTTP 로 부르는 얇은 어댑터를 넣어야 합니다. 그 어댑터가 받을 주소·토큰 설정은 아직 없어서 구현할 때 같이 정합니다.

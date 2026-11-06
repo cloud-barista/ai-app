@@ -23,7 +23,7 @@ AIAPP_URL=http://<AI-App 호스트>:8090/aiapp
 |---|---|
 | 시작할 때 연결 확인 | `GET /aiapp/status` |
 | 런타임 목록 | `GET /aiapp/runtimes` |
-| 모델 목록·상세 | `GET /aiapp/models` (필터 `task`, `modality`, `format`, `runtimeId`, `source`; 페이지 `limit`, `offset`), `GET /aiapp/models/{modelId}` |
+| 모델 목록·상세 | `GET /aiapp/models` (필터 `task`, `modality`, `format`, `runtimeId`, `source`, `origin`, `verified`, `deployable`; 페이지 `limit`, `offset`). 배포할 수 있는 모델만 보이려면 `deployable=true`, `GET /aiapp/models/{modelId}` |
 | 응용 목록·상세 | `GET /aiapp/apps?limit=&offset=`, `GET /aiapp/apps/{name}`, `GET /aiapp/apps/{name}/versions/{version}` |
 | 응용 업로드 | `POST /aiapp/apps` (multipart) |
 | 배포 요청 | `POST /aiapp/deployments` |
