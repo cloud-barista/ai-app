@@ -27,6 +27,7 @@ const statusCheckTimeout = 5 * time.Second
 // statusPlaybooks are the playbooks whose Semaphore templates GET /status
 // looks for.
 var statusPlaybooks = []string{
+	nodedeploy.PlaybookInstallGPUDriver,
 	nodedeploy.PlaybookInstallDocker,
 	nodedeploy.PlaybookComposeUp,
 	nodedeploy.PlaybookCopyAndRun,

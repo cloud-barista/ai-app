@@ -59,9 +59,10 @@ import (
 
 // Playbooks run on a node, from the Semaphore playbook folder.
 const (
-	PlaybookInstallDocker = "install-docker.yml"
-	PlaybookComposeUp     = "compose-up.yml"
-	PlaybookCopyAndRun    = "copy-and-run.yml"
+	PlaybookInstallGPUDriver = "install-gpu-driver.yml"
+	PlaybookInstallDocker    = "install-docker.yml"
+	PlaybookComposeUp        = "compose-up.yml"
+	PlaybookCopyAndRun       = "copy-and-run.yml"
 )
 
 // Archive record kinds of this package.
@@ -567,7 +568,13 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		Name: shortID(id) + "-" + access.CSP + "-" + target.NodeID,
 		Host: access.Host, Port: access.Port, User: sshUser, PrivateKey: access.PrivateKey,
 	}
-	steps := []semaphore.RunSpec{withPlaybook(base, PlaybookInstallDocker, map[string]any{"gpu": gpu})}
+	var steps []semaphore.RunSpec
+	if gpu {
+		// The driver goes in before Docker, which needs it for the NVIDIA
+		// Container Toolkit; a node whose driver answers is left as it is.
+		steps = append(steps, withPlaybook(base, PlaybookInstallGPUDriver, nil))
+	}
+	steps = append(steps, withPlaybook(base, PlaybookInstallDocker, map[string]any{"gpu": gpu}))
 	common := map[string]any{
 		"stage_dir": dir, "deployment_id": id,
 		"work_key": p.place.WorkKey, "node_dir": p.place.NodeDir, "compose_project": p.place.Project,

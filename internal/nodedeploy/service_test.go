@@ -410,9 +410,12 @@ func TestInferenceDeploymentSucceeds(t *testing.T) {
 	if vm1.ServiceURL != "http://203.0.113.11:11434/v1" {
 		t.Errorf("service url = %q", vm1.ServiceURL)
 	}
-	if len(vm1.Steps) != 2 || vm1.Steps[0].Playbook != PlaybookInstallDocker || vm1.Steps[1].Playbook != PlaybookComposeUp ||
-		vm1.Steps[1].Status != semaphore.StatusSuccess || vm1.Steps[1].FinishedAt == nil {
-		t.Errorf("steps = %+v", vm1.Steps)
+	if len(vm1.Steps) != 3 || vm1.Steps[0].Playbook != PlaybookInstallGPUDriver || vm1.Steps[1].Playbook != PlaybookInstallDocker ||
+		vm1.Steps[2].Playbook != PlaybookComposeUp || vm1.Steps[2].Status != semaphore.StatusSuccess || vm1.Steps[2].FinishedAt == nil {
+		t.Errorf("steps of the GPU node = %+v", vm1.Steps)
+	}
+	if len(vm2.Steps) != 2 || vm2.Steps[0].Playbook != PlaybookInstallDocker || vm2.Steps[1].Playbook != PlaybookComposeUp {
+		t.Errorf("steps of the CPU node = %+v, want no install-gpu-driver", vm2.Steps)
 	}
 	if vm1.Steps[0].Output != nil {
 		t.Error("Get returns task output; it belongs to Logs")
@@ -440,14 +443,18 @@ func TestInferenceDeploymentSucceeds(t *testing.T) {
 	f.runner.mu.Lock()
 	runs := append([]semaphore.RunSpec(nil), f.runner.runs...)
 	f.runner.mu.Unlock()
-	if len(runs) != 4 {
-		t.Fatalf("runs = %d, want 2 per node", len(runs))
+	if len(runs) != 5 {
+		t.Fatalf("runs = %d, want 3 on the GPU node and 2 on the CPU node", len(runs))
 	}
 	for _, run := range runs {
 		if run.PrivateKey != testKey || run.User != "cb-user" || run.Port != 22 {
 			t.Errorf("run = %+v", run)
 		}
 		switch run.Playbook {
+		case PlaybookInstallGPUDriver:
+			if run.Host != "203.0.113.11" {
+				t.Errorf("install-gpu-driver ran on %s, which has no GPU", run.Host)
+			}
 		case PlaybookInstallDocker:
 			if gpu := run.ExtraVars["gpu"]; gpu != (run.Host == "203.0.113.11") {
 				t.Errorf("install-docker gpu on %s = %v", run.Host, gpu)
@@ -574,7 +581,7 @@ func TestDeploymentFailsAndPartiallyFails(t *testing.T) {
 	if d.Status != model.NodeDeployFailed {
 		t.Fatalf("status = %q, want failed", d.Status)
 	}
-	if len(d.Nodes[1].Steps) != 1 || f.runner.count()-before != 3 {
+	if len(d.Nodes[1].Steps) != 1 || f.runner.count()-before != 4 {
 		t.Errorf("vm2 steps = %+v, runs = %d; a failed install-docker must stop the node", d.Nodes[1].Steps, f.runner.count()-before)
 	}
 	records, _ := f.archive.List(context.Background(), 0)
@@ -1206,7 +1213,8 @@ func TestSamePlacementOfANodeRunsOneDeploymentAtATime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Each deployment runs install-docker and compose-up. While the runner
+	// Each deployment runs install-gpu-driver, install-docker and compose-up
+	// (vm1 has a GPU spec). While the runner
 	// holds every run, only one deployment may have started its steps.
 	deadline := time.Now().Add(2 * time.Second)
 	for f.runner.count() < 1 && time.Now().Before(deadline) {
@@ -1222,8 +1230,8 @@ func TestSamePlacementOfANodeRunsOneDeploymentAtATime(t *testing.T) {
 			t.Errorf("deployment %s = %q", id, d.Status)
 		}
 	}
-	if n := f.runner.count(); n != 4 {
-		t.Errorf("%d runs, want 4", n)
+	if n := f.runner.count(); n != 6 {
+		t.Errorf("%d runs, want 6", n)
 	}
 }
 

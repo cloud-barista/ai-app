@@ -61,6 +61,7 @@ What AI-App does **not** do:
               │ security group rules, node control  │ run playbook, read logs
               ▼                                     ▼
        CB-Tumblebug REST                    Semaphore UI ──SSH──▶ node
+                                                     install-gpu-driver (GPU nodes)
                                                      install-docker
                                                      compose-up    (inference: runtime + model)
                                                      copy-and-run  (app: files + deploy.sh)
@@ -175,7 +176,7 @@ AI-App is a consumer of CB-Tumblebug. It was tested with **CB-Tumblebug 0.13.8**
  you / AI-Web / engine ────▶ AI-App: POST /aiapp/deployments
                                     1. read the node, its SSH key and spec from CB-Tumblebug
                                     2. stage the compose file or app files
-                                    3. Semaphore runs install-docker, then compose-up or copy-and-run over SSH
+                                    3. Semaphore runs (install-gpu-driver on a GPU node,) install-docker, then compose-up or copy-and-run over SSH
                                     4. open the serving port on the node's security groups in CB-Tumblebug
                                     ▼
  clients ──────────────────▶ http://<node-ip>:<port>   (from GET /aiapp/endpoints)
@@ -199,7 +200,8 @@ The startup log prints the base URL and whether it came from the environment or 
 |---|---|
 | Created by CB-Tumblebug | AI-App addresses a node by `nsId` / `infraId` / `nodeId` and uses the SSH key CB-Tumblebug holds |
 | Linux distribution | Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023. Docker and the compose plugin are installed if missing |
-| GPU | NVIDIA only. **The driver must be in the image and be 550 or newer** (Ollama 0.40.13 needs it). AI-App installs the NVIDIA Container Toolkit. A GPU deployment whose runtime ends up on CPU fails |
+| GPU | NVIDIA for running models. **The driver must be 550 or newer** (Ollama 0.40.13 needs it). On Ubuntu, `install-gpu-driver` installs one from apt when none answers (`ubuntu-drivers install --gpgpu`, Canonical's signed module where the kernel has one) and reboots the node once; on other distributions it must be in the image. AI-App installs the NVIDIA Container Toolkit. A GPU deployment whose runtime ends up on CPU fails |
+| AMD GPU (Ubuntu) | `install-gpu-driver` brings up the GPU (the kernel's `amdgpu`, AMD's firmware package `amdgpu-dkms-firmware` from the newest AMD GPU release, `amd-smi`) without DKMS, so Secure Boot needs no MOK enrollment. Running a model on it is not supported yet (see Limits). |
 | Security groups | The node info must list `securityGroupIds`, otherwise ports are not opened (the deployment still succeeds) |
 | Outbound internet | The node pulls images and models directly from Docker Hub, ghcr.io, Hugging Face, the Ollama registry and GitHub |
 | SSH user | Nothing to set. If the node refuses CB-Tumblebug's user (`cb-user` is missing on some AWS RHEL family images), AI-App tries the image's default user (for example `ec2-user`). Override with `targets[].sshUser` |
@@ -290,7 +292,7 @@ was deployed with the API alone and every service answered from outside. See [th
 | Large first time model downloads can hit the 30 minute task limit (`AIAPP_SEMAPHORE_TIMEOUT`); the engine waits only 15 minutes (`AIAPP_HEALTH_TIMEOUT`) | Raise the limits for large models |
 | `kind: k8s` targets | Rejected with `422` |
 | Windows and other Linux distributions (Amazon Linux 2, SUSE, Alpine) | Not supported by `install-docker` |
-| Only NVIDIA GPUs | No AMD, NPU or TPU support |
+| Only NVIDIA GPUs run models | On an AMD GPU node the driver is installed, but `install-docker` installs the NVIDIA Container Toolkit and the compose files ask for the `nvidia` device driver. No NPU or TPU support |
 
 ## Roadmap
 

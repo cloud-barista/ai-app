@@ -157,7 +157,7 @@ AI-App 은 CB-Tumblebug 을 부르는 쪽입니다. **CB-Tumblebug 0.13.8**(cb-s
  사용자 / AI-Web / 엔진 ─▶ AI-App: POST /aiapp/deployments
                                     1. CB-Tumblebug 에서 노드, SSH 키, 스펙을 읽음
                                     2. compose 파일이나 응용 파일을 stage 에 둠
-                                    3. Semaphore 가 SSH 로 install-docker, 이어서 compose-up 또는 copy-and-run
+                                    3. Semaphore 가 SSH 로 (GPU 노드면 install-gpu-driver,) install-docker, 이어서 compose-up 또는 copy-and-run
                                     4. CB-Tumblebug 에서 노드 보안 그룹에 서빙 포트를 엶
                                     ▼
  클라이언트 ────────────▶ http://<노드 IP>:<포트>   (GET /aiapp/endpoints 에서 받음)
@@ -181,7 +181,8 @@ AI-App 이 CB-Tumblebug 에서 부르는 것:
 |---|---|
 | CB-Tumblebug 이 만든 노드 | AI-App 은 노드를 `nsId` / `infraId` / `nodeId` 로 가리키고 CB-Tumblebug 이 가진 SSH 키를 씀 |
 | 리눅스 배포판 | Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023. docker 와 compose 플러그인이 없으면 깖 |
-| GPU | NVIDIA 만. **드라이버가 이미지에 들어 있고 550 이상**이어야 함(Ollama 0.40.13 요구). AI-App 이 NVIDIA Container Toolkit 을 깖. GPU 배포인데 런타임이 CPU 로 돌면 실패로 처리 |
+| GPU | 모델 실행은 NVIDIA 만. **드라이버가 550 이상**이어야 함(Ollama 0.40.13 요구). Ubuntu 면 드라이버가 응답하지 않을 때 `install-gpu-driver` 가 apt 로 깔고(`ubuntu-drivers install --gpgpu`, 커널에 맞는 Canonical 서명 모듈이 있으면 그것) 노드를 한 번 재부팅함. 다른 배포판은 이미지에 들어 있어야 함. AI-App 이 NVIDIA Container Toolkit 을 깖. GPU 배포인데 런타임이 CPU 로 돌면 실패로 처리 |
+| AMD GPU (Ubuntu) | `install-gpu-driver` 가 DKMS 없이 GPU 를 살림(커널 기본 `amdgpu`, AMD 최신 GPU 릴리스의 펌웨어 패키지 `amdgpu-dkms-firmware`, `amd-smi`). 그래서 Secure Boot 가 켜져 있어도 MOK 등록이 필요 없음. 그 위에서 모델을 돌리는 것은 아직 안 됨(제약 참고). |
 | 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 포트를 엶 (없어도 배포는 성공) |
 | 바깥 인터넷 | 노드가 Docker Hub, ghcr.io, Hugging Face, Ollama 레지스트리, GitHub 에서 이미지와 모델을 직접 받음 |
 | SSH 사용자 | 줄 것 없음. 노드가 CB-Tumblebug 의 사용자를 거절하면(aws RHEL 계열 이미지에는 `cb-user` 가 없음) 이미지 기본 사용자(예 `ec2-user`)로 시도. 직접 정하려면 `targets[].sshUser` |
@@ -270,7 +271,7 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | 큰 모델을 처음 받으면 태스크 상한 30분(`AIAPP_SEMAPHORE_TIMEOUT`)에 걸릴 수 있고, 엔진은 15분(`AIAPP_HEALTH_TIMEOUT`)만 기다림 | 큰 모델이면 상한을 올림 |
 | `kind: k8s` 대상 | `422` 로 거절 |
 | Windows 와 그 밖의 배포판(Amazon Linux 2, SUSE, Alpine) | `install-docker` 가 지원하지 않음 |
-| NVIDIA GPU 만 | AMD, NPU, TPU 미지원 |
+| 모델 실행은 NVIDIA GPU 만 | AMD GPU 노드는 드라이버까지는 깔리지만 `install-docker` 가 NVIDIA Container Toolkit 을 깔고 compose 파일이 `nvidia` 장치 드라이버를 요구함. NPU, TPU 미지원 |
 
 ## 앞으로 할 것
 

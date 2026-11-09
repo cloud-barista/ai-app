@@ -140,6 +140,10 @@ func progressOf(d *model.NodeDeployment, now time.Time) *model.NodeDeploymentPro
 func countSteps(d *model.NodeDeployment, n *model.NodeDeployResult) (done, total int) {
 	planned := map[string]bool{PlaybookInstallDocker: true, PlaybookComposeUp: true, PlaybookCopyAndRun: true}
 	total = 2
+	if n.GPU {
+		planned[PlaybookInstallGPUDriver] = true
+		total = 3
+	}
 	if isRemovalStatus(n.Status) {
 		planned = map[string]bool{PlaybookComposeDown: true}
 		total = 0

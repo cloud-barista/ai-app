@@ -1,0 +1,360 @@
+# Installs the GPU driver of a node from apt packages, so that a node with
+# Secure Boot on needs no MOK enrollment (a DKMS module is signed with a key
+# made on the node, which someone has to confirm on the boot console).
+#
+# AI-App runs it before install-docker on a GPU node. The GPU vendor is read
+# from the node itself: the PCI vendor ID of its display controllers in
+# `lspci -n` (pciutils is installed when lspci is missing).
+#
+#   10de  NVIDIA  ubuntu-drivers install --gpgpu, which takes the server
+#                 driver and, when the kernel flavour has one, the module
+#                 package Canonical builds and signs (linux-modules-nvidia-*).
+#                 A node left with a DKMS module while Secure Boot is on fails
+#                 with a message, because that module would need MOK.
+#   1002  AMD     the amdgpu module of the Ubuntu kernel (signed by the kernel
+#                 build) with the firmware package of AMD's GPU repository
+#                 (amdgpu-dkms-firmware, files only, no DKMS build), kept at
+#                 the newest release on every run. The firmware of Ubuntu's
+#                 linux-firmware is too old for a fresh Radeon Pro V710 VF:
+#                 its PSP rejects it and amdgpu fails with -22. Images that
+#                 block amdgpu in /etc/modprobe.d (Azure NVads V710) get the
+#                 blacklist lines removed. amd-smi comes from AMD's ROCm apt
+#                 repository as its own package; the rest of ROCm is left to
+#                 the containers, which carry it. A node already on AMD's DKMS
+#                 driver keeps it and its firmware.
+#
+# The node is rebooted when the driver or its firmware changed. A node whose
+# driver already answers is left as it is, so does a node with no NVIDIA or
+# AMD display controller.
+#
+# Only Ubuntu is handled. Other distributions end the play with a message and
+# no change, and keep relying on a driver that comes with the image.
+# TODO: RHEL family, Debian, Amazon Linux; the Azure NV A10 GRID driver, which
+# has no apt package and needs Secure Boot off.
+#
+# The last task prints "aiapp-gpu-driver: <vendor>: <evidence>".
+- name: Install the GPU driver
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    # "latest" follows AMD's newest GPU release; a release such as "31.60"
+    # holds the firmware at that one.
+    amd_gpu_release: latest
+    amd_gpu_keyring: /etc/apt/keyrings/amdgpu.gpg
+    amd_rocm_keyring: /etc/apt/keyrings/amdrocm.gpg
+    amd_rocm_release: "10.0"
+    amd_smi_package: amdrocm-amdsmi{{ amd_rocm_release }}
+  tasks:
+    - name: Wait for the node to accept the connection
+      ansible.builtin.wait_for_connection:
+        sleep: 10
+        timeout: 600
+
+    - name: Read the distribution
+      ansible.builtin.shell: |
+        . /etc/os-release
+        echo "${ID:-}"
+        echo "${VERSION_ID:-}"
+        echo "${VERSION_CODENAME:-}"
+      register: os_release
+      changed_when: false
+
+    - name: Leave a distribution other than Ubuntu as it is
+      when: os_release.stdout_lines[0] != 'ubuntu'
+      block:
+        - name: Say why nothing is installed
+          ansible.builtin.debug:
+            msg: >-
+              aiapp-gpu-driver: skipped: driver install supports only Ubuntu,
+              found {{ os_release.stdout_lines[0] }} {{ os_release.stdout_lines[1] }}
+        - name: End the play for this node
+          ansible.builtin.meta: end_host
+
+    - name: Check for lspci
+      ansible.builtin.shell: command -v lspci
+      register: lspci_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install pciutils
+      ansible.builtin.apt:
+        name: pciutils
+        update_cache: true
+      when: lspci_check.rc != 0
+
+    # lspci -n prints "<slot> <class>: <vendor>:<device>"; class 03xx is a
+    # display controller (VGA 0300, 3D 0302, other 0380).
+    - name: Read the vendors of the display controllers
+      ansible.builtin.shell: |
+        lspci -n | awk '$2 ~ /^03/ { split($3, id, ":"); print id[1] }' | sort -u
+      register: pci_vendors
+      changed_when: false
+
+    - name: Read the Secure Boot state
+      ansible.builtin.shell: |
+        if command -v mokutil >/dev/null 2>&1; then mokutil --sb-state 2>&1 | head -1; else echo unknown; fi
+      register: secure_boot
+      changed_when: false
+
+    - name: Work out the vendor
+      ansible.builtin.set_fact:
+        gpu_vendor: >-
+          {{ 'nvidia' if '10de' in pci_vendors.stdout_lines
+             else 'amd' if '1002' in pci_vendors.stdout_lines
+             else 'none' }}
+        secure_boot_on: "{{ 'enabled' in secure_boot.stdout | lower }}"
+
+    - name: Leave a node without an NVIDIA or AMD GPU as it is
+      when: gpu_vendor == 'none'
+      block:
+        - name: Say why nothing is installed
+          ansible.builtin.debug:
+            msg: >-
+              aiapp-gpu-driver: skipped: no NVIDIA (10de) or AMD (1002) display controller,
+              vendors found: {{ pci_vendors.stdout_lines | join(', ') or 'none' }}
+        - name: End the play for this node
+          ansible.builtin.meta: end_host
+
+    - name: Install the AMD driver
+      when: gpu_vendor == 'amd'
+      block:
+        # A node set up with AMD's DKMS driver (the Azure guide) keeps it: its
+        # firmware goes with that module and is not upgraded on its own here.
+        - name: Check for AMD's DKMS driver
+          ansible.builtin.shell: |
+            dpkg-query -W -f='${Status}' amdgpu-dkms 2>/dev/null | grep -q 'install ok installed'
+          register: amd_dkms
+          changed_when: false
+          failed_when: false
+
+        - name: Remove the lines that block amdgpu
+          ansible.builtin.shell: |
+            files=$(grep -lE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d/*.conf 2>/dev/null || true)
+            for f in $files; do
+              sed -i -E '/^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)/d' "$f"
+              echo "$f"
+            done
+          register: amd_unblocked
+          changed_when: amd_unblocked.stdout | trim != ''
+
+        - name: Look for linux-modules-extra of the running kernel
+          ansible.builtin.shell: |
+            pkg="linux-modules-extra-$(uname -r)"
+            apt-get update -qq || true
+            policy=$(apt-cache policy "$pkg" 2>/dev/null)
+            if grep -q 'Candidate: [0-9]' <<<"$policy"; then echo "$pkg"; fi
+          args:
+            executable: /bin/bash
+          register: modules_extra
+          changed_when: false
+
+        - name: Install the repository prerequisites
+          ansible.builtin.apt:
+            name: "{{ ['ca-certificates', 'curl', 'gnupg'] + ([modules_extra.stdout | trim] if modules_extra.stdout | trim != '' else []) }}"
+            update_cache: true
+          register: amd_extra
+
+        - name: Create the keyring folder
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+
+        - name: Add AMD's GPU firmware repository
+          when: amd_dkms.rc != 0
+          block:
+            - name: Download the AMD GPU signing key
+              ansible.builtin.shell: >-
+                set -o pipefail &&
+                curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key
+                | gpg --dearmor --yes -o {{ amd_gpu_keyring }}
+              args:
+                executable: /bin/bash
+                creates: "{{ amd_gpu_keyring }}"
+
+            - name: Add the repository
+              ansible.builtin.copy:
+                dest: /etc/apt/sources.list.d/amdgpu.sources
+                content: |
+                  Types: deb
+                  URIs: https://repo.radeon.com/amdgpu/{{ amd_gpu_release }}/ubuntu
+                  Suites: {{ os_release.stdout_lines[2] }}
+                  Components: main
+                  Architectures: amd64
+                  Signed-By: {{ amd_gpu_keyring }}
+                mode: "0644"
+
+            # The repository also carries libdrm, Mesa and the DKMS driver at
+            # versions above Ubuntu's; only the firmware is taken from it.
+            - name: Take only the firmware from the repository
+              ansible.builtin.copy:
+                dest: /etc/apt/preferences.d/amdgpu-firmware-only
+                content: |
+                  Package: *
+                  Pin: origin repo.radeon.com
+                  Pin-Priority: 1
+
+                  Package: amdgpu-dkms-firmware
+                  Pin: origin repo.radeon.com
+                  Pin-Priority: 500
+                mode: "0644"
+
+            - name: Install or upgrade the AMD GPU firmware
+              ansible.builtin.apt:
+                name: amdgpu-dkms-firmware
+                state: latest
+                update_cache: true
+              register: amd_firmware
+
+        - name: Load the driver with the new firmware
+          when: amd_unblocked.changed or amd_extra.changed or (amd_firmware.changed | default(false))
+          block:
+            - name: Rebuild the initramfs
+              ansible.builtin.command: update-initramfs -u
+              changed_when: true
+
+            - name: Reboot the node
+              ansible.builtin.reboot:
+                reboot_timeout: 900
+
+        # /dev/kfd is made even when amdgpu fails to start the GPU, so the GPU
+        # bound to amdgpu and a render node are what tell that it runs.
+        - name: Check that amdgpu drives the GPU
+          ansible.builtin.shell: |
+            ls -d /sys/bus/pci/drivers/amdgpu/*:*:*.* && ls /dev/dri/renderD*
+          register: amd_ready
+          changed_when: false
+          failed_when: false
+
+        - name: Read what the kernel said about amdgpu
+          ansible.builtin.shell: dmesg | grep -iE 'amdgpu|kfd' | tail -20
+          register: amd_dmesg
+          changed_when: false
+          when: amd_ready.rc != 0
+
+        - name: Fail when amdgpu does not drive the GPU
+          ansible.builtin.fail:
+            msg: >-
+              amdgpu does not drive the GPU (no PCI device bound to amdgpu or no render node),
+              Secure Boot: {{ secure_boot.stdout | trim }}; dmesg: {{ amd_dmesg.stdout_lines | join(' | ') }}
+          when: amd_ready.rc != 0
+
+        - name: Check for amd-smi
+          ansible.builtin.shell: command -v amd-smi
+          register: amdsmi_check
+          changed_when: false
+          failed_when: false
+
+        - name: Install amd-smi from AMD's ROCm repository
+          when: amdsmi_check.rc != 0
+          block:
+            - name: Download the ROCm signing key
+              ansible.builtin.shell: >-
+                set -o pipefail &&
+                curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg
+                | gpg --dearmor --yes -o {{ amd_rocm_keyring }}
+              args:
+                executable: /bin/bash
+                creates: "{{ amd_rocm_keyring }}"
+
+            - name: Add the ROCm repository
+              ansible.builtin.copy:
+                dest: /etc/apt/sources.list.d/amdrocm-stable.sources
+                content: |
+                  X-Repo-Id: amdrocm-stable
+                  Types: deb
+                  URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu{{ os_release.stdout_lines[1] | replace('.', '') }}/
+                  Suites: stable
+                  Components: main
+                  Architectures: amd64
+                  Signed-By: {{ amd_rocm_keyring }}
+                  Enabled: yes
+                mode: "0644"
+
+            - name: Install amd-smi
+              ansible.builtin.apt:
+                name: "{{ amd_smi_package }}"
+                update_cache: true
+
+            # The package puts amd-smi under /opt/rocm; the fuller ROCm
+            # packages register /usr/bin/amd-smi the same way.
+            - name: Put amd-smi on the PATH
+              ansible.builtin.command: >-
+                update-alternatives --install /usr/bin/amd-smi amd-smi
+                /opt/rocm/core-{{ amd_rocm_release }}/bin/amd-smi 100
+              changed_when: true
+
+        - name: Read the GPU with amd-smi
+          ansible.builtin.shell: |
+            amd-smi static --asic | awk -F': ' '/MARKET_NAME/ { print $2; exit }'
+          register: amd_evidence
+          changed_when: false
+          failed_when: amd_evidence.rc != 0 or amd_evidence.stdout | trim == ''
+
+        - name: Read the firmware package
+          ansible.builtin.shell: |
+            dpkg-query -W -f='${Version}' amdgpu-dkms-firmware 2>/dev/null || echo none
+          register: amd_fw_version
+          changed_when: false
+
+        - name: Say what runs
+          ansible.builtin.debug:
+            msg: >-
+              aiapp-gpu-driver: amd: {{ amd_evidence.stdout | trim }} on the
+              {{ 'DKMS' if amd_dkms.rc == 0 else 'kernel' }} amdgpu,
+              firmware {{ amd_fw_version.stdout | trim }}, Secure Boot: {{ secure_boot.stdout | trim }}
+
+    - name: Install the NVIDIA driver
+      when: gpu_vendor == 'nvidia'
+      block:
+        - name: Check whether the driver already answers
+          ansible.builtin.command: nvidia-smi -L
+          register: nvidia_ready
+          changed_when: false
+          failed_when: false
+
+        - name: Install the driver with ubuntu-drivers
+          when: nvidia_ready.rc != 0
+          block:
+            - name: Install ubuntu-drivers
+              ansible.builtin.apt:
+                name: ubuntu-drivers-common
+                update_cache: true
+
+            - name: Install the server driver
+              ansible.builtin.command: ubuntu-drivers install --gpgpu
+              register: nvidia_install
+              changed_when: true
+
+            - name: Look for a signed module package of the running kernel
+              ansible.builtin.shell: |
+                dpkg-query -W -f='${Status} ${Package}\n' "linux-modules-nvidia-*-$(uname -r)" 2>/dev/null | awk '/install ok installed/ { print $4 }'
+              register: nvidia_signed
+              changed_when: false
+              failed_when: false
+
+            - name: Fail when the module would need MOK
+              ansible.builtin.fail:
+                msg: >-
+                  ubuntu-drivers installed no signed module package for kernel of this node
+                  (no linux-modules-nvidia-*-<kernel>), so the driver is a DKMS module, and
+                  Secure Boot is on ({{ secure_boot.stdout | trim }}): it would load only after
+                  MOK enrollment on the boot console. Turn Secure Boot off for this VM or use
+                  an image with the driver.
+              when: secure_boot_on and nvidia_signed.stdout | trim == ''
+
+            - name: Reboot the node
+              ansible.builtin.reboot:
+                reboot_timeout: 900
+
+        - name: Read the GPU with nvidia-smi
+          ansible.builtin.command: nvidia-smi -L
+          register: nvidia_evidence
+          changed_when: false
+
+        - name: Say what runs
+          ansible.builtin.debug:
+            msg: >-
+              aiapp-gpu-driver: nvidia: {{ nvidia_evidence.stdout_lines[0] | default('') }},
+              Secure Boot: {{ secure_boot.stdout | trim }}

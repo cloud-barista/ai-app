@@ -137,8 +137,8 @@ func TestStatusDependenciesUp(t *testing.T) {
 		sm.Version != "v2.12.17-5767d93-1741607759" || sm.ProjectID != 3 || sm.UIURL != "http://203.0.113.5:3001" {
 		t.Errorf("semaphore = %+v", sm)
 	}
-	if len(sm.Templates) != 4 {
-		t.Fatalf("templates = %+v, want the four playbooks", sm.Templates)
+	if len(sm.Templates) != 5 {
+		t.Fatalf("templates = %+v, want the five playbooks", sm.Templates)
 	}
 	for _, tpl := range sm.Templates {
 		want := tpl.Name == "aiapp-compose-up"
@@ -146,7 +146,7 @@ func TestStatusDependenciesUp(t *testing.T) {
 			t.Errorf("template %+v, want exists %v", tpl, want)
 		}
 	}
-	if !strings.Contains(sm.Message, "3 of 4 playbook templates do not exist yet") {
+	if !strings.Contains(sm.Message, "4 of 5 playbook templates do not exist yet") {
 		t.Errorf("semaphore message = %q", sm.Message)
 	}
 	if !status.Tumblebug.Reachable || status.Tumblebug.Message != "CB-Tumblebug is ready" || status.Tumblebug.LatencyMs == nil {
@@ -181,8 +181,8 @@ func TestStatusDependenciesDown(t *testing.T) {
 	if !sm.Configured || sm.Reachable || sm.Authenticated || sm.LatencyMs != nil || sm.Message == "" {
 		t.Errorf("semaphore = %+v, want configured and unreachable", sm)
 	}
-	if len(sm.Templates) != 4 || sm.Templates[0].Exists {
-		t.Errorf("templates = %+v, want the four playbooks, none known to exist", sm.Templates)
+	if len(sm.Templates) != 5 || sm.Templates[0].Exists {
+		t.Errorf("templates = %+v, want the five playbooks, none known to exist", sm.Templates)
 	}
 	if !strings.Contains(sm.Message, "dry run is on") || !strings.Contains(sm.Message, "AIAPP_SEMAPHORE_UI_URL is not set") {
 		t.Errorf("semaphore message = %q", sm.Message)

@@ -392,8 +392,9 @@ type NodeDeployResult struct {
 	// or fallback (an image default user, taken after the node refused
 	// node.user; notes name both).
 	SSHUserSource string `json:"sshUserSource,omitempty" enums:"request,tumblebug,fallback" example:"tumblebug"`
-	// GPU is whether the runtime was given the node's GPUs and the NVIDIA
-	// Container Toolkit was installed.
+	// GPU is whether the runtime was given the node's GPUs, the GPU driver
+	// was checked (install-gpu-driver) and the NVIDIA Container Toolkit was
+	// installed.
 	GPU bool `json:"gpu" example:"false"`
 	// GPUSource says where GPU came from: request, spec, or default when the
 	// spec could not be read.
@@ -447,13 +448,14 @@ type NodeDeployResult struct {
 	// and its SSH key are read from CB-Tumblebug), staging (the files are
 	// placed in the stage folder), checking-ssh (the SSH user is tried),
 	// waiting-node-lock (another deployment of the same work key on the node
-	// runs first), install-docker, compose-up, copy-and-run or compose-down
-	// (that playbook runs; steps[] holds its task), opening-ports (the served
+	// runs first), install-gpu-driver (GPU nodes), install-docker,
+	// compose-up, copy-and-run or compose-down (that playbook runs; steps[]
+	// holds its task), opening-ports (the served
 	// ports are opened in the security groups) and done once the node
 	// succeeded. A node that failed keeps the phase it failed in. Absent until
 	// work on the node begins, and for records written before phases were
 	// kept.
-	Phase string `json:"phase,omitempty" enums:"reading-node,staging,checking-ssh,waiting-node-lock,install-docker,compose-up,copy-and-run,compose-down,opening-ports,done" example:"compose-up"`
+	Phase string `json:"phase,omitempty" enums:"reading-node,staging,checking-ssh,waiting-node-lock,install-gpu-driver,install-docker,compose-up,copy-and-run,compose-down,opening-ports,done" example:"compose-up"`
 	// PhaseStartedAt is when the node entered Phase.
 	PhaseStartedAt *time.Time `json:"phaseStartedAt,omitempty" example:"2026-10-29T12:00:40Z"`
 	// Steps are the playbooks run on the node, in order. A step that failed
@@ -512,8 +514,9 @@ type NodeOpenedPort struct {
 
 // NodeDeployStep is one playbook run through Semaphore.
 type NodeDeployStep struct {
-	// Playbook is install-docker.yml, compose-up.yml, copy-and-run.yml, or
-	// compose-down.yml when the deployment was taken down.
+	// Playbook is install-gpu-driver.yml (GPU nodes), install-docker.yml,
+	// compose-up.yml, copy-and-run.yml, or compose-down.yml when the
+	// deployment was taken down.
 	Playbook string `json:"playbook" example:"compose-up.yml"`
 	// TaskID is the Semaphore task, kept in Semaphore with its log.
 	TaskID int `json:"taskId,omitempty" example:"2147483645"`
@@ -629,8 +632,8 @@ type NodeProgress struct {
 	Step *NodeDeployStep `json:"step,omitempty"`
 	// StepsDone counts the playbooks of StepsTotal that succeeded. StepsTotal
 	// is 2 for a deployment (install-docker, then compose-up or
-	// copy-and-run), 1 while or after taking it down (compose-down), and 0
-	// for a dry run.
+	// copy-and-run), 3 on a GPU node (install-gpu-driver first), 1 while or
+	// after taking it down (compose-down), and 0 for a dry run.
 	StepsDone  int `json:"stepsDone" example:"1"`
 	StepsTotal int `json:"stepsTotal" example:"2"`
 	// Error is why the node failed.

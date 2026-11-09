@@ -33,7 +33,8 @@ func TestProgressFollowsARunningPlaybookThenTheEnd(t *testing.T) {
 	if p.Done || p.Running || p.Count.InProgress != 1 || p.Count.Running != 0 || n.Done {
 		t.Errorf("while running: %+v", p)
 	}
-	if n.Phase != "install-docker" || n.PhaseStartedAt == nil || n.StepsDone != 0 || n.StepsTotal != 2 {
+	// vm1 has a GPU spec, so install-gpu-driver runs first.
+	if n.Phase != "install-gpu-driver" || n.PhaseStartedAt == nil || n.StepsDone != 0 || n.StepsTotal != 3 {
 		t.Errorf("node while running: phase %q steps %d/%d", n.Phase, n.StepsDone, n.StepsTotal)
 	}
 	if n.Step.TaskID == 0 || n.Step.TaskURL == "" || n.Step.CurrentTask != "Wait until the service answers" || n.Step.Output != nil {
@@ -51,7 +52,7 @@ func TestProgressFollowsARunningPlaybookThenTheEnd(t *testing.T) {
 	if !p.Done || !p.Running || p.Status != model.NodeDeployRunning || p.Count.Running != 1 || p.Count.Failed != 0 || p.FinishedAt == nil {
 		t.Errorf("after the end: %+v", p)
 	}
-	if n.Phase != PhaseDone || n.StepsDone != 2 || n.StepsTotal != 2 || n.Step.Playbook != PlaybookComposeUp ||
+	if n.Phase != PhaseDone || n.StepsDone != 3 || n.StepsTotal != 3 || n.Step.Playbook != PlaybookComposeUp ||
 		n.Step.Status != semaphore.StatusSuccess || n.Step.CurrentTask != "" || n.ServiceURL == "" || n.Host == "" {
 		t.Errorf("node after the end = %+v / step %+v", n, n.Step)
 	}
@@ -70,7 +71,7 @@ func TestProgressKeepsThePhaseAFailedNodeStoppedIn(t *testing.T) {
 	if !p.Done || p.Running || p.Count.Failed != 1 || p.Count.Running != 0 {
 		t.Errorf("progress = %+v", p)
 	}
-	if n.Phase != "compose-up" || n.StepsDone != 1 || n.Error == "" || n.Step.Status != semaphore.StatusError ||
+	if n.Phase != "compose-up" || n.StepsDone != 2 || n.StepsTotal != 3 || n.Error == "" || n.Step.Status != semaphore.StatusError ||
 		n.Step.CurrentTask != PlaybookComposeUp {
 		t.Errorf("failed node = %+v / step %+v", n, n.Step)
 	}
