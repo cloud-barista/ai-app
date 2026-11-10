@@ -1,0 +1,2885 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 응용 자동화 에이전트</title>
+<style>
+  :root {
+    --bg: #FAFAF8; --panel: #FFFFFF; --line: #E2E2DE; --line-soft: #EFEFEA;
+    --ink: #1A1A1A; --ink-2: #555; --ink-3: #8A8A82;
+    --accent: #4527A0; --accent-soft: #F1EDFA;
+    --ok: #1B5E20; --ok-soft: #E8F5E9;
+    --warn: #8A5A00; --warn-soft: #FFF7E6;
+    --bad: #B71C1C; --bad-soft: #FFEBEE;
+    --info: #0D47A1; --info-soft: #E3F2FD;
+    --mock: #9A6B1F; --mock-line: #C9963F; --mock-soft: #FFF8EC;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.6 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  }
+  code, pre, .mono { font-family: var(--mono); }
+
+  /* ---------- layout ---------- */
+  .wrap { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
+  nav {
+    background: #1F2937; color: #E8E8E4; padding: 20px 0;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  nav h1 { font-size: 14px; margin: 0 20px 4px; color: #FFF; letter-spacing: -.2px; }
+  nav .sub { font-size: 11px; color: #9AA3AF; margin: 0 20px 18px; line-height: 1.5; }
+  nav a {
+    display: block; padding: 9px 20px; color: #C9CED6; text-decoration: none;
+    font-size: 13px; border-left: 3px solid transparent; cursor: pointer;
+  }
+  nav a:hover { background: #273244; color: #FFF; }
+  nav a.on { background: #111827; color: #FFF; border-left-color: #8B7FD4; font-weight: 700; }
+  nav .sect { font-size: 10px; color: #6B7280; margin: 18px 20px 6px; letter-spacing: 1.2px; }
+  nav .foot { margin: 22px 20px 0; font-size: 11px; color: #6B7280; line-height: 1.7; }
+  nav .foot a { display: inline; padding: 0; border: 0; color: #9AA3AF; text-decoration: underline; }
+  nav .auth { margin: 22px 20px 0; padding-top: 14px; border-top: 1px solid #374151; }
+  nav .auth label { color: #9AA3AF; font-size: 11px; }
+  nav .auth input {
+    width: 100%; padding: 7px 9px; border: 1px solid #4B5563; border-radius: 6px;
+    background: #111827; color: #F3F4F6; font: 12px var(--mono);
+  }
+  nav .auth .row { margin-top: 6px; }
+  nav .auth button { padding: 6px 12px; font-size: 12px; }
+  nav .auth .state { font-size: 11px; color: #9AA3AF; margin-top: 6px; line-height: 1.5; }
+
+  /* The two areas of the sidebar: what this prototype implements, and the
+     partner institution's connection points that only exist here as mocks. */
+  nav .zone { margin: 10px 10px 0; border-radius: 8px; padding: 2px 0 6px; }
+  nav .zone .sect { margin: 10px 10px 6px; }
+  nav .zone a { padding-left: 14px; }
+  nav .zone.inno .sect { color: #A79BE6; }
+  nav .zone.mock { border: 1px dashed var(--mock-line); background: #2B2820; }
+  nav .zone.mock .sect { color: #E0B062; }
+  nav .zone.mock .zone-note { font-size: 10.5px; color: #B9A27A; margin: 0 10px 6px; line-height: 1.5; }
+  nav .zone.mock a.on { background: #1E1B15; border-left-color: #E5A540; }
+  nav .zone.mock a:hover { background: #36301F; }
+
+  main { padding: 28px 32px 64px; max-width: 1180px; }
+  .page { display: none; }
+  .page.on { display: block; }
+  h2 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--ink-2); margin: 0 0 22px; font-size: 13px; }
+
+  .mockband {
+    border: 1.5px dashed var(--mock-line); background: var(--mock-soft); color: var(--mock);
+    padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; margin: 0 0 16px;
+  }
+
+  /* ---------- panel ---------- */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .page.mock .panel { border-style: dashed; border-color: #E4CFA6; }
+  .panel > h3 { font-size: 14px; margin: 0 0 12px; }
+  .panel > h3 .hint { font-weight: 400; color: var(--ink-3); font-size: 12px; margin-left: 8px; }
+  .grid { display: grid; gap: 12px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+  /* ---------- stat ---------- */
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #FDFDFB; }
+  .stat .k { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; }
+  .stat .v { font-size: 17px; font-weight: 700; word-break: break-all; }
+  .stat .v.sm { font-size: 13px; font-weight: 400; }
+  .stat.mock { border: 1px dashed var(--mock-line); background: var(--mock-soft); }
+  .stat .v.md, .md { word-break: normal; overflow-wrap: anywhere; line-height: 1.6; }
+  .md p { margin: 0 0 8px; }
+  .md h4 { margin: 12px 0 6px; font-size: 14.5px; }
+  .md h5 { margin: 10px 0 4px; font-size: 13.5px; }
+  .md ul, .md ol { margin: 0 0 8px; padding-left: 22px; }
+  .md table { margin: 4px 0 10px; background: #fff; }
+  .md code { background: #F0F0EC; padding: 0 4px; border-radius: 3px; font-size: 12px; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+
+  /* ---------- architecture ---------- */
+  .arch { display: flex; flex-direction: column; align-items: center; }
+  .arch .box {
+    width: 380px; border-radius: 10px; padding: 10px 14px; background: #FFF; border: 1px solid var(--line);
+  }
+  .arch .box.inno { border: 1.5px solid #8B7FD4; background: var(--accent-soft); }
+  .arch .box.mock { border: 1.5px dashed var(--mock-line); background: var(--mock-soft); }
+  .arch .box.ext { border: 1px solid #C8C8C0; background: #F4F4F0; }
+  .arch .box .who { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
+  .arch .box.inno .who { color: var(--accent); }
+  .arch .box.mock .who { color: var(--mock); }
+  .arch .box.ext .who { color: var(--ink-3); }
+  .arch .box .t { font-weight: 700; font-size: 13.5px; }
+  .arch .box .d { font-size: 11.5px; color: var(--ink-2); }
+  .arch .box .st { margin-top: 6px; font-size: 12px; }
+  .arch .arrow { font-size: 11.5px; color: var(--ink-3); padding: 3px 0; text-align: center; }
+  .arch .arrow b { display: block; font-size: 15px; line-height: 1; color: #9A9A92; }
+  .arch .split { display: flex; gap: 16px; }
+  .arch .split .box { width: 300px; }
+  .legend { font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+  .legend i {
+    display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin: 0 4px 0 12px; vertical-align: -1px;
+  }
+
+  /* ---------- badge ---------- */
+  .b {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; line-height: 1.7; white-space: nowrap;
+  }
+  .b-read { background: var(--ok-soft); color: var(--ok); }
+  .b-review { background: var(--info-soft); color: var(--info); }
+  .b-write { background: var(--warn-soft); color: var(--warn); }
+  .b-destructive { background: var(--bad-soft); color: var(--bad); }
+  .b-gpu { background: var(--ok-soft); color: var(--ok); }
+  .b-npu { background: var(--info-soft); color: var(--info); }
+  .b-tpu { background: var(--accent-soft); color: var(--accent); }
+  .b-inference { background: var(--info-soft); color: var(--info); }
+  .b-application { background: var(--accent-soft); color: var(--accent); }
+  .b-on { background: var(--bad-soft); color: var(--bad); }
+  .b-off { background: var(--ok-soft); color: var(--ok); }
+  .b-mut { background: #F0F0EC; color: var(--ink-3); }
+  .b-reason { background: var(--accent-soft); color: var(--accent); font-weight: 400; margin: 0 4px 4px 0; }
+  .b-mock { background: var(--mock-soft); color: var(--mock); border: 1px dashed var(--mock-line); }
+  .b-use { background: var(--accent-soft); color: var(--accent); }
+  /* Engine step and run outcomes. */
+  .b-st-succeeded { background: var(--ok-soft); color: var(--ok); }
+  .b-st-blocked { background: #FFE9C7; color: #8A4B00; }
+  .b-st-waiting { background: var(--info-soft); color: var(--info); }
+  .b-st-failed { background: var(--bad-soft); color: var(--bad); }
+  .b-st-skipped { background: #F0F0EC; color: var(--ink-3); }
+
+  /* ---------- controls ---------- */
+  input[type=text], textarea, select {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+    border-radius: 7px; font: inherit; background: #FFF; color: var(--ink);
+  }
+  textarea { resize: vertical; min-height: 68px; font-family: var(--mono); font-size: 12.5px; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid #C9BFEC; outline-offset: -1px; }
+  button {
+    padding: 9px 16px; border: 1px solid var(--accent); background: var(--accent);
+    color: #FFF; border-radius: 7px; font: inherit; font-weight: 700; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: #FFF; color: var(--accent); }
+  button.danger { background: #FFF; color: var(--bad); border-color: #E0B4B4; }
+  .row { display: flex; gap: 8px; align-items: flex-start; }
+  .row > *:first-child { flex: 1; }
+  label { display: block; font-size: 12px; color: var(--ink-2); margin: 0 0 4px; }
+  .field { margin-bottom: 10px; }
+  a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+  /* ---------- wire (request/response) ---------- */
+  details.wire { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+  /* A fold with nothing in it yet would otherwise render the browser's own
+     summary text, which reads like a control that does nothing. */
+  details.wire:empty { display: none; }
+  details.wire > summary {
+    cursor: pointer; font-size: 12px; color: var(--ink-3); list-style: none; user-select: none;
+  }
+  details.wire > summary::before { content: "▸ "; }
+  details.wire[open] > summary::before { content: "▾ "; }
+  details.wire > summary:hover { color: var(--accent); }
+  .wire-body { margin-top: 10px; }
+  .wire-line {
+    font-family: var(--mono); font-size: 12px; padding: 7px 10px; border-radius: 6px;
+    background: #1F2937; color: #D7DCE3; overflow-x: auto; white-space: pre; margin-bottom: 6px;
+  }
+  .wire-line .m { color: #FFD479; font-weight: 700; }
+  .wire-line .s-ok { color: #8FD98F; font-weight: 700; }
+  .wire-line .s-bad { color: #FF9C9C; font-weight: 700; }
+  pre.json {
+    font-size: 12px; background: #FBFBF8; border: 1px solid var(--line-soft);
+    border-radius: 6px; padding: 10px 12px; margin: 0; max-height: 380px;
+    overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* ---------- cards / list ---------- */
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #FDFDFB; }
+  .card h4 { margin: 0 0 3px; font-size: 14px; }
+  .card .id { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+  .card .meta { margin-top: 9px; font-size: 12px; color: var(--ink-2); }
+  .card .acts { margin-top: 11px; display: flex; gap: 6px; }
+  .card .acts button { padding: 5px 10px; font-size: 12px; font-weight: 400; }
+
+  .score { height: 5px; background: var(--line-soft); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .score > i { display: block; height: 100%; background: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { font-size: 11px; color: var(--ink-3); font-weight: 700; letter-spacing: .3px; }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: #F7F5FD; }
+
+  .note {
+    border-left: 3px solid var(--line); padding: 8px 0 8px 12px;
+    color: var(--ink-2); font-size: 12.5px; margin: 10px 0;
+  }
+  .note.warn { border-left-color: #E5A540; background: var(--warn-soft); padding-right: 12px; border-radius: 0 6px 6px 0; }
+  .note.bad { border-left-color: #C62828; background: var(--bad-soft); padding-right: 12px; border-radius: 0 6px 6px 0; }
+  .note.info { border-left-color: #1565C0; background: var(--info-soft); padding-right: 12px; border-radius: 0 6px 6px 0; }
+
+  .empty { color: var(--ink-3); font-size: 13px; padding: 18px 0; text-align: center; }
+  .spin { color: var(--ink-3); font-size: 12px; }
+  .err { color: var(--bad); font-size: 13px; }
+
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; }
+    main { padding: 20px 16px 48px; }
+    .arch .box, .arch .split .box { width: 100%; }
+    .arch .split { flex-direction: column; }
+  }
+
+  /* ---------- node deployment ---------- */
+  /* Deployment and node statuses, and Semaphore task outcomes. */
+  .b-dp-running { background: var(--ok-soft); color: var(--ok); }
+  .b-dp-dry-run { background: var(--info-soft); color: var(--info); }
+  .b-dp-failed { background: var(--bad-soft); color: var(--bad); }
+  .b-dp-partial { background: #FFE9C7; color: #8A4B00; }
+  .b-dp-pending, .b-dp-deploying { background: var(--accent-soft); color: var(--accent); }
+  .b-dp-interrupted { background: #F0F0EC; color: var(--ink-3); }
+  .b-dp-removing { background: var(--accent-soft); color: var(--accent); }
+  .b-dp-removed { background: #F0F0EC; color: var(--ink-2); }
+  .b-dp-remove-failed { background: var(--bad-soft); color: var(--bad); }
+  .tg-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 6px; }
+  .tg-row button { padding: 5px 10px; font-size: 12px; font-weight: 400; }
+  .node-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 12px; background: #FDFDFB; }
+  .node-box h4 { margin: 0 0 8px; font-size: 13.5px; }
+  .kv td:first-child { width: 150px; color: var(--ink-3); font-size: 12px; }
+  .kv td { font-size: 12.5px; padding: 5px 10px; }
+  pre.log {
+    font-size: 11.5px; background: #1F2937; color: #D7DCE3; border-radius: 6px; padding: 10px 12px;
+    margin: 6px 0 0; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .btn-sm { padding: 5px 10px; font-size: 12px; font-weight: 400; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav>
+  <h1>AI 응용 자동화 에이전트</h1>
+  <p class="sub">AI-MCMP 프로토타입<br>㈜이노그리드</p>
+
+  <div class="zone inno">
+    <div class="sect">이노그리드 구현</div>
+    <a data-page="overview" class="on">개요</a>
+    <a data-page="models">모델 카탈로그</a>
+    <a data-page="apps">응용 (업로드·버전)</a>
+    <a data-page="deploy">노드 배포와 제어</a>
+    <a data-page="engine">자동화 엔진</a>
+    <a data-page="monitor">모니터링 (배포 상태)</a>
+    <a data-page="tools">도구와 게이트 (MCP)</a>
+    <a data-page="archive">아카이브</a>
+  </div>
+
+  <div class="zone mock">
+    <div class="sect">협력 기관 연동 지점 · 모의</div>
+    <div class="zone-note">협력 기관 담당 영역입니다. 연동을 확인하려고 둔 모의 구현입니다.</div>
+    <a data-page="intent">자연어 지시</a>
+    <a data-page="recommend">인프라 추천</a>
+  </div>
+
+  <div class="auth">
+    <label for="auth-token">API 토큰</label>
+    <input type="password" id="auth-token" autocomplete="off" placeholder="인증이 꺼져 있으면 비워 둡니다">
+    <div class="row">
+      <button class="ghost" onclick="saveToken()">저장</button>
+      <button class="ghost" onclick="clearToken()">지우기</button>
+    </div>
+    <div class="state" id="auth-state"></div>
+  </div>
+
+  <p class="foot">
+    이 화면은 오른쪽 API 를 <b>실제로 호출</b>합니다.<br>
+    응답은 손대지 않고 그대로 보여 줍니다.<br><br>
+    <a href="api/index.html" target="_blank">Swagger UI</a>
+  </p>
+</nav>
+
+<main>
+
+<div class="note bad" id="auth-note" style="display:none">
+  <b>토큰이 필요하거나 틀렸습니다.</b> 왼쪽 아래 "API 토큰" 칸에 서버의 <code>AIAPP_AUTH_TOKEN</code> 값을 넣고 저장해 주세요.
+</div>
+
+<!-- ============ 개요 ============ -->
+<section class="page on" id="p-overview">
+  <h2>개요</h2>
+  <p class="lede">무엇이 이노그리드 구현이고 무엇이 협력 기관 연동 지점(모의)인지, 지금 각각이 답하는지. 전부 이 서버를 거쳐 물어본 값입니다.</p>
+
+  <div class="panel">
+    <h3>구조와 연결 상태</h3>
+    <div class="arch">
+      <div class="box mock">
+        <div class="who">협력 기관 · 모의</div>
+        <div class="t">자연어 지원 에이전트 (LLM)</div>
+        <div class="d">지시를 해석해 엔진의 상위 작업 도구를 부릅니다</div>
+        <div class="st" id="ov-st-nl"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>MCP · 엔진 상위 작업 도구 (deploy_application 등)</div>
+      <div class="box inno">
+        <div class="who">이노그리드 구현</div>
+        <div class="t">자동배포/자동제어 엔진</div>
+        <div class="d">AI-Ops 의 AI 응용 관리 자동화 에이전트. LLM 없이 정해진 순서로 실행</div>
+        <div class="st" id="ov-st-engine"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>MCP · AI-App 기능 도구 (create_deployment 등)</div>
+      <div class="box inno">
+        <div class="who">이노그리드 구현</div>
+        <div class="t">AI-App 서비스</div>
+        <div class="d">모델 카탈로그, 응용 업로드·버전, 노드 배포와 제어, MCP 서버, 이 콘솔</div>
+        <div class="st" id="ov-st-app"><span class="spin">부르는 중...</span></div>
+      </div>
+      <div class="arrow"><b>↓</b>REST</div>
+      <div class="split">
+        <div class="box ext">
+          <div class="who">외부 플랫폼</div>
+          <div class="t">CB-Tumblebug</div>
+          <div class="d">이미 띄운 노드의 정보와 SSH 키를 주고, 노드 제어를 받습니다</div>
+          <div class="st" id="ov-st-tb"><span class="spin">부르는 중...</span></div>
+        </div>
+        <div class="box ext">
+          <div class="who">외부 플랫폼</div>
+          <div class="t">Semaphore UI</div>
+          <div class="d">노드에 SSH 로 플레이북(install-docker, compose-up, copy-and-run, 내릴 때 compose-down)을 돌립니다</div>
+          <div class="st" id="ov-st-sem"><span class="spin">부르는 중...</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <i style="background:var(--accent-soft);border:1.5px solid #8B7FD4"></i>이노그리드 구현
+      <i style="background:var(--mock-soft);border:1.5px dashed var(--mock-line)"></i>협력 기관 연동 지점 · 모의
+      <i style="background:#F4F4F0;border:1px solid #C8C8C0"></i>외부 플랫폼
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>서비스 상태</h3>
+    <div class="grid g3" id="ov-stats"><div class="spin">부르는 중...</div></div>
+    <div id="ov-notes"></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadOverview()">새로고침</button>
+    </div>
+    <details class="wire" id="ov-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>배포 의존 서비스 (GET /status)</h3>
+    <p class="lede" style="margin:0 0 10px">부를 때마다 Semaphore, CB-Tumblebug, 공유 저장소를 읽기만 해서 확인합니다. 아무것도 만들지 않습니다.</p>
+    <div id="ov-deps"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="ov-deps-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>이 프로토타입이 하는 일</h3>
+    <div class="note">
+      이노그리드 담당 영역은 <b>AI-App 서비스</b>(모델 카탈로그, 응용 업로드·버전, 노드 배포와 제어)와
+      <b>자동배포/자동제어 엔진</b>입니다. 두 프로세스 모두 <b>LLM 을 쓰지 않습니다.</b>
+      엔진은 구조화된 요청을 받아 정해진 순서로 AI-App 의 도구를 부르고, 단계마다 무엇을 불렀고 무엇이 돌아왔는지 기록합니다.
+      자연어 해석과 인프라 추천은 협력 기관 담당 영역이라 여기에는 연동을 확인하는 모의 구현만 있습니다.
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <h4>모델 카탈로그와 응용 업로드</h4>
+        <div class="meta">
+          같은 모델도 출처마다 다른 형태로 배포되므로 포맷·정밀도·호환 엔진은 모델이 아니라 <b>아티팩트</b>에 둡니다.
+          응용은 파일과 노드에서 돌릴 스크립트를 이름으로 올리고, 같은 이름으로 다시 올리면 새 버전이 됩니다.
+        </div>
+      </div>
+      <div class="card">
+        <h4>자동배포/자동제어 엔진</h4>
+        <div class="meta">
+          <code>deploy</code> · <code>heal</code> · <code>control</code> · <code>status</code> 워크플로를
+          정해진 순서로 실행합니다. deploy 는 배포 요청을 받아 모델이나 응용을 확인하고, 배포를 만들고, 모든 노드가 끝날 때까지 따라갑니다.
+          <b>다음 단계는 앞 단계의 결과로 정하고, 모델이 정하지 않습니다.</b>
+        </div>
+      </div>
+      <div class="card">
+        <h4>쓰기는 기본적으로 막혀 있다</h4>
+        <div class="meta">
+          dry-run 이 켜져 있으면 배포는 노드 조회와 파일 배치까지만 하고 Semaphore 에 아무것도 등록하지 않으며, 노드 제어는 막힙니다.
+          엔진은 막힌 단계를 "차단됨", 그 결과가 있어야 하는 다음 단계를 "선행 단계 대기" 로 남깁니다.
+        </div>
+      </div>
+      <div class="card">
+        <h4>배포 기록이 상태의 출처</h4>
+        <div class="meta">
+          노드마다 상태와 Semaphore 태스크 결과를 배포 기록에 남기고, 태스크 로그는 따로 받습니다.
+          추론 서비스가 답하는지는 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인합니다.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 모델 카탈로그 ============ -->
+<section class="page" id="p-models">
+  <h2>모델 카탈로그</h2>
+  <p class="lede">
+    같은 모델이 출처마다 다른 형태로 배포됩니다(HF 의 safetensors, Ollama 의 GGUF).
+    그래서 <b>포맷·정밀도·호환 런타임은 아티팩트에</b> 있고, 추론 배포는 모델 하나와 그 아티팩트 하나, 런타임 하나를 고릅니다.
+  </p>
+
+  <div class="panel">
+    <h3>모델 <span class="hint" id="md-count"></span></h3>
+    <div class="grid g3">
+      <div class="field"><label>용도 (task)</label><select id="md-f-task"></select></div>
+      <div class="field"><label>입력 (modality)</label><select id="md-f-modality"></select></div>
+      <div class="field"><label>포맷 (format)</label><select id="md-f-format"></select></div>
+      <div class="field"><label>런타임 (runtimeId)</label><select id="md-f-runtimeId"></select></div>
+      <div class="field"><label>출처 (source)</label><select id="md-f-source"></select></div>
+    </div>
+    <div class="row">
+      <div class="spin" id="md-msg"></div>
+      <button class="ghost" onclick="clearModelFilters()">필터 지우기</button>
+      <button onclick="loadModels()">조회</button>
+    </div>
+    <div id="md-list" style="margin-top:12px"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="md-wire"></details>
+  </div>
+
+  <div class="panel" id="md-detail-panel" style="display:none">
+    <h3>모델 상세 <span class="hint" id="md-detail-id"></span></h3>
+    <div id="md-detail"></div>
+    <details class="wire" id="md-detail-wire"></details>
+    <div id="md-compose-out" style="margin-top:12px"></div>
+    <details class="wire" id="md-compose-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>모델 등록 <span class="hint">같은 id 면 교체됩니다</span></h3>
+    <div class="field">
+      <label>Model (JSON)</label>
+      <textarea id="md-new" rows="16"></textarea>
+    </div>
+    <div class="row">
+      <div class="err" id="md-new-msg"></div>
+      <button class="ghost" onclick="resetNewModel()">예시로 되돌리기</button>
+      <button onclick="registerModel()">등록</button>
+    </div>
+    <details class="wire" id="md-new-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>런타임 프로필 <span class="hint" id="eg-count">조회만 됩니다</span></h3>
+    <div id="eg-list"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="eg-wire"></details>
+    <div class="note" style="margin-top:12px">
+      추론 배포 요청이 오면 아티팩트의 <code>format</code>·<code>runtimes</code> 와 런타임 프로필이 맞는지 보고,
+      맞으면 compose 파일을 만듭니다. 모델 상세의 "compose 보기" 가 그 파일을 미리 만들어 봅니다.
+    </div>
+  </div>
+</section>
+
+<!-- ============ 응용 ============ -->
+<section class="page" id="p-apps">
+  <h2>응용</h2>
+  <p class="lede">
+    AI 응용은 <b>파일과 노드에서 돌릴 스크립트</b>입니다. 같은 이름으로 다시 올리면 새 버전이 되고,
+    배포하면 파일이 노드의 한 폴더로 복사되고 그 폴더에서 스크립트가 돕니다.
+    다른 노드의 주소 같은 값은 등록이 아니라 배포 요청의 <code>env</code> 로 줍니다.
+  </p>
+
+  <div class="panel">
+    <h3>올린 응용 <span class="hint" id="ap-count"></span></h3>
+    <div id="ap-list"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadApps()">새로고침</button>
+    </div>
+    <details class="wire" id="ap-wire"></details>
+  </div>
+
+  <div class="panel" id="ap-detail-panel" style="display:none">
+    <h3>응용 상세 <span class="hint" id="ap-detail-id"></span></h3>
+    <div id="ap-detail"></div>
+    <details class="wire" id="ap-detail-wire"></details>
+    <div id="ap-ver" style="margin-top:12px"></div>
+    <details class="wire" id="ap-ver-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>응용 올리기 <span class="hint">multipart 하나로 보냅니다. 같은 이름이면 새 버전입니다</span></h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>이름 (name) · 소문자, 숫자, _, -</label>
+        <input type="text" id="ap-name" value="open-webui">
+      </div>
+      <div class="field">
+        <label>포트 (ports) · 쉼표로 구분, 1-65535, 최대 16개. 배포 때 노드 보안 그룹에 엽니다</label>
+        <input type="text" id="ap-ports" placeholder="3000,8080">
+      </div>
+    </div>
+    <div class="field">
+      <label>스크립트 (script) · 파일을 고르면 이 칸 대신 파일을 보냅니다</label>
+      <textarea id="ap-script" rows="5">docker compose up -d</textarea>
+      <input type="file" id="ap-script-file" style="margin-top:6px">
+    </div>
+    <div class="field">
+      <label>파일 (files) · 여러 개를 고를 수 있습니다. 노드의 한 폴더에 평평하게 복사됩니다</label>
+      <input type="file" id="ap-files" multiple>
+    </div>
+    <div class="row">
+      <div class="err" id="ap-up-msg"></div>
+      <button onclick="uploadApp()" id="ap-up-btn">올리기</button>
+    </div>
+    <details class="wire" id="ap-up-wire"></details>
+  </div>
+</section>
+
+<!-- ============ 배포 ============ -->
+<section class="page" id="p-deploy">
+  <h2>노드 배포와 제어</h2>
+  <p class="lede">
+    CB-Tumblebug 이 이미 띄운 노드에 추론 서비스나 올린 응용을 배포합니다. AI-App 이 노드 정보와 SSH 키를 읽고,
+    파일을 공유 저장소에 둔 뒤 Semaphore 로 플레이북을 돌립니다.
+    dry-run 이 켜져 있으면 조회와 파일 배치까지만 하고 만든 compose 를 돌려줍니다. 부르는 것은 전부 <b>실제 호출</b>입니다.
+  </p>
+
+  <div class="panel">
+    <h3>배포 요청 <span class="hint" id="dp-gate"></span></h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>종류 (type)</label>
+        <select id="dp-type" onchange="deployForm()">
+          <option value="inference">inference · 추론 서비스</option>
+          <option value="app">app · 올린 응용</option>
+        </select>
+      </div>
+    </div>
+    <label>대상 노드 (targets) · CB-Tumblebug 의 nsId / infraId / nodeId. CSP·리전·SSH 사용자는 노드 정보에서 읽습니다. sshUser 는 비워 두면 CB-Tumblebug 의 사용자(cb-user)로 접속하고, 적으면 그 사용자로 접속합니다(키는 같음). cb-user 가 없는 RHEL 계열·Amazon Linux 노드라면 ec2-user 처럼 이미지 기본 사용자를 적습니다</label>
+    <div id="dp-targets"></div>
+    <button class="ghost btn-sm" onclick="addTarget()">대상 추가</button>
+
+    <div id="dp-f-ms" style="margin-top:14px">
+      <div class="grid g3">
+        <div class="field"><label>모델 (modelId)</label><select id="dp-model" onchange="dpModelChanged()"></select></div>
+        <div class="field"><label>아티팩트 (artifactId)</label><select id="dp-artifact" onchange="dpArtifactChanged()"></select></div>
+        <div class="field"><label>런타임 (runtimeId)</label><select id="dp-runtime"></select></div>
+        <div class="field">
+          <label>GPU (gpu) · 켜면 GPU 예약, NVIDIA Container Toolkit 설치</label>
+          <select id="dp-gpu">
+            <option value="">자동 (노드 스펙)</option>
+            <option value="true">켬</option>
+            <option value="false">끔</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>env · 한 줄에 KEY=VALUE. 엔진 컨테이너 환경과 .env 에 들어갑니다</label>
+        <textarea id="dp-ms-env" rows="3" placeholder="HF_TOKEN=..."></textarea>
+      </div>
+      <div class="field">
+        <label>런타임 인자 (args) · 공백으로 구분. vLLM 기본 인자 뒤에 붙습니다. --model·--port·--host 는 못 바꿉니다</label>
+        <input type="text" id="dp-ms-args" placeholder="--max-model-len 32768">
+      </div>
+    </div>
+
+    <div id="dp-f-app" style="margin-top:14px;display:none">
+      <div class="grid g3">
+        <div class="field"><label>응용 (app.name)</label><select id="dp-app" onchange="dpAppChanged()"></select></div>
+        <div class="field"><label>버전 (app.version)</label><select id="dp-ver"></select></div>
+      </div>
+      <div class="field">
+        <label>env · 한 줄에 KEY=VALUE. 스크립트가 도는 폴더의 .env 에 쓰이고 실행 전에 export 됩니다. 다른 노드의 주소를 여기에 줍니다</label>
+        <textarea id="dp-app-env" rows="3" placeholder="VLLM_BASE_URL=http://10.0.0.5:8000/v1"></textarea>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="err" id="dp-msg"></div>
+      <button class="ghost" onclick="toEngineDeploy()">엔진 deploy 로 보내기</button>
+      <button onclick="submitDeployment()" id="dp-btn">배포 요청</button>
+    </div>
+    <details class="wire" id="dp-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>배포 목록 <span class="hint" id="dp-count"></span></h3>
+    <div id="dp-list"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadDeployments()">새로고침</button>
+    </div>
+    <details class="wire" id="dp-list-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>엔드포인트 <span class="hint" id="ep-count"></span></h3>
+    <p class="lede">
+      지금 떠 있는 추론·응용의 주소입니다 (<code>GET /endpoints</code>). 노드와 작업 키(<code>ms-&lt;runtimeId&gt;</code>, <code>app-&lt;name&gt;</code>)마다
+      가장 최근 배포가 성공했을 때만 나옵니다. 내리거나 그 뒤 배포가 실패하면 빠지고, dry-run 은 나오지 않습니다.
+      주소는 부를 때마다 CB-Tumblebug 에서 읽은 노드의 지금 IP 로 만들고, 노드가 Running 이 아니면 비워 둡니다.
+    </p>
+    <div id="ep-list"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadEndpoints()">새로고침</button>
+    </div>
+    <details class="wire" id="ep-list-wire"></details>
+  </div>
+
+  <div class="panel" id="dp-detail-panel" style="display:none">
+    <h3>배포 상세 <span class="hint" id="dp-detail-id"></span></h3>
+    <div id="dp-detail"></div>
+    <details class="wire" id="dp-detail-wire"></details>
+    <div class="row" style="margin-top:14px">
+      <div class="spin" id="dp-poll"></div>
+      <button class="ghost" onclick="showDeploymentLogs()">로그 보기</button>
+      <select id="dp-action" style="width:auto">
+        <option value="suspend">suspend · 정지</option>
+        <option value="resume">resume · 재개</option>
+        <option value="reboot">reboot · 재부팅</option>
+        <option value="terminate">terminate · 종료</option>
+      </select>
+      <button class="danger" onclick="controlDeployment()">노드 제어</button>
+      <button class="danger" onclick="removeDeployment()">내리기</button>
+      <button class="ghost" onclick="openEngineFor('status')">엔진 status</button>
+      <button class="ghost" onclick="openEngineFor('heal')">엔진 heal</button>
+    </div>
+    <div id="dp-ctl-out" style="margin-top:12px"></div>
+    <details class="wire" id="dp-ctl-wire"></details>
+    <div id="dp-logs-out" style="margin-top:12px"></div>
+    <details class="wire" id="dp-logs-wire"></details>
+  </div>
+  <datalist id="dep-ids"></datalist>
+</section>
+
+<!-- ============ 자동화 엔진 ============ -->
+<section class="page" id="p-engine">
+  <h2>자동화 엔진</h2>
+  <p class="lede">
+    AI-Ops 의 AI 응용 관리 자동화 에이전트, 곧 <b>자동배포/자동제어 엔진</b>입니다.
+    LLM 없이 정해진 순서로 AI-App 의 MCP 도구를 부르고, 단계마다 <b>부른 도구, 결과, dry-run 게이트가 막았는지</b>를 기록합니다.
+  </p>
+
+  <div class="panel">
+    <h3>워크플로 실행</h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>워크플로</label>
+        <select id="en-wf" onchange="engineForm()">
+          <option value="deploy">deploy · 배포 요청을 끝까지 따라감</option>
+          <option value="heal">heal · 성공 못 한 배포를 한 번 다시</option>
+          <option value="control">control · 정지·재개·재부팅·종료</option>
+          <option value="status">status · 배포 기록과 로그 요약</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>네임스페이스</label>
+        <input type="text" id="en-ns" value="default">
+      </div>
+    </div>
+    <div class="note" id="en-wf-desc" style="margin-top:0"></div>
+
+    <div id="en-f-deploy">
+      <div class="field">
+        <label>배포 요청 (JSON) · 배포 화면의 요청과 같은 모양입니다</label>
+        <textarea id="en-req" rows="12"></textarea>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <div></div>
+        <button class="ghost btn-sm" onclick="engineReqFromForm()">배포 화면의 폼에서 가져오기</button>
+      </div>
+    </div>
+    <div class="grid g3" id="en-f-target" style="display:none">
+      <div class="field">
+        <label>배포 ID (deploymentId)</label>
+        <input type="text" id="en-dep" placeholder="3f9b2c4e-..." list="dep-ids">
+      </div>
+      <div class="field" id="en-f-action" style="display:none">
+        <label>동작 (action)</label>
+        <select id="en-action">
+          <option value="suspend">suspend · 정지</option>
+          <option value="resume">resume · 재개</option>
+          <option value="reboot">reboot · 재부팅</option>
+          <option value="terminate">terminate · 종료</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="spin" id="en-msg"></div>
+      <button onclick="runWorkflow()" id="en-btn">실행</button>
+    </div>
+    <div class="legend" style="margin:12px 0 0">
+      상태 배지
+      <span class="b b-st-succeeded">succeeded</span> 성공 ·
+      <span class="b b-st-blocked">blocked</span> dry-run 게이트가 막음 ·
+      <span class="b b-st-waiting">waiting</span> 막힌 단계의 결과를 기다림 ·
+      <span class="b b-st-failed">failed</span> 실패 ·
+      <span class="b b-st-skipped">skipped</span> 앞 단계 실패로 건너뜀
+    </div>
+    <div id="en-result" style="margin-top:14px"></div>
+    <details class="wire" id="en-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>최근 실행 <span class="hint" id="en-runs-count"></span></h3>
+    <div id="en-runs"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadEngineRuns()">새로고침</button>
+    </div>
+    <details class="wire" id="en-runs-wire"></details>
+  </div>
+
+  <div class="panel" id="en-detail-panel" style="display:none">
+    <h3>실행 상세 <span class="hint" id="en-detail-id"></span></h3>
+    <div id="en-detail"></div>
+    <details class="wire" id="en-detail-wire"></details>
+  </div>
+</section>
+
+<!-- ============ 모니터링 ============ -->
+<section class="page" id="p-monitor">
+  <h2>모니터링</h2>
+  <p class="lede">
+    배포 기록에서 읽은 <b>배포 상태 요약</b>입니다. 노드마다 지금 어느 배포가 올라가 있는지,
+    그 배포가 어떻게 끝났는지를 봅니다.
+  </p>
+
+  <div class="panel">
+    <h3>상태별 배포</h3>
+    <div class="grid g3" id="mo-stats"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadMonitor()">새로고침</button>
+    </div>
+    <details class="wire" id="mo-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>노드별 작업 <span class="hint">같은 노드의 같은 작업 키는 나중 배포가 앞 배포를 바꿉니다</span></h3>
+    <div id="mo-nodes"></div>
+    <div class="note info" style="margin-top:14px">
+      작업 키는 추론 서비스면 <code>ms-&lt;runtimeId&gt;</code>, 응용이면 <code>app-&lt;name&gt;</code> 이고,
+      노드 폴더 <code>/opt/aiapp/&lt;작업 키&gt;</code> 와 compose 프로젝트 <code>aiapp-&lt;작업 키&gt;</code> 를 정합니다.
+      배포 기록에 <code>workKey</code> 가 없으면 요청에서 같은 규칙으로 계산해 <span class="b b-mut">계산</span> 을 붙입니다.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>서빙 응답과 가속기는 어디서 보나</h3>
+    <div class="note">
+      예전 화면의 배포(Infra) 단위 서빙 응답 확인과 가속기 판독은 AI-App 에서 빠졌습니다.
+      지금은 추론 서비스가 답하는지를 배포 안에서 <code>compose-up</code> 플레이북이 노드에서 직접 확인하고,
+      그 결과가 노드의 단계 상태와 로그로 남습니다. 자동화 엔진의 <code>status</code> 워크플로가 배포 기록과 노드별 마지막 로그 줄을 한 번에 읽습니다.
+    </div>
+  </div>
+</section>
+
+<!-- ============ 도구 ============ -->
+<section class="page" id="p-tools">
+  <h2>도구와 게이트 (MCP)</h2>
+  <p class="lede">
+    MCP 도구는 두 층입니다. 자동화 엔진이 여는 상위 도구를 자연어 에이전트와 외부 에이전트가 부르고,
+    엔진은 그 안에서 AI-App 이 여는 기능 도구를 부릅니다.
+    <b>등급이 곧 안전장치</b>이고, 실행 여부는 서비스 설정이지 부르는 쪽의 판단이 아닙니다.
+  </p>
+
+  <div class="panel">
+    <h3>게이트 상태</h3>
+    <div id="tl-gate"><div class="spin">부르는 중...</div></div>
+  </div>
+
+  <div class="panel">
+    <h3>자동화 엔진이 여는 도구 <span class="hint" id="tl-eng-count"></span></h3>
+    <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-2)">
+      자연어 에이전트·외부 에이전트가 부르는 도구입니다. 엔진 기술서(<code>GET /engine/card</code>)의
+      <code>tools.exposed</code> 를 그대로 보여 줍니다.</p>
+    <div id="tl-eng-list"><div class="spin">부르는 중...</div></div>
+    <details class="wire" id="tl-eng-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>AI-App 이 여는 기능 도구 <span class="hint" id="tl-count"></span></h3>
+    <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-2)">
+      엔진이 부르는 도구입니다(<code>GET /tools</code>). 엔진 기술서의 <code>tools.uses</code> 에 있는 것은
+      <span class="b b-use">엔진이 사용</span> 으로 표시합니다.</p>
+    <div id="tl-list"></div>
+    <details class="wire" id="tl-wire"></details>
+  </div>
+</section>
+
+<!-- ============ 아카이브 ============ -->
+<section class="page" id="p-archive">
+  <h2>아카이브</h2>
+  <p class="lede">
+    세 곳의 기록을 시각순으로 합쳐 봅니다. AI-App 노드 배포·제어 호출, 자동화 엔진 실행, 협력 기관 모의 자연어 에이전트의 지시 실행입니다.
+    <b>게이트가 막은 것도 기록됩니다.</b>
+  </p>
+
+  <div class="panel">
+    <h3>실행 기록 <span class="hint" id="ar-count"></span></h3>
+    <div id="ar-list"><div class="spin">부르는 중...</div></div>
+    <div class="row" style="margin-top:14px">
+      <div></div>
+      <button class="ghost" onclick="loadArchive()">새로고침</button>
+    </div>
+    <details class="wire" id="ar-wire"></details>
+  </div>
+
+  <div class="panel" id="ar-detail-panel" style="display:none">
+    <h3>레코드 <span class="hint" id="ar-detail-id"></span></h3>
+    <div id="ar-detail-run"></div>
+    <pre class="json" id="ar-detail"></pre>
+    <details class="wire" id="ar-detail-wire"></details>
+  </div>
+</section>
+
+<!-- ============ 협력 기관 · 자연어 지시 ============ -->
+<section class="page mock" id="p-intent">
+  <div class="mockband">협력 기관 담당 영역 · 연동 확인용 모의 구현 (이노그리드 프로토타입 아님)</div>
+  <h2>자연어 지시 <span class="b b-mock">모의</span></h2>
+  <p class="lede">
+    협력 기관의 자연어 지원 에이전트를 흉내 낸 모의 구현입니다. LLM 이 지시를 해석해
+    <b>자동화 엔진의 MCP 도구</b>(<code>deploy_application</code> 등)를 부르고,
+    실제 배포 순서와 기록은 이노그리드 엔진이 맡습니다.
+  </p>
+
+  <div class="panel">
+    <h3>지시</h3>
+    <div class="field">
+      <textarea id="in-q" rows="3">qwen3-embedding-0.6b 모델을 etri 네임스페이스 travel 인프라의 vm1 노드에 vllm 으로 배포해줘</textarea>
+    </div>
+    <div class="field">
+      <label>네임스페이스</label>
+      <input type="text" id="in-ns" value="default">
+    </div>
+    <div class="row">
+      <div class="spin" id="in-msg"></div>
+      <button onclick="runIntent()" id="in-btn">실행</button>
+    </div>
+    <div id="in-result" style="margin-top:14px"></div>
+    <details class="wire" id="in-wire"></details>
+  </div>
+
+  <div class="panel">
+    <h3>연동 지점</h3>
+    <div class="note">
+      이노그리드 쪽 계약은 <b>엔진의 MCP 도구</b>와 엔진 기술서(<code>GET /engine/card</code>)입니다.
+      모의 에이전트는 그 도구를 부르는 MCP 클라이언트이고, 도구가 돌려준 엔진 실행 ID 를 단계마다 남깁니다.
+      엔진 실행 ID 를 누르면 자동화 엔진 화면에서 그 실행의 단계를 봅니다.
+    </div>
+  </div>
+</section>
+
+<!-- ============ 협력 기관 · 인프라 추천 ============ -->
+<section class="page mock" id="p-recommend">
+  <div class="mockband">협력 기관 담당 영역 · 연동 확인용 모의 구현 (이노그리드 프로토타입 아님)</div>
+  <h2>인프라 추천 <span class="b b-mock">모의</span></h2>
+  <p class="lede">
+    협력 기관 추천 API 의 계약과 그것을 흉내 낸 모의 구현(<code>mock-partner-recommender</code>)입니다.
+    AI-App 은 CB-Tumblebug 이 이미 띄운 노드에 배포하므로 <b>추천 API 를 스스로 부르지 않습니다.</b>
+    이 화면은 AI-App 이 <code>/partner/rec/*</code> 를 <code>AIAPP_PARTNER_REC_URL</code> 로 넘기는 길로 추천 API 를 직접 부릅니다.
+  </p>
+
+  <div class="panel">
+    <h3>추천 요청 <span class="hint">POST /partner/rec/recommendations/specs · image</span></h3>
+    <div class="grid g3">
+      <div class="field">
+        <label>후보 수 (limit)</label>
+        <input type="text" id="rc-limit" value="3">
+      </div>
+      <div class="field">
+        <label>이미지 추천에 쓸 스펙 (specId) · 후보를 누르면 채워집니다</label>
+        <input type="text" id="rc-spec" placeholder="스펙 후보의 id">
+      </div>
+    </div>
+    <div class="field">
+      <label>app (JSON) · 계약 필드 id, accelerator{type, model, minCount, minMemoryGiB}, resources{minVCPU, minMemoryGiB}, install{osType}</label>
+      <textarea id="rc-app" rows="12"></textarea>
+    </div>
+    <div class="row">
+      <div class="err" id="rc-msg"></div>
+      <button class="ghost" onclick="resetRecommend()">예시로 되돌리기</button>
+      <button onclick="runSpecs()" id="rc-spec-btn">스펙 추천받기</button>
+      <button class="ghost" onclick="runImage()" id="rc-img-btn">이미지 추천받기</button>
+    </div>
+    <div id="rc-spec-out" style="margin-top:12px"></div>
+    <details class="wire" id="rc-spec-wire"></details>
+    <div id="rc-img-out" style="margin-top:12px"></div>
+    <details class="wire" id="rc-img-wire"></details>
+    <details class="wire" id="rc-curl"></details>
+  </div>
+
+  <div class="panel">
+    <h3>계약 요약 <span class="hint">이노그리드가 제안한 계약</span></h3>
+    <table>
+      <tr><th style="width:230px">호출</th><th>요청</th><th>응답</th></tr>
+      <tr>
+        <td class="mono" style="font-size:12px">POST /recommendations/specs</td>
+        <td class="mono" style="font-size:12px">{ app: { id, accelerator: { type, model, minCount, minMemoryGiB },
+          resources: { minVCPU, minMemoryGiB }, install: { osType } }, limit }</td>
+        <td class="mono" style="font-size:12px">{ candidates: [ { id, providerName, regionName, acceleratorType,
+          acceleratorModel, acceleratorCount, acceleratorMemoryGB, vCPU, memoryGiB, costPerHour } ], reason }</td>
+      </tr>
+      <tr>
+        <td class="mono" style="font-size:12px">POST /recommendations/image</td>
+        <td class="mono" style="font-size:12px">{ app, specId }</td>
+        <td class="mono" style="font-size:12px">{ imageId, source, reason }</td>
+      </tr>
+    </table>
+    <div class="note" style="margin-top:12px">
+      모의 구현은 토큰(<code>AIAPP_MOCK_RECOMMENDER_TOKEN</code>)이 설정돼 있으면 모든 요청에 Bearer 토큰을 요구하고,
+      <code>reason</code> 앞에 <code>[partner mock]</code> 을 붙여 진짜 추천처럼 읽히지 않게 합니다.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>협력 기관이 할 일</h3>
+    <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--ink-2)">
+      <li>요구 분석: 모델의 크기·정밀도와 응용의 가속기·자원 요구에서 필요한 인프라 조건을 뽑습니다.</li>
+      <li>추천 알고리즘: 조건을 만족하는 스펙을 비용·성능·가용성 기준으로 순위를 매깁니다.</li>
+      <li>근거: 왜 그 스펙과 이미지인지 <code>reason</code> 으로 돌려줍니다.</li>
+      <li>이미지 선택: 가속기 벤더와 드라이버에 맞는 노드 이미지를 고릅니다.</li>
+    </ul>
+    <div class="note" style="margin-top:12px">
+      지금의 모의 구현은 1차년도 로직(가속기 요구 → CB-Tumblebug 스펙 필터, 비용순, 벤더별 이미지)을 옮겨 둔 것입니다.
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+'use strict';
+
+/* The console is mounted under the same base path as the API, so every call is
+   relative. Hardcoding /aiapp here would break the page the moment the service
+   is mounted anywhere else. */
+const BASE = location.pathname.replace(/\/ui\/?$/, '');
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+/* ---------- token ----------
+   The token lives in sessionStorage only, so it leaves with the tab. Storage can
+   be refused (private modes, blocked cookies); the page then keeps the token in
+   memory for as long as it stays open. */
+const TOKEN_KEY = 'aiapp.authToken';
+let authToken = '';
+try { authToken = sessionStorage.getItem(TOKEN_KEY) || ''; } catch (_) { /* storage refused */ }
+
+function renderToken() {
+  $('auth-token').value = authToken;
+  $('auth-state').textContent = authToken ? '이 탭의 요청에 토큰을 붙입니다.' : '토큰 없이 요청합니다.';
+}
+
+function setToken(value) {
+  authToken = value;
+  try {
+    if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY);
+  } catch (_) { /* storage refused */ }
+  renderToken();
+  $('auth-note').style.display = 'none';
+  for (const k of Object.keys(loaded)) delete loaded[k];
+  MODELS_ALL = [];
+  APPS = [];
+  const current = (location.hash || '#overview').slice(1);
+  show(loaders.hasOwnProperty(current) ? current : 'overview');
+}
+
+function saveToken() { setToken($('auth-token').value.trim()); }
+function clearToken() { setToken(''); }
+
+/* ---------- API ----------
+   Every response is kept whole, including failures: the page shows what the
+   server actually said rather than a message of its own, because a console that
+   paraphrases errors hides the one thing it was opened to find out. */
+async function api(method, path, body) {
+  const url = BASE + path;
+  const started = performance.now();
+  const init = { method, headers: { 'Accept': 'application/json' } };
+  if (authToken) init.headers['Authorization'] = 'Bearer ' + authToken;
+  /* A multipart body goes as is, so that the browser writes its boundary, and
+     is shown on the wire as its field names and file sizes. */
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (form) {
+    init.body = body;
+    body = formSummary(body);
+  } else if (body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+
+  let res, text;
+  try {
+    res = await fetch(url, init);
+    text = await res.text();
+  } catch (e) {
+    return {
+      ok: false, status: 0, method, url, body,
+      ms: Math.round(performance.now() - started),
+      data: null, raw: String(e),
+      transport: '서버에 닿지 못했습니다: ' + String(e)
+    };
+  }
+
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { /* not json */ }
+
+  if (res.status === 401) $('auth-note').style.display = '';
+
+  return {
+    ok: res.ok, status: res.status, method, url, body,
+    ms: Math.round(performance.now() - started),
+    data, raw: text, transport: null
+  };
+}
+
+/* Every list of the API is paged (limit 1 to 1000, 100 by default) and gives
+   total, the count of every item its filters keep. apiAll reads a list whole,
+   PAGE_MAX items a call, until it has total items, and answers as api does with
+   data[key] holding every item. A failed page answers that failure. */
+const PAGE_MAX = 1000;
+async function apiAll(path, key) {
+  const sep = path.includes('?') ? '&' : '?';
+  let all = [];
+  for (let offset = 0; ;) {
+    const r = await api('GET', `${path}${sep}limit=${PAGE_MAX}&offset=${offset}`);
+    if (!r.ok || !r.data) return r;
+    const got = r.data[key] || [];
+    all = all.concat(got);
+    offset += got.length;
+    if (!got.length || offset >= (r.data.total || 0)) {
+      r.data = { ...r.data, [key]: all, offset: 0, limit: all.length };
+      return r;
+    }
+  }
+}
+
+/* pageNote says how much of a paged list a count shows when it is not all. */
+function pageNote(data, shown) {
+  const total = data && data.total;
+  return typeof total === 'number' && total > shown ? ` (최근 ${shown} 건만 표시, 전체 ${total} 건)` : '';
+}
+
+/* formSummary is what the wire shows for a multipart body: each field, a file
+   as its name and size, a long text cut short. */
+function formSummary(fd) {
+  const out = {};
+  for (const [k, v] of fd.entries()) {
+    const shown = v instanceof File ? `(파일) ${v.name}, ${v.size} bytes`
+      : v.length > 400 ? v.slice(0, 400) + ` ... (${v.length}자)` : v;
+    if (k in out) out[k] = [].concat(out[k], shown); else out[k] = shown;
+  }
+  return out;
+}
+
+/* wire renders the request and the response verbatim under a fold. It is on
+   every panel on purpose: the point of the console is that it adds nothing. */
+function wire(el, r, label) {
+  const cls = r.status === 0 ? 's-bad' : (r.ok ? 's-ok' : 's-bad');
+  const status = r.status === 0 ? '연결 실패' : r.status;
+  const shortUrl = r.url.replace(location.origin, '');
+
+  let out = '';
+  out += `<div class="wire-body">`;
+  out += `<div class="wire-line"><span class="m">${esc(r.method)}</span> ${esc(decodeURI(shortUrl))}`;
+  out += `   <span class="${cls}">${esc(status)}</span>  ${r.ms}ms</div>`;
+  if (r.body !== undefined) {
+    out += `<div style="font-size:11px;color:var(--ink-3);margin:8px 0 4px">요청 본문</div>`;
+    out += `<pre class="json">${esc(JSON.stringify(r.body, null, 2))}</pre>`;
+  }
+  out += `<div style="font-size:11px;color:var(--ink-3);margin:8px 0 4px">응답 본문</div>`;
+  out += `<pre class="json">${esc(r.data ? JSON.stringify(r.data, null, 2) : (r.raw || '(본문 없음)'))}</pre>`;
+  out += `</div>`;
+
+  el.innerHTML = `<summary>${esc(label || '이 화면이 부른 요청과 받은 응답')}</summary>` + out;
+}
+
+/* A failed call is reported with the server's own words, never replaced. */
+function failNote(r) {
+  if (r.transport) {
+    return `<div class="note bad"><b>${esc(r.transport)}</b><br>
+      서비스가 떠 있는지 확인해 주세요.</div>`;
+  }
+  const msg = (r.data && (r.data.message || r.data.error)) || r.raw || '(본문 없음)';
+  return `<div class="note bad"><b>HTTP ${esc(r.status)}</b> ${esc(msg)}</div>`;
+}
+
+/* ---------- navigation ---------- */
+/* Pages that call on first open. */
+const loaders = {
+  overview: loadOverview, models: loadModelsPage, apps: loadApps, deploy: loadDeployPage,
+  engine: loadEnginePage, monitor: loadMonitor, tools: loadTools, archive: loadArchive,
+  intent: null, recommend: null
+};
+const loaded = {};
+
+document.querySelectorAll('nav a[data-page]').forEach((a) => {
+  a.addEventListener('click', () => show(a.dataset.page));
+});
+
+function show(name) {
+  document.querySelectorAll('nav a[data-page]').forEach((a) =>
+    a.classList.toggle('on', a.dataset.page === name));
+  document.querySelectorAll('.page').forEach((p) =>
+    p.classList.toggle('on', p.id === 'p-' + name));
+  location.hash = name;
+  if (!loaded[name] && loaders[name]) { loaded[name] = true; loaders[name](); }
+  window.scrollTo(0, 0);
+}
+
+/* ---------- shared badges ---------- */
+/* fmtTime shows a record time in the browser's local time, to the second. */
+function fmtTime(s) {
+  const d = new Date(s);
+  if (!s || isNaN(d)) return s || '';
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function upBadge(r) {
+  if (r.status === 0) return '<span class="b b-on">연결 실패</span>';
+  if (r.ok) return '<span class="b b-off">응답함</span>';
+  return `<span class="b b-on">HTTP ${esc(r.status)}</span>`;
+}
+
+function regBadge(reg) {
+  reg = reg || {};
+  const b = reg.status === 'registered' ? '<span class="b b-off">등록됨</span>'
+    : reg.status === 'failed' ? '<span class="b b-on">등록 실패</span>'
+    : reg.status === 'pending' ? '<span class="b b-mut">등록 중</span>'
+    : reg.status === 'disabled' ? '<span class="b b-mut">등록 안 함</span>'
+    : '<span class="b b-mut">모름</span>';
+  return `<span title="${esc(reg.message || '')}">${b}</span>`;
+}
+
+const STATUS_KO = {
+  succeeded: '성공', blocked: 'dry-run 게이트가 막음', waiting: '막힌 단계의 결과를 기다림',
+  failed: '실패', skipped: '앞 단계 실패로 건너뜀'
+};
+function stBadge(s) {
+  return `<span class="b b-st-${esc(s || 'skipped')}" title="${esc(STATUS_KO[s] || '')}">${esc(s || '-')}</span>`;
+}
+
+/* jsq writes a string as a JavaScript literal that is safe inside an HTML
+   attribute such as onclick. */
+const jsq = (s) => esc(JSON.stringify(String(s ?? '')));
+
+/* ---------- 개요 ---------- */
+async function loadOverview() {
+  ['ov-st-nl', 'ov-st-engine', 'ov-st-app', 'ov-st-tb', 'ov-st-sem'].forEach((id) =>
+    $(id).innerHTML = '<span class="spin">부르는 중...</span>');
+
+  $('ov-deps').innerHTML = '<div class="spin">부르는 중...</div>';
+  const [ready, tools, engReady, engCard, nlReady, nlCard, models, apps, deps, status] = await Promise.all([
+    api('GET', '/readyz'), api('GET', '/tools'),
+    api('GET', '/engine/readyz'), api('GET', '/engine/card'),
+    api('GET', '/partner/nl/readyz'), api('GET', '/partner/nl/card'),
+    apiAll('/models', 'models'), apiAll('/apps', 'apps'), apiAll('/deployments', 'deployments'), api('GET', '/status')]);
+  wire($('ov-wire'), engCard,
+    'GET /readyz, /tools, /engine/readyz, /engine/card, /partner/nl/readyz, /partner/nl/card, /models, /apps, /deployments, /status 를 불렀습니다 (아래는 engine/card)');
+  wire($('ov-deps-wire'), status);
+
+  const t = tools.data || {};
+  const list = t.tools || [];
+  const byGrade = list.reduce((m, x) => (m[x.grade] = (m[x.grade] || 0) + 1, m), {});
+  const guarded = list.filter((x) => x.guardedByDryRun).length;
+  const dry = t.dryRun;
+  if (dry !== undefined) DRY = dry;
+  const ec = engCard.ok && engCard.data && typeof engCard.data === 'object' ? engCard.data : null;
+  const nc = nlCard.ok && nlCard.data && typeof nlCard.data === 'object' ? nlCard.data : null;
+
+  const ml = models.ok ? (models.data && models.data.models) || [] : null;
+  const al = apps.ok ? (apps.data && apps.data.apps) || [] : null;
+  const dl = deps.ok ? (deps.data && deps.data.deployments) || [] : null;
+  if (ml) MODELS_ALL = ml;
+  if (al) APPS = al;
+  if (dl) DEPS = dl;
+
+  $('ov-st-app').innerHTML = `${upBadge(ready)} · 도구 ${list.length} · dry-run ${
+    dry === undefined ? '<span class="b b-mut">모름</span>' : dry ? '<span class="b b-off">켜짐</span>' : '<span class="b b-on">꺼짐</span>'}`;
+  $('ov-st-engine').innerHTML = `${upBadge(engReady)}${ec ? ` · LLM ${ec.usesLLM ? '<span class="b b-on">사용</span>' : '<span class="b b-off">없음</span>'}
+    · 워크플로 ${esc((ec.workflows || []).length)} · AI-App MCP ${engineMCPBadge(ec)}` : ''}`;
+  $('ov-st-nl').innerHTML = `${upBadge(nlReady)}${nc ? ` · 엔진 MCP ${
+    ((nc.mcpServers || [])[0] || {}).connected ? '<span class="b b-off">연결됨</span>' : SESSION_NONE}` : ''}`;
+  const st = status.ok && status.data && typeof status.data === 'object' ? status.data : null;
+  $('ov-st-tb').innerHTML = st ? depReach(st.tumblebug) : upBadge(status);
+  $('ov-st-sem').innerHTML = st ? `${depReach(st.semaphore)}${st.semaphore.reachable
+    ? ` · 인증 ${st.semaphore.authenticated ? '<span class="b b-off">됨</span>' : '<span class="b b-on">안 됨</span>'}` : ''}` : upBadge(status);
+  $('ov-deps').innerHTML = st ? renderDepStatus(st) : failNote(status);
+
+  const unit = (s) => `<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> ${s}</span>`;
+  const notRead = (r) => `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
+  const artifacts = ml ? ml.reduce((n, m) => n + (m.artifacts || []).length, 0) : 0;
+  const versions = al ? al.reduce((n, a) => n + (a.versions || []).length, 0) : 0;
+
+  $('ov-stats').innerHTML = `
+    <div class="stat"><div class="k">AI-App 서비스</div><div class="v sm">${upBadge(ready)}
+      ${ready.data && ready.data.message ? `<div class="mono" style="font-size:11.5px">${esc(ready.data.message)}</div>` : ''}</div></div>
+    <div class="stat"><div class="k">쓰기 게이트 (dry-run)</div><div class="v">
+      ${dry === undefined ? '<span class="b b-mut">모름</span>'
+        : dry ? '<span class="b b-off">켜짐 · 안전</span>'
+              : '<span class="b b-on">꺼짐 · 실제 실행</span>'}
+    </div></div>
+    <div class="stat"><div class="k">AI-App 도구</div><div class="v">${list.length}${unit(`개 · 게이트 대상 ${guarded}
+      · 읽기 ${byGrade.read || 0} / 검토 ${byGrade.review || 0} / 쓰기 ${byGrade.write || 0} / 파괴적 ${byGrade.destructive || 0}`)}</div></div>
+    <div class="stat"><div class="k">모델</div><div class="v">${ml ? `${ml.length}${unit(`건 · 아티팩트 ${artifacts}`)}` : notRead(models)}</div></div>
+    <div class="stat"><div class="k">응용</div><div class="v">${al ? `${al.length}${unit(`개 · 버전 ${versions}`)}` : notRead(apps)}</div></div>
+    <div class="stat"><div class="k">배포</div><div class="v">${dl ? `${dl.length}${unit(statusCounts(dl) || '')}` : notRead(deps)}</div></div>
+    <div class="stat"><div class="k">자동화 엔진</div><div class="v sm">${upBadge(engReady)}</div></div>
+    <div class="stat"><div class="k">엔진 카드</div><div class="v sm">${engineCardSummary(engCard)}</div></div>
+    <div class="stat mock"><div class="k">자연어 에이전트 · 협력 기관 모의</div><div class="v sm">${upBadge(nlReady)}
+      <div style="margin-top:4px">${cardSummary(nlCard)}</div></div></div>
+    <div class="stat mock"><div class="k">인프라 추천 API · 협력 기관 모의</div><div class="v sm">
+      <span class="b b-mut">AI-App 이 부르지 않음</span>
+      <div style="font-size:11.5px;color:var(--ink-3)">콘솔이 <code>/partner/rec/*</code> 로 넘겨 부릅니다 · <a class="link" onclick="show('recommend')">인프라 추천</a></div></div></div>
+    <div class="stat"><div class="k">콘솔 경로</div><div class="v sm mono">${esc(BASE)}/ui</div></div>
+  `;
+
+  let notes = '';
+  if (!tools.ok) notes += failNote(tools);
+  for (const r of [models, apps, deps]) if (!r.ok) notes += failNote(r);
+  if (!engReady.ok) {
+    notes += failNote(engReady) + `<div class="note">자동화 엔진이 응답하지 않습니다.
+      AI-App 서비스는 <code>/engine/*</code> 을 <code>AIAPP_ENGINE_URL</code> 로 넘깁니다. 엔진이 떠 있는지 확인해 주세요.</div>`;
+  }
+  if (!nlReady.ok) {
+    notes += failNote(nlReady) + `<div class="note">자연어 에이전트(협력 기관 담당 영역 · 모의 구현)가 응답하지 않습니다.
+      자연어 지시와 그 실행 기록은 에이전트가 뜰 때까지 쓸 수 없고, 이노그리드 구현 화면은 그대로 동작합니다.</div>`;
+  }
+  if (dry === false) {
+    notes += `<div class="note bad"><b>dry-run 이 꺼져 있습니다.</b>
+      배포는 Semaphore 로 노드에 실제로 설치하고, 노드 제어는 CB-Tumblebug 에 실제로 전달됩니다.</div>`;
+  } else if (dry === true) {
+    notes += `<div class="note"><b>dry-run 이 켜져 있습니다.</b>
+      배포는 노드 조회와 파일 배치까지만 하고 Semaphore 에 아무것도 등록하지 않으며, 노드 제어는 막힙니다.
+      이것은 요청 파라미터가 아니라 <b>서비스 설정</b>이라, 부르는 쪽이 엔진이든 자연어 에이전트든 바뀌지 않습니다.</div>`;
+  }
+  $('ov-notes').innerHTML = notes;
+}
+
+/* depReach is the badge of one dependency of GET /status: whether it
+   answered, and how fast. */
+function depReach(x) {
+  x = x || {};
+  if (x.configured === false) return '<span class="b b-mut">설정 안 됨</span>';
+  return x.reachable
+    ? `<span class="b b-off">응답함</span>${x.latencyMs != null ? ` <span class="mono" style="font-size:11.5px">${esc(x.latencyMs)}ms</span>` : ''}`
+    : '<span class="b b-on">응답 없음</span>';
+}
+
+/* renderDepStatus lays out GET /status: one row per dependency with what it
+   answered, then the Semaphore templates and the two settings that change
+   what a deployment does. */
+function renderDepStatus(st) {
+  const sm = st.semaphore || {}, tb = st.tumblebug || {}, sg = st.stage || {};
+  const yes = (v, on, off) => v ? `<span class="b b-off">${on}</span>` : `<span class="b b-on">${off}</span>`;
+  const rows = [
+    ['Semaphore', depReach(sm), sm.url || '-', sm.version || '-', sm.message || ''],
+    ['CB-Tumblebug', depReach(tb), tb.url || '-', tb.version || '-', tb.message || ''],
+    ['공유 저장소 (stage)', yes(sg.writable, '쓸 수 있음', '쓸 수 없음'), sg.path || '-', '-', sg.message || '']
+  ];
+  const tpls = sm.templates || [];
+  return `<table>
+      <tr><th style="width:150px">대상</th><th style="width:130px">상태</th><th>주소 · 경로</th><th style="width:220px">버전</th><th>메시지</th></tr>
+      ${rows.map(([k, b, u, v, m]) => `<tr><td>${esc(k)}</td><td>${b}</td>
+        <td class="mono" style="font-size:12px">${esc(u)}</td><td class="mono" style="font-size:12px">${esc(v)}</td>
+        <td style="font-size:12px">${esc(m)}</td></tr>`).join('')}
+    </table>
+    <table class="kv" style="margin-top:8px">
+      <tr><td>Semaphore 인증</td><td>${sm.reachable ? yes(sm.authenticated, '됨', '안 됨') : '-'}</td></tr>
+      <tr><td>Semaphore 프로젝트</td><td><span class="mono">${esc(sm.project || '-')}</span>${sm.projectId
+        ? ` · #${esc(sm.projectId)}` : ' · <span class="b b-mut">아직 없음 · 첫 배포가 만듦</span>'}</td></tr>
+      <tr><td>플레이북 템플릿</td><td>${tpls.length ? tpls.map((t) => `<span class="mono">${esc(t.name)}</span> ${t.exists
+        ? '<span class="b b-off">있음</span>' : '<span class="b b-mut">아직 없음</span>'}`).join(' · ') : '-'}</td></tr>
+      <tr><td>Semaphore 화면 주소 (uiUrl)</td><td>${/^https?:\/\//i.test(sm.uiUrl || '')
+        ? `<a class="link" href="${esc(sm.uiUrl)}" target="_blank" rel="noopener">${esc(sm.uiUrl)}</a>`
+        : '<span class="b b-mut">설정 안 됨 · 배포 기록에 태스크 링크가 없음</span>'}</td></tr>
+      <tr><td>dry-run</td><td>${st.dryRun ? '<span class="b b-off">켜짐 · Semaphore 를 부르지 않음</span>' : '<span class="b b-on">꺼짐 · 실제 실행</span>'}</td></tr>
+      <tr><td>포트 열기 (AIAPP_DEPLOYMENT_OPEN_PORTS)</td><td>${st.openPorts ? '<span class="b b-off">켜짐</span>' : '<span class="b b-mut">꺼짐 · 기록만 함</span>'}</td></tr>
+      <tr><td>확인 시각</td><td>${esc(fmtTime(st.checkedAt))}</td></tr>
+    </table>`;
+}
+
+/* statusCounts reads "running 2 · dry-run 1" off a deployment listing. */
+function statusCounts(dl) {
+  const by = dl.reduce((m, d) => (m[d.status] = (m[d.status] || 0) + 1, m), {});
+  return Object.keys(by).map((k) => `${esc(k)} ${by[k]}`).join(' · ');
+}
+
+/* A card reports the MCP session it holds now. No session means it has not
+   connected yet or lost the connection; the card cannot tell which. */
+const SESSION_NONE = '<span class="b b-mut" title="아직 연결하지 않았거나 연결이 끊겼습니다">세션 없음</span>';
+
+function engineMCPBadge(c) {
+  const s = (c.mcp && c.mcp.appServer) || {};
+  return s.connected ? `<span class="b b-off">연결됨</span> 도구 ${esc(s.toolCount)}` : SESSION_NONE;
+}
+
+/* engineCardSummary renders GET /engine/card: no model, the workflows, the
+   AI-App MCP connection and registration. */
+function engineCardSummary(r) {
+  const c = r.data;
+  if (!r.ok || !c || typeof c !== 'object') {
+    return r.status === 0 ? '<span class="b b-mut">불러오지 못함</span>'
+      : `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
+  }
+  return `<div class="mono">${esc(c.name || '-')}</div>
+    <div>LLM ${c.usesLLM ? '<span class="b b-on">사용</span>' : '<span class="b b-off">없음 (usesLLM false)</span>'}</div>
+    <div>워크플로 ${esc((c.workflows || []).length)} · <span class="mono" style="font-size:11.5px">${esc((c.workflows || []).join(', '))}</span></div>
+    <div>AI-App MCP ${engineMCPBadge(c)}</div>
+    <div>등록 ${regBadge(c.registration)}</div>`;
+}
+
+/* cardSummary renders GET /partner/nl/card as a few lines: name, model, MCP
+   connection, tool count and registration. Any failure becomes one line. */
+function cardSummary(r) {
+  const c = r.data;
+  if (!r.ok || !c || typeof c !== 'object') {
+    return r.status === 0 ? '<span class="b b-mut">불러오지 못함</span>'
+      : `<span class="b b-mut">불러오지 못함 · HTTP ${esc(r.status)}</span>`;
+  }
+  const mcp = (c.mcpServers || [])[0] || {};
+  return `<div class="mono">${esc(c.name || '-')}</div>
+    <div>모델 <span class="mono">${esc((c.llm && c.llm.model) || '-')}</span></div>
+    <div>엔진 MCP ${mcp.connected ? '<span class="b b-off">연결됨</span>' : SESSION_NONE}
+      · 도구 ${esc((c.tools || []).length)}</div>
+    <div>등록 ${regBadge(c.registration)}</div>`;
+}
+
+/* ---------- 모델 카탈로그 ---------- */
+const SAMPLE_MODEL = {
+  id: 'qwen3-0.6b',
+  name: 'Qwen3-0.6B',
+  family: 'qwen3',
+  publisher: 'Qwen',
+  parameters: '0.6B',
+  tasks: ['chat'],
+  inputModalities: ['text'],
+  license: 'apache-2.0',
+  artifacts: [
+    { id: 'ollama-q4km', source: 'ollama', ref: 'qwen3:0.6b', format: 'gguf', precision: 'Q4_K_M',
+      runtimes: [{ runtimeId: 'ollama' }] }
+  ]
+};
+
+/* MODELS_ALL is the whole catalog, unfiltered: the deployment form and the
+   filter choices are built from it. */
+let MODELS_ALL = [];
+let RUNTIMES = [];
+const MODEL_FILTERS = ['task', 'modality', 'format', 'runtimeId', 'source'];
+
+/* The filter choices are the values the catalog actually holds, so a filter
+   that cannot match anything is never offered. */
+const FILTER_VALUES = {
+  task: (m) => m.tasks || [],
+  modality: (m) => m.inputModalities || [],
+  format: (m) => (m.artifacts || []).map((a) => a.format),
+  runtimeId: (m) => (m.artifacts || []).flatMap((a) => (a.runtimes || []).map((r) => r.runtimeId)),
+  source: (m) => (m.artifacts || []).map((a) => a.source)
+};
+
+function resetNewModel() {
+  $('md-new').value = JSON.stringify(SAMPLE_MODEL, null, 2);
+  $('md-new-msg').textContent = '';
+}
+
+async function ensureModels() {
+  if (MODELS_ALL.length) return;
+  const r = await apiAll('/models', 'models');
+  if (r.ok) MODELS_ALL = (r.data && r.data.models) || [];
+}
+
+function loadModelsPage() {
+  loadModels();
+  loadRuntimes();
+}
+
+function fillModelFilters() {
+  for (const k of MODEL_FILTERS) {
+    const sel = $('md-f-' + k);
+    const keep = sel.value;
+    const vals = [...new Set(MODELS_ALL.flatMap(FILTER_VALUES[k]).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">(전체)</option>' +
+      vals.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = vals.includes(keep) ? keep : '';
+  }
+}
+
+function clearModelFilters() {
+  for (const k of MODEL_FILTERS) $('md-f-' + k).value = '';
+  loadModels();
+}
+
+async function loadModels() {
+  const q = MODEL_FILTERS.filter((k) => $('md-f-' + k).value)
+    .map((k) => k + '=' + encodeURIComponent($('md-f-' + k).value)).join('&');
+  $('md-msg').textContent = '부르는 중...';
+  const r = await apiAll('/models' + (q ? '?' + q : ''), 'models');
+  wire($('md-wire'), r);
+  $('md-msg').textContent = '';
+
+  if (!r.ok) { $('md-list').innerHTML = failNote(r); $('md-count').textContent = ''; return; }
+
+  const list = (r.data && r.data.models) || [];
+  if (!q) MODELS_ALL = list;
+  else await ensureModels();
+  fillModelFilters();
+  $('md-count').textContent = list.length + ' 건' + (q ? ' (필터 적용)' : '');
+
+  if (!list.length) {
+    $('md-list').innerHTML = `<div class="empty">${q ? '필터에 맞는 모델이 없습니다.' : '등록된 모델이 없습니다.'}</div>`;
+    return;
+  }
+
+  $('md-list').innerHTML = `<table>
+    <tr><th>모델</th><th style="width:80px">파라미터</th><th>용도 · 입력</th><th>아티팩트</th><th style="width:100px">라이선스</th></tr>
+    ${list.map((m) => `<tr class="click" onclick="showModel(${jsq(m.id)})">
+      <td><b>${esc(m.name)}</b><div class="id mono" style="font-size:11.5px;color:var(--ink-3)">${esc(m.id)}</div></td>
+      <td>${esc(m.parameters || '-')}</td>
+      <td>${(m.tasks || []).map((x) => `<span class="b b-use">${esc(x)}</span>`).join(' ')}
+        ${(m.inputModalities || []).map((x) => `<span class="b b-mut">${esc(x)}</span>`).join(' ')}</td>
+      <td style="font-size:12px">${(m.artifacts || []).map((a) =>
+        `<div><span class="mono">${esc(a.id)}</span> · ${esc(a.source)} · ${esc(a.format)}${a.precision ? ' · ' + esc(a.precision) : ''}</div>`).join('')}</td>
+      <td style="font-size:12px">${esc(m.license || '-')}</td>
+    </tr>`).join('')}</table>`;
+}
+
+async function showModel(id) {
+  const r = await api('GET', '/models/' + encodeURIComponent(id));
+  $('md-detail-panel').style.display = '';
+  $('md-detail-id').textContent = id;
+  $('md-compose-out').innerHTML = '';
+  $('md-compose-wire').innerHTML = '';
+  wire($('md-detail-wire'), r);
+  if (!r.ok) { $('md-detail').innerHTML = failNote(r); return; }
+
+  const m = r.data || {};
+  const arts = m.artifacts || [];
+  $('md-detail').innerHTML = `
+    <div class="grid g3">
+      <div class="stat"><div class="k">이름 · ID</div><div class="v sm"><b>${esc(m.name)}</b> <span class="mono">${esc(m.id)}</span></div></div>
+      <div class="stat"><div class="k">계열 · 공개 주체 · 파라미터</div><div class="v sm">${esc(m.family || '-')} · ${esc(m.publisher || '-')} · ${esc(m.parameters || '-')}</div></div>
+      <div class="stat"><div class="k">용도 · 입력</div><div class="v sm">${esc((m.tasks || []).join(', ') || '-')} · ${esc((m.inputModalities || []).join(', ') || '-')}</div></div>
+      <div class="stat"><div class="k">문맥 길이</div><div class="v sm">${m.contextLength ? esc(m.contextLength) : '<span class="b b-mut">모름</span>'}</div></div>
+      <div class="stat"><div class="k">라이선스</div><div class="v sm">${esc(m.license || '-')}</div></div>
+    </div>
+    <table style="margin-top:12px">
+      <tr><th>아티팩트</th><th>출처 (source)</th><th>ref</th><th>format</th><th>precision</th><th>sizeGiB</th>
+          <th>런타임 (최소 버전, 인자)</th><th style="width:300px">compose 미리보기</th></tr>
+      ${arts.map((a, i) => `<tr>
+        <td class="mono" style="font-size:12px"><b>${esc(a.id)}</b></td>
+        <td style="font-size:12px">${esc(a.source)}</td>
+        <td class="mono" style="font-size:12px">${esc(a.ref)}</td>
+        <td><span class="b b-mut">${esc(a.format)}</span></td>
+        <td class="mono" style="font-size:12px">${esc(a.precision || '-')}</td>
+        <td>${a.sizeGiB ? esc(a.sizeGiB) : '<span class="b b-mut">모름</span>'}</td>
+        <td style="font-size:12px">${(a.runtimes || []).map((r) =>
+          `<div><span class="mono">${esc(r.runtimeId)}</span>${r.minVersion ? ' ≥ ' + esc(r.minVersion) : ''}${(r.args || []).length ? `<div class="mono" style="font-size:11px">${esc(r.args.join(' '))}</div>` : ''}</div>`).join('')}</td>
+        <td><div class="row" style="gap:4px">
+          <select id="md-ce-${i}" style="padding:4px 6px;font-size:12px;min-width:80px">${(a.runtimes || []).map((r) =>
+            `<option value="${esc(r.runtimeId)}">${esc(r.runtimeId)}</option>`).join('')}</select>
+          <select id="md-cg-${i}" style="padding:4px 6px;font-size:12px;width:auto">
+            <option value="false">GPU 끔</option><option value="true">GPU 켬</option></select>
+          <button class="ghost btn-sm" onclick="previewCompose(${jsq(m.id)}, ${jsq(a.id)}, ${i})">compose 보기</button>
+        </div></td>
+      </tr>`).join('')}
+    </table>
+    <div class="row" style="margin-top:12px">
+      <div></div>
+      <button class="ghost" onclick="deployModel(${jsq(m.id)})">이 모델로 배포 요청 만들기</button>
+      <button class="danger" onclick="removeModel(${jsq(m.id)})">삭제</button>
+    </div>`;
+  $('md-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function previewCompose(modelId, artifactId, i) {
+  const runtimeId = $('md-ce-' + i).value;
+  const gpu = $('md-cg-' + i).value;
+  const r = await api('GET', `/models/${encodeURIComponent(modelId)}/artifacts/${encodeURIComponent(artifactId)}/compose` +
+    `?runtimeId=${encodeURIComponent(runtimeId)}&gpu=${encodeURIComponent(gpu)}`);
+  wire($('md-compose-wire'), r);
+  $('md-compose-out').innerHTML = r.ok
+    ? `<div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">docker-compose.yml ·
+        <span class="mono">${esc(modelId)} / ${esc(artifactId)}</span> · 런타임 <span class="mono">${esc(runtimeId)}</span> · GPU ${gpu === 'true' ? '켬' : '끔'}</div>
+       <pre class="json">${esc(r.raw)}</pre>`
+    : failNote(r);
+}
+
+/* deployModel carries the chosen model over to the deployment form. */
+async function deployModel(id) {
+  if (!loaded.deploy) { loaded.deploy = true; await loadDeployPage(); }
+  show('deploy');
+  $('dp-type').value = 'inference';
+  deployForm();
+  fillModelSelect();
+  $('dp-model').value = id;
+  dpModelChanged();
+}
+
+async function removeModel(id) {
+  if (!confirm(`모델 ${id} 를 카탈로그에서 지웁니다.`)) return;
+  const r = await api('DELETE', '/models/' + encodeURIComponent(id));
+  wire($('md-detail-wire'), r, 'DELETE 를 불렀습니다');
+  if (!r.ok) { $('md-detail').innerHTML = failNote(r); return; }
+  $('md-detail').innerHTML = `<div class="note">${esc(id)} 를 지웠습니다.</div>`;
+  MODELS_ALL = [];
+  loadModels();
+}
+
+async function registerModel() {
+  let body;
+  try {
+    body = JSON.parse($('md-new').value);
+  } catch (e) {
+    $('md-new-msg').textContent = 'JSON 이 아닙니다: ' + e.message;
+    return;
+  }
+  $('md-new-msg').textContent = '';
+
+  const r = await api('POST', '/models', body);
+  wire($('md-new-wire'), r);
+  if (!r.ok) {
+    $('md-new-msg').innerHTML = failNote(r);
+    return;
+  }
+  $('md-new-msg').innerHTML = `<span style="color:var(--ok)">등록되었습니다.</span>`;
+  MODELS_ALL = [];
+  await loadModels();
+  showModel((r.data && r.data.id) || body.id);
+}
+
+async function loadRuntimes() {
+  const r = await api('GET', '/runtimes');
+  wire($('eg-wire'), r);
+  if (!r.ok) { $('eg-list').innerHTML = failNote(r); return; }
+  RUNTIMES = (r.data && r.data.runtimes) || [];
+  $('eg-count').textContent = RUNTIMES.length + ' 개 · 조회만 됩니다';
+  $('eg-list').innerHTML = RUNTIMES.length ? `<table>
+    <tr><th style="width:90px">ID</th><th>이미지</th><th style="width:90px">포맷</th><th style="width:70px">포트</th>
+        <th style="width:110px">헬스 경로</th><th style="width:110px">API 경로</th></tr>
+    ${RUNTIMES.map((e) => `<tr>
+      <td class="mono"><b>${esc(e.id)}</b></td>
+      <td class="mono" style="font-size:12px">${esc(e.image)}</td>
+      <td>${(e.formats || []).map((f) => `<span class="b b-mut">${esc(f)}</span>`).join(' ')}</td>
+      <td class="mono">${esc(e.port)}</td>
+      <td class="mono" style="font-size:12px">${esc(e.healthPath || '-')}</td>
+      <td class="mono" style="font-size:12px">${esc(e.apiBasePath || '-')}</td>
+    </tr>`).join('')}</table>` : '<div class="empty">런타임 프로필이 없습니다.</div>';
+}
+
+/* ---------- 응용 ---------- */
+let APPS = [];
+
+async function ensureApps() {
+  if (!APPS.length) await loadApps();
+}
+
+const latestOf = (a) => (a.versions || []).reduce((x, v) => (!x || v.version > x.version ? v : x), null);
+const bytesOf = (s) => new TextEncoder().encode(s || '').length;
+
+async function loadApps() {
+  const r = await apiAll('/apps', 'apps');
+  wire($('ap-wire'), r);
+  if (!r.ok) { $('ap-list').innerHTML = failNote(r); $('ap-count').textContent = ''; return; }
+
+  APPS = (r.data && r.data.apps) || [];
+  $('ap-count').textContent = APPS.length + ' 개';
+  fillAppSelect();
+
+  if (!APPS.length) { $('ap-list').innerHTML = '<div class="empty">올린 응용이 없습니다.</div>'; return; }
+
+  $('ap-list').innerHTML = `<table>
+    <tr><th>이름</th><th style="width:110px">버전</th><th>최신 버전의 파일</th><th style="width:170px">최신 버전 올린 시각</th><th style="width:130px"></th></tr>
+    ${APPS.map((a) => {
+      const v = latestOf(a) || {};
+      return `<tr>
+        <td class="mono"><b>${esc(a.name)}</b></td>
+        <td>${esc((a.versions || []).length)} 개 · 최신 v${esc(v.version || '-')}</td>
+        <td class="mono" style="font-size:12px">${esc((v.files || []).map((f) => f.name).join(', ') || '(파일 없음)')}</td>
+        <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(v.createdAt))}</td>
+        <td><button class="ghost btn-sm" onclick="showApp(${jsq(a.name)})">상세</button>
+            <button class="danger btn-sm" onclick="removeApp(${jsq(a.name)})">삭제</button></td>
+      </tr>`;
+    }).join('')}</table>`;
+}
+
+async function showApp(name) {
+  const r = await api('GET', '/apps/' + encodeURIComponent(name));
+  $('ap-detail-panel').style.display = '';
+  $('ap-detail-id').textContent = name;
+  $('ap-ver').innerHTML = '';
+  $('ap-ver-wire').innerHTML = '';
+  wire($('ap-detail-wire'), r);
+  if (!r.ok) { $('ap-detail').innerHTML = failNote(r); return; }
+
+  const a = r.data || {};
+  const vs = (a.versions || []).slice().sort((x, y) => y.version - x.version);
+  $('ap-detail').innerHTML = `<table>
+    <tr><th style="width:80px">버전</th><th style="width:170px">올린 시각</th><th style="width:80px">파일</th><th>스크립트</th></tr>
+    ${vs.map((v) => `<tr class="click" onclick="showAppVersion(${jsq(a.name)}, ${Number(v.version)})">
+      <td><b>v${esc(v.version)}</b></td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(v.createdAt))}</td>
+      <td>${esc((v.files || []).length)} 개</td>
+      <td style="font-size:12px">${esc(bytesOf(v.script))} bytes · <span class="mono">${esc((v.script || '').split('\n')[0])}</span></td>
+    </tr>`).join('')}</table>
+    <div style="font-size:12px;color:var(--ink-3);margin-top:6px">버전을 누르면 파일 목록과 스크립트를 봅니다.</div>`;
+  if (vs.length) showAppVersion(a.name, vs[0].version);
+  $('ap-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function showAppVersion(name, version) {
+  const r = await api('GET', `/apps/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`);
+  wire($('ap-ver-wire'), r);
+  if (!r.ok) { $('ap-ver').innerHTML = failNote(r); return; }
+  const v = r.data || {};
+  const files = v.files || [];
+  $('ap-ver').innerHTML = `
+    <h4 style="margin:0 0 8px;font-size:13.5px">${esc(name)} v${esc(v.version)} <span class="hint" style="font-weight:400;color:var(--ink-3);font-size:12px">${esc(fmtTime(v.createdAt))}</span></h4>
+    ${files.length ? `<table>
+      <tr><th>파일</th><th style="width:110px">크기 (bytes)</th><th>sha256</th></tr>
+      ${files.map((f) => `<tr>
+        <td class="mono" style="font-size:12px">${esc(f.name)}</td>
+        <td class="mono">${esc(f.sizeBytes)}</td>
+        <td class="mono" style="font-size:11px;word-break:break-all">${esc(f.sha256)}</td>
+      </tr>`).join('')}</table>` : '<div class="empty">파일 없이 스크립트만 있습니다.</div>'}
+    <div style="font-size:12px;margin-top:8px">포트 (ports) ${(v.ports || []).length
+      ? (v.ports || []).map((p) => `<span class="mono">${esc(p)}</span>`).join(', ')
+      : '<span class="b b-mut">없음</span> · 배포해도 보안 그룹에 여는 포트가 없습니다'}</div>
+    <div style="font-size:11px;color:var(--ink-3);margin:10px 0 4px">스크립트 (노드에서 파일이 있는 폴더에서 실행)</div>
+    <pre class="json">${esc(v.script || '')}</pre>
+    <div class="row" style="margin-top:10px"><div></div>
+      <button class="ghost" onclick="deployApp(${jsq(name)}, ${Number(v.version)})">이 버전으로 배포 요청 만들기</button></div>`;
+}
+
+/* deployApp carries the chosen application version over to the deployment form. */
+async function deployApp(name, version) {
+  if (!loaded.deploy) { loaded.deploy = true; await loadDeployPage(); }
+  show('deploy');
+  $('dp-type').value = 'app';
+  deployForm();
+  $('dp-app').value = name;
+  dpAppChanged();
+  $('dp-ver').value = String(version);
+}
+
+async function removeApp(name) {
+  if (!confirm(`응용 ${name} 의 모든 버전을 지웁니다.`)) return;
+  const r = await api('DELETE', '/apps/' + encodeURIComponent(name));
+  wire($('ap-wire'), r, 'DELETE 를 불렀습니다');
+  if (!r.ok) { $('ap-list').innerHTML = failNote(r); return; }
+  if ($('ap-detail-id').textContent === name) $('ap-detail-panel').style.display = 'none';
+  loadApps();
+}
+
+async function uploadApp() {
+  const name = $('ap-name').value.trim();
+  const scriptFile = $('ap-script-file').files[0];
+  const files = [...$('ap-files').files];
+
+  const fd = new FormData();
+  fd.append('name', name);
+  const ports = $('ap-ports').value.trim();
+  if (ports) fd.append('ports', ports);
+  if (scriptFile) fd.append('script', scriptFile, scriptFile.name);
+  else fd.append('script', $('ap-script').value);
+  for (const f of files) fd.append('files', f, f.name);
+
+  $('ap-up-btn').disabled = true;
+  $('ap-up-msg').textContent = '';
+  const r = await api('POST', '/apps', fd);
+  wire($('ap-up-wire'), r);
+  $('ap-up-btn').disabled = false;
+
+  if (!r.ok) { $('ap-up-msg').innerHTML = failNote(r); return; }
+  const v = r.data || {};
+  $('ap-up-msg').innerHTML = `<span style="color:var(--ok)">${esc(name)} v${esc(v.version)} 로 올렸습니다.</span>`;
+  await loadApps();
+  showApp(name);
+}
+
+/* ---------- 배포 ---------- */
+/* DRY is the AI-App dry-run gate as GET /tools reports it; undefined until read. */
+let DRY;
+let DEPS = [];
+let DP_CURRENT = '';
+let DP_POLL = null;
+
+async function loadDryRun() {
+  const r = await api('GET', '/tools');
+  if (r.ok && r.data) DRY = r.data.dryRun;
+  $('dp-gate').innerHTML = DRY === undefined ? ''
+    : DRY ? 'dry-run 켜짐 · 노드 조회와 파일 배치까지만 합니다'
+          : '<span style="color:var(--bad)">dry-run 꺼짐 · 노드에 실제로 설치합니다</span>';
+}
+
+async function loadDeployPage() {
+  await Promise.all([ensureModels(), ensureApps(), loadDryRun()]);
+  fillModelSelect();
+  fillAppSelect();
+  deployForm();
+  loadDeployments();
+}
+
+function addTarget(t) {
+  t = t || {};
+  const row = document.createElement('div');
+  row.className = 'tg-row';
+  row.innerHTML = `
+    <input type="text" class="tg-ns" placeholder="nsId (etri)" value="${esc(t.nsId || '')}">
+    <input type="text" class="tg-infra" placeholder="infraId (travel)" value="${esc(t.infraId || '')}">
+    <input type="text" class="tg-node" placeholder="nodeId (vm1)" value="${esc(t.nodeId || '')}">
+    <input type="text" class="tg-user" placeholder="sshUser (생략 가능)" value="${esc(t.sshUser || '')}">
+    <button class="ghost" onclick="this.parentNode.remove()">빼기</button>`;
+  $('dp-targets').appendChild(row);
+}
+
+function deployForm() {
+  const ms = $('dp-type').value === 'inference';
+  $('dp-f-ms').style.display = ms ? '' : 'none';
+  $('dp-f-app').style.display = ms ? 'none' : '';
+}
+
+function fillModelSelect() {
+  const sel = $('dp-model');
+  const keep = sel.value;
+  sel.innerHTML = MODELS_ALL.map((m) =>
+    `<option value="${esc(m.id)}">${esc(m.name)} (${esc(m.id)})</option>`).join('');
+  if (keep && MODELS_ALL.some((m) => m.id === keep)) sel.value = keep;
+  dpModelChanged();
+}
+
+function dpModelChanged() {
+  const m = MODELS_ALL.find((x) => x.id === $('dp-model').value) || {};
+  const sel = $('dp-artifact');
+  const keep = sel.value;
+  const arts = m.artifacts || [];
+  sel.innerHTML = arts.map((a) =>
+    `<option value="${esc(a.id)}">${esc(a.id)} · ${esc(a.source)} · ${esc(a.format)}${a.precision ? ' · ' + esc(a.precision) : ''}</option>`).join('');
+  if (keep && arts.some((a) => a.id === keep)) sel.value = keep;
+  dpArtifactChanged();
+}
+
+function dpArtifactChanged() {
+  const m = MODELS_ALL.find((x) => x.id === $('dp-model').value) || {};
+  const a = (m.artifacts || []).find((x) => x.id === $('dp-artifact').value) || {};
+  $('dp-runtime').innerHTML = (a.runtimes || []).map((r, i) =>
+    `<option value="${esc(r.runtimeId)}">${esc(r.runtimeId)}${i === 0 ? ' (비우면 이것)' : ''}</option>`).join('');
+}
+
+function fillAppSelect() {
+  const sel = $('dp-app');
+  const keep = sel.value;
+  sel.innerHTML = APPS.map((a) => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  if (keep && APPS.some((a) => a.name === keep)) sel.value = keep;
+  dpAppChanged();
+}
+
+function dpAppChanged() {
+  const a = APPS.find((x) => x.name === $('dp-app').value) || {};
+  const sel = $('dp-ver');
+  sel.innerHTML = '<option value="0">최신 (version 생략)</option>' +
+    (a.versions || []).slice().sort((x, y) => y.version - x.version)
+      .map((v) => `<option value="${esc(v.version)}">v${esc(v.version)}</option>`).join('');
+}
+
+/* parseEnv reads KEY=VALUE lines. Blank lines and lines starting with # are
+   skipped; the server checks the names and values. */
+function parseEnv(text, field) {
+  const env = {};
+  text.split(/\r?\n/).forEach((line, i) => {
+    const l = line.trim();
+    if (!l || l.startsWith('#')) return;
+    const at = l.indexOf('=');
+    if (at < 1) throw new Error(`${field} ${i + 1}번째 줄이 KEY=VALUE 가 아닙니다`);
+    env[l.slice(0, at).trim()] = l.slice(at + 1);
+  });
+  return env;
+}
+
+/* buildDeployRequest reads the form into the body of POST /deployments. */
+function buildDeployRequest() {
+  const targets = [...document.querySelectorAll('#dp-targets .tg-row')].map((row) => {
+    const t = {
+      kind: 'node',
+      nsId: row.querySelector('.tg-ns').value.trim(),
+      infraId: row.querySelector('.tg-infra').value.trim(),
+      nodeId: row.querySelector('.tg-node').value.trim()
+    };
+    const user = row.querySelector('.tg-user').value.trim();
+    if (user) t.sshUser = user;
+    return t;
+  }).filter((t) => t.nsId || t.infraId || t.nodeId);
+
+  const type = $('dp-type').value;
+  const req = { type, targets };
+  if (type === 'inference') {
+    const ms = { modelId: $('dp-model').value, artifactId: $('dp-artifact').value };
+    if ($('dp-runtime').value) ms.runtimeId = $('dp-runtime').value;
+    if ($('dp-gpu').value) ms.gpu = $('dp-gpu').value === 'true';
+    const env = parseEnv($('dp-ms-env').value, 'env');
+    if (Object.keys(env).length) ms.env = env;
+    const args = $('dp-ms-args').value.split(/\s+/).filter(Boolean);
+    if (args.length) ms.args = args;
+    req.inference = ms;
+  } else {
+    const app = { name: $('dp-app').value };
+    const v = Number($('dp-ver').value);
+    if (v > 0) app.version = v;
+    const env = parseEnv($('dp-app-env').value, 'env');
+    if (Object.keys(env).length) app.env = env;
+    req.app = app;
+  }
+  return req;
+}
+
+async function submitDeployment() {
+  let body;
+  try {
+    body = buildDeployRequest();
+  } catch (e) {
+    $('dp-msg').textContent = e.message;
+    return;
+  }
+  if (DRY === false &&
+      !confirm('dry-run 이 꺼져 있습니다. 대상 노드에 실제로 설치하고 컨테이너를 바꿉니다. 요청할까요?')) return;
+
+  $('dp-btn').disabled = true;
+  $('dp-msg').innerHTML = '<span class="spin">부르는 중... (노드 조회와 파일 배치)</span>';
+  const r = await api('POST', '/deployments', body);
+  wire($('dp-wire'), r);
+  $('dp-btn').disabled = false;
+
+  if (!r.ok) { $('dp-msg').innerHTML = failNote(r) + platformNote(r); return; }
+  const d = r.data || {};
+  $('dp-msg').innerHTML = `<span style="color:var(--ok)">HTTP ${esc(r.status)} · 배포 ${esc(d.id)} · ${esc(d.status)}</span>`;
+  loadDeployments();
+  renderDeploymentDetail(d, r);
+}
+
+/* toEngineDeploy carries the form over to the engine deploy workflow, which
+   takes the same request and follows it to the end. */
+function toEngineDeploy() {
+  let body;
+  try {
+    body = buildDeployRequest();
+  } catch (e) {
+    $('dp-msg').textContent = e.message;
+    return;
+  }
+  show('engine');
+  $('en-wf').value = 'deploy';
+  engineForm();
+  $('en-req').value = JSON.stringify(body, null, 2);
+}
+
+/* whatOf names what a deployment request deploys. */
+function whatOf(q) {
+  q = q || {};
+  if (q.type === 'inference') {
+    const m = q.inference || {};
+    return `${m.modelId || '?'} / ${m.artifactId || '?'}${m.runtimeId ? ' · ' + m.runtimeId : ''}`;
+  }
+  if (q.type === 'app') {
+    const a = q.app || {};
+    return `${a.name || '?'} ${a.version ? 'v' + a.version : '(최신)'}`;
+  }
+  return q.type || '';
+}
+
+const targetKey = (t) => [t.nsId, t.infraId, t.nodeId].filter(Boolean).join('/');
+const targetsOf = (q) => ((q && q.targets) || []).map(targetKey).join(', ');
+
+function depBadge(s) {
+  return `<span class="b b-dp-${esc(s || 'interrupted')}">${esc(s || '-')}</span>`;
+}
+
+/* Semaphore task outcomes: success, error, stopped, rejected, or empty when
+   the task never started. */
+function taskBadge(s) {
+  if (s === 'success') return '<span class="b b-st-succeeded">success</span>';
+  if (s === 'error' || s === 'rejected') return `<span class="b b-st-failed">${esc(s)}</span>`;
+  if (s) return `<span class="b b-st-skipped">${esc(s)}</span>`;
+  return '<span class="b b-mut">시작 안 함</span>';
+}
+
+async function loadDeployments() {
+  loadEndpoints();
+  const r = await apiAll('/deployments', 'deployments');
+  wire($('dp-list-wire'), r);
+  if (!r.ok) { $('dp-list').innerHTML = failNote(r); $('dp-count').textContent = ''; return; }
+
+  DEPS = (r.data && r.data.deployments) || [];
+  fillDeploymentIds(DEPS);
+  $('dp-count').textContent = DEPS.length + ' 건' + (DEPS.length ? ' · ' + statusCounts(DEPS) : '');
+  if (!DEPS.length) { $('dp-list').innerHTML = '<div class="empty">배포가 없습니다.</div>'; return; }
+
+  $('dp-list').innerHTML = `<table>
+    <tr><th style="width:110px">배포 ID</th><th style="width:110px">종류</th><th>무엇</th><th>대상</th>
+        <th style="width:96px">상태</th><th style="width:170px">요청 시각</th></tr>
+    ${DEPS.map((d) => `<tr class="click" onclick="showDeployment(${jsq(d.id)})">
+      <td class="mono" style="font-size:12px" title="${esc(d.id)}">${esc(String(d.id || '').slice(0, 8))}</td>
+      <td><span class="b b-mut">${esc(d.type)}</span></td>
+      <td class="mono" style="font-size:12px">${esc(whatOf(d.request))}</td>
+      <td class="mono" style="font-size:12px">${esc(targetsOf(d.request))}</td>
+      <td>${depBadge(d.status)}</td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(d.createdAt))}</td>
+    </tr>`).join('')}</table>`;
+}
+
+async function loadEndpoints() {
+  const r = await apiAll('/endpoints', 'endpoints');
+  wire($('ep-list-wire'), r);
+  if (!r.ok) { $('ep-list').innerHTML = failNote(r); $('ep-count').textContent = ''; return; }
+
+  const eps = (r.data && r.data.endpoints) || [];
+  $('ep-count').textContent = eps.length + ' 건';
+  if (!eps.length) { $('ep-list').innerHTML = '<div class="empty">떠 있는 추론·응용이 없습니다.</div>'; return; }
+
+  $('ep-list').innerHTML = `<table>
+    <tr><th>노드</th><th style="width:110px">노드 상태</th><th style="width:110px">종류</th><th>무엇</th><th>주소</th>
+        <th style="width:96px">포트</th><th style="width:110px">배포 ID</th></tr>
+    ${eps.map((e) => {
+      const what = e.type === 'inference' ? `${e.runtimeId} · ${e.modelId}/${e.artifactId}` : `${e.name} v${e.version}`;
+      const urls = e.type === 'inference' ? [e.url].filter(Boolean) : (e.urls || []).map((u) => u.url);
+      const why = e.portsError || (e.notes || []).join(' / ');
+      return `<tr class="click" onclick="showDeployment(${jsq(e.deploymentId)})">
+      <td class="mono" style="font-size:12px">${esc(e.nsId + '/' + e.infraId + '/' + e.nodeId)}<br><span style="color:var(--ink-3)">${esc([e.csp, e.region].filter(Boolean).join(' · '))}</span></td>
+      <td>${e.available ? `<span class="b b-st-succeeded">${esc(e.nodeStatus)}</span>` : `<span class="b b-st-skipped">${esc(e.nodeStatus || 'unknown')}</span>`}</td>
+      <td><span class="b b-mut">${esc(e.type)}</span></td>
+      <td class="mono" style="font-size:12px">${esc(what)}</td>
+      <td class="mono" style="font-size:12px">${urls.length ? urls.map(esc).join('<br>') : '-'}</td>
+      <td title="${esc(why)}">${e.portsOpened ? '<span class="b b-st-succeeded">열림</span>' : '<span class="b b-st-skipped">확인 필요</span>'}</td>
+      <td class="mono" style="font-size:12px" title="${esc(e.deploymentId)}">${esc(String(e.deploymentId || '').slice(0, 8))}</td>
+    </tr>`;
+    }).join('')}</table>`;
+}
+
+function fillDeploymentIds(rows) {
+  $('dep-ids').innerHTML = rows.map((d) =>
+    `<option value="${esc(d.id)}">${esc(d.type)} · ${esc(whatOf(d.request))} · ${esc(d.status)}</option>`).join('');
+}
+
+async function showDeployment(id) {
+  const r = await api('GET', '/deployments/' + encodeURIComponent(id));
+  if (!r.ok) {
+    DP_CURRENT = id;
+    $('dp-detail-panel').style.display = '';
+    $('dp-detail-id').textContent = id;
+    $('dp-detail').innerHTML = failNote(r);
+    wire($('dp-detail-wire'), r);
+    return;
+  }
+  renderDeploymentDetail(r.data || {}, r);
+}
+
+/* openDeployment moves to the deployment page and opens one deployment there. */
+function openDeployment(id) {
+  show('deploy');
+  showDeployment(id);
+}
+
+function renderDeploymentDetail(d, r) {
+  const changed = DP_CURRENT !== d.id;
+  DP_CURRENT = d.id;
+  $('dp-detail-panel').style.display = '';
+  $('dp-detail-id').textContent = d.id;
+  wire($('dp-detail-wire'), r);
+  if (changed) {
+    for (const id of ['dp-ctl-out', 'dp-ctl-wire', 'dp-logs-out', 'dp-logs-wire']) $(id).innerHTML = '';
+  }
+
+  const nodes = d.nodes || [];
+  $('dp-detail').innerHTML = `
+    <div class="grid g3">
+      <div class="stat"><div class="k">상태</div><div class="v">${depBadge(d.status)}</div></div>
+      <div class="stat"><div class="k">종류 · 무엇</div><div class="v sm"><span class="b b-mut">${esc(d.type)}</span>
+        <span class="mono">${esc(whatOf(d.request))}</span></div></div>
+      <div class="stat"><div class="k">dry-run · 요청 · 끝</div><div class="v sm">${d.dryRun
+        ? '<span class="b b-off">켜짐</span>' : '<span class="b b-on">꺼짐</span>'}
+        · ${esc(fmtTime(d.createdAt))} · ${esc(d.finishedAt ? fmtTime(d.finishedAt) : '진행 중')}</div></div>
+    </div>
+    ${d.error ? `<div class="note bad"><b>배포 오류</b> ${esc(d.error)}</div>` : ''}
+    ${d.dryRun ? `<div class="note info" style="margin-top:10px"><b>dry-run 입니다.</b>
+      노드 조회와 파일 배치까지만 했고 Semaphore 에는 아무것도 등록하지 않았습니다.${d.type === 'inference'
+      ? ' 만든 compose 는 노드마다 아래에 있습니다.' : ''}</div>` : ''}
+    ${nodes.map((n) => renderNodeResult(n, d)).join('')}`;
+  $('dp-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  pollDeployment(d);
+}
+
+/* openedPortsCell lists, per security group, the ports open after the
+   deployment: added by it, or already let in by a rule of the group. */
+function openedPortsCell(n) {
+  const opened = n.openedPorts || [];
+  const err = n.portsError ? `<div class="err" style="margin-top:4px">${esc(n.portsError)}</div>` : '';
+  if (!opened.length) return (err || '-');
+  const bySG = {};
+  for (const o of opened) (bySG[o.securityGroupId] = bySG[o.securityGroupId] || []).push(o);
+  return Object.entries(bySG).map(([sg, list]) => `<div><span class="mono" style="font-size:11.5px">${esc(sg)}</span> ·
+    ${list.map((o) => `<span class="mono">${esc(o.protocol)}/${esc(o.port)}</span>${o.result === 'existing'
+      ? ' <span class="b b-mut">이미 열림</span>' : ''}`).join(', ')}</div>`).join('') + err;
+}
+
+/* taskCell shows the Semaphore task of a step, linked to its page in the
+   Semaphore UI when the record carries one (AIAPP_SEMAPHORE_UI_URL). */
+function taskCell(s) {
+  if (!s.taskId) return '-';
+  const label = '#' + esc(s.taskId);
+  return /^https?:\/\//i.test(s.taskUrl || '')
+    ? `<a class="link" href="${esc(s.taskUrl)}" target="_blank" rel="noopener" title="Semaphore 에서 태스크와 로그 보기">${label}</a>`
+    : label;
+}
+
+function renderNodeResult(n, d) {
+  const node = n.node;
+  const rows = [
+    ['노드', node ? `<span class="mono">${esc(node.csp)}</span> · ${esc(node.region || '-')}${node.zone ? ' / ' + esc(node.zone) : ''}
+      · <span class="mono">${esc(n.sshUser || node.user)}@${esc(node.host)}:${esc(node.port)}</span>` : '<span class="b b-mut">조회 못 함</span>'],
+    ['SSH 사용자 (sshUser)', n.sshUser ? `<span class="mono">${esc(n.sshUser)}</span>${node && node.user && node.user !== n.sshUser
+      ? ` · CB-Tumblebug 사용자 <span class="mono">${esc(node.user)}</span> 대신 요청의 sshUser` : ''}` : '-'],
+    ['스펙', node && node.specId ? `<span class="mono">${esc(node.specId)}</span>` : '-'],
+    ['GPU', `${n.gpu ? '<span class="b b-gpu">켬</span>' : '<span class="b b-mut">끔</span>'}${n.gpuSource ? ` · 근거 <span class="mono">${esc(n.gpuSource)}</span>` : ''}`],
+    ['작업 키 (workKey)', n.workKey ? `<span class="mono">${esc(n.workKey)}</span>` : '-'],
+    ['노드 폴더 (nodeDir)', n.nodeDir ? `<span class="mono">${esc(n.nodeDir)}</span>` : '-'],
+    ['공유 저장소 (stageDir)', n.stageDir ? `<span class="mono" style="font-size:11.5px">${esc(n.stageDir)}</span>` : '-'],
+    ['서비스 주소', n.serviceUrl ? `<span class="mono">${esc(n.serviceUrl)}</span>` : '-'],
+    ['서비스 포트 (ports)', (n.ports || []).length ? (n.ports || []).map((p) => `<span class="mono">${esc(p)}</span>`).join(', ') : '-'],
+    ['연 포트 (openedPorts)', openedPortsCell(n)],
+    ['시작 · 끝', `${esc(n.startedAt ? fmtTime(n.startedAt) : '-')} · ${esc(n.finishedAt ? fmtTime(n.finishedAt) : '-')}`]
+  ];
+  if (n.removedAt) rows.push(['내린 시각', esc(fmtTime(n.removedAt))]);
+  const steps = n.steps || [];
+  return `<div class="node-box">
+    <h4><span class="mono">${esc(targetKey(n.target || {}))}</span> ${depBadge(n.status)}</h4>
+    <table class="kv">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>
+    ${(n.notes || []).length ? `<div class="note" style="margin:8px 0 0"><b>판단 기록</b>
+      <ul style="margin:4px 0 0;padding-left:18px">${n.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    ${n.error ? `<div class="note bad" style="margin:8px 0 0"><b>노드 오류</b> ${esc(n.error)}</div>` : ''}
+    ${steps.length ? `<table style="margin-top:8px">
+      <tr><th style="width:34px">#</th><th>플레이북</th><th style="width:100px">태스크</th><th style="width:96px">결과</th><th>오류</th></tr>
+      ${steps.map((s, i) => `<tr>
+        <td>${i + 1}</td>
+        <td class="mono" style="font-size:12px">${esc(s.playbook)}${s.sshUser ? `<div style="color:var(--ink-3)">${esc(s.sshUser)}</div>` : ''}</td>
+        <td class="mono" style="font-size:12px">${taskCell(s)}</td>
+        <td>${taskBadge(s.status)}</td>
+        <td style="font-size:12px">${esc(s.error || '')}${(s.cleanupErrors || []).length
+          ? `<div class="err" style="font-size:12px">지우지 못한 Semaphore 자원: ${esc(s.cleanupErrors.join(', '))}</div>` : ''}</td>
+      </tr>`).join('')}</table>`
+      : `<div style="font-size:12px;color:var(--ink-3);margin-top:8px">${d.dryRun
+        ? 'dry-run 이라 Semaphore 태스크를 돌리지 않았습니다.' : '아직 돌린 플레이북이 없습니다.'}</div>`}
+    ${n.compose ? `<details class="wire" ${d.dryRun ? 'open' : ''}><summary>만든 docker-compose.yml</summary>
+      <pre class="json" style="margin-top:8px">${esc(n.compose)}</pre></details>` : ''}
+  </div>`;
+}
+
+/* A deployment that is still pending, deploying or removing is read again every
+   few seconds while it is the one open, for at most ten minutes. */
+const DP_BUSY = ['pending', 'deploying', 'removing'];
+
+function pollDeployment(d) {
+  if (DP_POLL) { clearTimeout(DP_POLL.timer); DP_POLL = null; }
+  $('dp-poll').textContent = '';
+  if (!DP_BUSY.includes(d.status)) return;
+  const state = { id: d.id, left: 200, timer: null };
+  DP_POLL = state;
+  const tick = async () => {
+    if (DP_POLL !== state || DP_CURRENT !== state.id) return;
+    if (--state.left < 0) { $('dp-poll').textContent = '자동 새로고침을 멈췄습니다. 목록에서 다시 여세요.'; return; }
+    const r = await api('GET', '/deployments/' + encodeURIComponent(state.id));
+    if (DP_POLL !== state || DP_CURRENT !== state.id) return;
+    if (!r.ok) { $('dp-poll').textContent = '자동 새로고침 실패 · HTTP ' + r.status; return; }
+    renderDeploymentDetail(r.data || {}, r);
+    if (r.data && !DP_BUSY.includes(r.data.status)) loadDeployments();
+  };
+  $('dp-poll').textContent = '진행 중이라 3초마다 다시 읽습니다.';
+  state.timer = setTimeout(tick, 3000);
+}
+
+async function showDeploymentLogs() {
+  if (!DP_CURRENT) return;
+  $('dp-logs-out').innerHTML = '<div class="spin">부르는 중...</div>';
+  const r = await api('GET', `/deployments/${encodeURIComponent(DP_CURRENT)}/logs`);
+  wire($('dp-logs-wire'), r);
+  if (!r.ok) { $('dp-logs-out').innerHTML = failNote(r); return; }
+  const lg = r.data || {};
+  $('dp-logs-out').innerHTML = `<div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">
+      Semaphore 태스크 로그 · 배포 상태 ${depBadge(lg.status)}</div>
+    ${(lg.nodes || []).map((n) => `<div class="node-box">
+      <h4><span class="mono">${esc(targetKey(n.target || {}))}</span> ${depBadge(n.status)}</h4>
+      ${(n.steps || []).length ? n.steps.map((s) => `
+        <div style="margin-top:8px;font-size:12px"><span class="mono">${esc(s.playbook)}</span>
+          ${s.taskId ? taskCell(s) : ''} ${taskBadge(s.status)}${s.sshUser ? ` · <span class="mono">${esc(s.sshUser)}</span> 로 접속` : ''}</div>
+        <pre class="log">${esc((s.output || []).join('\n') || '(로그 없음)')}</pre>`).join('')
+        : '<div style="font-size:12px;color:var(--ink-3)">기록된 태스크가 없습니다. dry-run 이면 Semaphore 를 부르지 않습니다.</div>'}
+    </div>`).join('')}`;
+}
+
+async function controlDeployment() {
+  if (!DP_CURRENT) return;
+  const action = $('dp-action').value;
+  if (!confirm(`배포 ${DP_CURRENT} 의 모든 노드에 ${action} 을 보냅니다.` +
+      (DRY === false ? ' dry-run 이 꺼져 있어 CB-Tumblebug 에 실제로 전달됩니다.' : ''))) return;
+
+  $('dp-ctl-out').innerHTML = '<div class="spin">부르는 중...</div>';
+  const r = await api('POST', `/deployments/${encodeURIComponent(DP_CURRENT)}/control`, { action });
+  wire($('dp-ctl-wire'), r);
+  if (!r.ok) { $('dp-ctl-out').innerHTML = failNote(r) + platformNote(r); return; }
+  const c = r.data || {};
+  const ctlBadge = (s) => s === 'done' ? '<span class="b b-st-succeeded">done</span>'
+    : s === 'blocked' ? '<span class="b b-st-blocked">blocked</span>'
+    : `<span class="b b-st-failed">${esc(s || '-')}</span>`;
+  $('dp-ctl-out').innerHTML = `<table>
+    <tr><th>노드</th><th style="width:96px">결과</th><th>메시지</th></tr>
+    ${(c.nodes || []).map((n) => `<tr>
+      <td class="mono" style="font-size:12px">${esc(targetKey(n.target || {}))}</td>
+      <td>${ctlBadge(n.status)}</td>
+      <td style="font-size:12px">${esc(n.message || '')}</td>
+    </tr>`).join('')}</table>`;
+}
+
+/* removeDeployment takes the open deployment down from its nodes. The record
+   comes back removing and is followed by pollDeployment. */
+async function removeDeployment() {
+  if (!DP_CURRENT) return;
+  if (!confirm(`배포 ${DP_CURRENT} 를 노드에서 내립니다 (docker compose down, named volume 과 노드 폴더는 남김).` +
+      (DRY === false ? ' dry-run 이 꺼져 있어 노드의 컨테이너가 실제로 내려갑니다.' : ''))) return;
+
+  $('dp-ctl-out').innerHTML = '<div class="spin">부르는 중...</div>';
+  const r = await api('DELETE', `/deployments/${encodeURIComponent(DP_CURRENT)}`);
+  wire($('dp-ctl-wire'), r);
+  if (!r.ok) { $('dp-ctl-out').innerHTML = failNote(r) + platformNote(r); return; }
+  const d = r.data || {};
+  $('dp-ctl-out').innerHTML = `<span style="color:var(--ok)">HTTP ${esc(r.status)} · 내리기 ${depBadge(d.status)}</span>`;
+  loadDeployments();
+  renderDeploymentDetail(d, r);
+}
+
+/* openEngineFor opens the engine page with a workflow over the open deployment. */
+function openEngineFor(wf) {
+  if (!DP_CURRENT) return;
+  show('engine');
+  $('en-wf').value = wf;
+  engineForm();
+  $('en-dep').value = DP_CURRENT;
+}
+
+/* A deployment failure the server answers with 5xx is often CB-Tumblebug or
+   Semaphore not answering. One line of context is added next to the server's
+   own message, never instead of it. */
+function platformNote(r) {
+  if (r.transport || r.status < 500) return '';
+  return `<div class="note info">
+    배포와 노드 제어는 <b>CB-Tumblebug</b>(<code>AIAPP_TUMBLEBUG_BASE_URL</code>)과,
+    dry-run 이 꺼져 있으면 <b>Semaphore</b>(<code>AIAPP_SEMAPHORE_URL</code>)에 닿아야 동작합니다.
+    닿지 않으면 위와 같이 실패하고, 그것을 감추지 않는 것이 이 화면의 방침입니다.</div>`;
+}
+
+/* ---------- 자동화 엔진 ---------- */
+const WF_DESC = {
+  deploy: '배포 요청(배포 화면과 같은 모양: <code>type</code>, <code>targets</code>, <code>inference</code> 또는 <code>app</code>)을 받아 모델이나 응용을 읽고(<code>get_model</code>·<code>get_app</code>), 배포를 만들고(<code>create_deployment</code>), 모든 노드가 끝날 때까지 읽습니다(<code>get_deployment</code>). 일부 노드만 성공하면(partial) 실행은 실패입니다.',
+  heal: 'failed·partial·interrupted·dry-run 인 배포를 그때의 요청으로 한 번 다시 만들고 같은 방식으로 따라갑니다. 모든 노드에서 running 인 배포는 그대로 두고, pending·deploying 인 배포는 거절합니다.',
+  control: '배포의 모든 노드에 CB-Tumblebug 노드 제어(정지·재개·재부팅·종료)를 보냅니다(<code>control_node</code>).',
+  status: '배포 기록과 노드마다 마지막 태스크 로그 줄을 읽습니다(<code>get_deployment</code>, <code>get_deployment_logs</code>). 읽기만 합니다.'
+};
+
+let ENGINE_DRY;
+
+/* sampleDeployRequest is the example the deploy input starts from: the first
+   artifact of the catalog onto one placeholder node. */
+function sampleDeployRequest() {
+  const m = MODELS_ALL[0] || {};
+  const a = (m.artifacts || [])[0] || {};
+  return {
+    type: 'inference',
+    targets: [{ kind: 'node', nsId: 'etri', infraId: 'travel', nodeId: 'vm1' }],
+    inference: { modelId: m.id || 'qwen3-embedding-0.6b', artifactId: a.id || 'hf-bf16',
+      runtimeId: ((a.runtimes || [])[0] || {}).runtimeId || 'vllm' }
+  };
+}
+
+async function loadEnginePage() {
+  engineForm();
+  loadEngineRuns();
+  const [c] = await Promise.all([api('GET', '/engine/card'), ensureModels(), loadDeploymentIds()]);
+  if (c.ok && c.data) ENGINE_DRY = c.data.dryRun;
+  if (!$('en-req').value.trim()) $('en-req').value = JSON.stringify(sampleDeployRequest(), null, 2);
+}
+
+async function loadDeploymentIds() {
+  const r = await apiAll('/deployments', 'deployments');
+  if (r.ok) { DEPS = (r.data && r.data.deployments) || []; fillDeploymentIds(DEPS); }
+}
+
+function engineForm() {
+  const wf = $('en-wf').value;
+  $('en-wf-desc').innerHTML = WF_DESC[wf] || '';
+  $('en-f-deploy').style.display = wf === 'deploy' ? '' : 'none';
+  $('en-f-target').style.display = wf === 'deploy' ? 'none' : '';
+  $('en-f-action').style.display = wf === 'control' ? '' : 'none';
+}
+
+/* engineReqFromForm copies the deployment form into the deploy input. */
+async function engineReqFromForm() {
+  if (!loaded.deploy) { loaded.deploy = true; await loadDeployPage(); }
+  try {
+    $('en-req').value = JSON.stringify(buildDeployRequest(), null, 2);
+    $('en-msg').textContent = '';
+  } catch (e) {
+    $('en-msg').textContent = e.message;
+  }
+}
+
+function engineInput(wf) {
+  if (wf === 'deploy') return JSON.parse($('en-req').value);
+  const input = { deploymentId: $('en-dep').value.trim() };
+  if (wf === 'control') input.action = $('en-action').value;
+  return input;
+}
+
+async function runWorkflow() {
+  const wf = $('en-wf').value;
+  const ns = $('en-ns').value || 'default';
+  let input;
+  try {
+    input = engineInput(wf);
+  } catch (e) {
+    $('en-msg').textContent = '배포 요청이 JSON 이 아닙니다: ' + e.message;
+    return;
+  }
+
+  /* With the gate open a deploy, heal or control run installs onto or
+     controls real nodes, so the button asks once more. Status only reads. */
+  if (wf !== 'status' && ENGINE_DRY === false &&
+      !confirm('dry-run 이 꺼져 있습니다. 대상 노드에 실제로 설치하거나 노드를 제어합니다. 실행할까요?')) return;
+
+  $('en-btn').disabled = true;
+  $('en-msg').textContent = '엔진이 단계를 실행하는 중... (배포가 끝날 때까지 따라가므로 시간이 걸릴 수 있습니다)';
+  $('en-result').innerHTML = '';
+
+  const r = await api('POST', `/engine/workflows/${encodeURIComponent(wf)}?ns=${encodeURIComponent(ns)}`, input);
+  wire($('en-wire'), r);
+  $('en-btn').disabled = false;
+  $('en-msg').textContent = '';
+
+  if (!r.ok) {
+    let extra = '';
+    if (r.status === 502) {
+      extra = `<div class="note">자동화 엔진이 응답하지 않습니다. AI-App 서비스가 <code>AIAPP_ENGINE_URL</code> 로 넘기므로 엔진이 떠 있는지 확인해 주세요.</div>`;
+    } else if (r.status === 503) {
+      extra = `<div class="note">엔진이 AI-App 의 MCP 서버(<code>AIAPP_APP_MCP_URL</code>)에 닿지 못했습니다. 실행 기록은 남지 않았습니다.</div>`;
+    } else if (r.status === 400) {
+      extra = `<div class="note">입력이 비었거나 형식이 맞지 않습니다. 워크플로마다 필요한 칸을 채워 주세요.</div>`;
+    }
+    $('en-result').innerHTML = failNote(r) + extra;
+    return;
+  }
+  $('en-result').innerHTML = renderRun(r.data || {});
+  loadEngineRuns();
+  loadDeploymentIds();
+}
+
+/* renderRun draws one engine run: a summary and every step with the AI-App
+   tool it called and how it ended. */
+function renderRun(run) {
+  const steps = run.steps || [];
+  const took = run.startedAt && run.endedAt
+    ? ((new Date(run.endedAt) - new Date(run.startedAt)) / 1000).toFixed(1) + '초' : '-';
+  const depId = deploymentOfRun(run);
+  return `
+    <div class="grid g3">
+      <div class="stat"><div class="k">상태</div><div class="v">${stBadge(run.status)}</div></div>
+      <div class="stat"><div class="k">워크플로 · 실행 ID</div><div class="v sm mono">${esc(run.workflow || '-')} · ${esc(run.runId || '-')}</div></div>
+      <div class="stat"><div class="k">dry-run · 소요</div><div class="v sm">${run.dryRun
+        ? '<span class="b b-off">켜짐</span>' : '<span class="b b-on">꺼짐</span>'} · ${esc(took)}</div></div>
+    </div>
+    <div class="note" style="margin-top:10px"><b>엔진 메시지</b> ${esc(run.message || '')}
+      ${depId ? `<div style="margin-top:4px">배포 <a class="link mono" onclick="openDeployment(${jsq(depId)})">${esc(depId)}</a></div>` : ''}</div>
+    ${steps.length ? `<table style="margin-top:8px">
+      <tr><th style="width:34px">#</th><th>단계</th><th style="width:190px">호출한 AI-App 도구</th>
+          <th style="width:96px">상태</th><th>메시지</th></tr>
+      ${steps.map((s, i) => `<tr>
+        <td>${esc(s.index || i + 1)}</td>
+        <td style="font-size:12.5px">${esc(s.name || '')}</td>
+        <td class="mono" style="font-size:12px">${esc(s.tool || '')}</td>
+        <td>${stBadge(s.status)}</td>
+        <td style="font-size:12px;color:var(--ink-2)">${esc(s.message || '')}
+          ${s.error ? `<div class="err" style="font-size:12px">${esc(s.error)}</div>` : ''}</td>
+      </tr>`).join('')}
+    </table>` : '<div class="empty">단계가 없습니다.</div>'}
+    ${steps.some((s) => s.status === 'blocked')
+      ? `<div class="note warn" style="margin-top:12px"><b>dry-run 게이트가 막은 단계가 있습니다.</b>
+         그 결과가 있어야 하는 다음 단계는 실행한 것처럼 보이지 않게 <code>waiting</code> 으로 남깁니다.</div>` : ''}`;
+}
+
+/* deploymentOfRun finds the deployment a run is about: the one it was given,
+   or the one its create_deployment step made. */
+function deploymentOfRun(run) {
+  if (run.input && run.input.deploymentId) return run.input.deploymentId;
+  for (const s of run.steps || []) {
+    if (s.tool === 'create_deployment' && s.output && s.output.id) return s.output.id;
+  }
+  return '';
+}
+
+async function loadEngineRuns() {
+  const r = await api('GET', '/engine/runs');
+  wire($('en-runs-wire'), r);
+  if (!r.ok) { $('en-runs').innerHTML = failNote(r); $('en-runs-count').textContent = ''; return; }
+
+  const runs = (r.data && r.data.runs) || [];
+  $('en-runs-count').textContent = runs.length + ' 건' + pageNote(r.data, runs.length);
+  if (!runs.length) { $('en-runs').innerHTML = '<div class="empty">아직 엔진 실행이 없습니다.</div>'; return; }
+
+  $('en-runs').innerHTML = `<table>
+    <tr><th style="width:150px">실행 ID</th><th style="width:80px">워크플로</th><th style="width:96px">상태</th>
+        <th>대상</th><th style="width:170px">시각</th></tr>
+    ${runs.map((x) => `<tr class="click" onclick="showEngineRun(${jsq(x.runId)})">
+      <td class="mono" style="font-size:12px">${esc(x.runId)}</td>
+      <td class="mono" style="font-size:12px">${esc(x.workflow)}</td>
+      <td>${stBadge(x.status)}</td>
+      <td style="font-size:12.5px">${esc(targetOf(x))}</td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(x.startedAt))}</td>
+    </tr>`).join('')}</table>`;
+}
+
+async function showEngineRun(id) {
+  if (!id) return;
+  const r = await api('GET', '/engine/runs/' + encodeURIComponent(id));
+  $('en-detail-panel').style.display = '';
+  $('en-detail-id').textContent = id;
+  $('en-detail').innerHTML = r.ok ? renderRun(r.data || {}) : failNote(r);
+  wire($('en-detail-wire'), r);
+  $('en-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* openEngineRun moves to the engine page and opens one run there. */
+function openEngineRun(id) {
+  show('engine');
+  showEngineRun(id);
+}
+
+/* ---------- 모니터링 ---------- */
+/* workKeyOf is the work key a node result records, or the one the request
+   implies by the same rule when the record has none. */
+function workKeyOf(n, d) {
+  if (n.workKey) return { key: n.workKey, derived: false };
+  const q = d.request || {};
+  if (q.type === 'inference') return { key: 'ms-' + ((q.inference || {}).runtimeId || '?'), derived: true };
+  if (q.type === 'app') return { key: 'app-' + ((q.app || {}).name || '?'), derived: true };
+  return { key: '-', derived: true };
+}
+
+async function loadMonitor() {
+  const r = await apiAll('/deployments', 'deployments');
+  wire($('mo-wire'), r);
+  if (!r.ok) { $('mo-stats').innerHTML = failNote(r); $('mo-nodes').innerHTML = ''; return; }
+
+  DEPS = (r.data && r.data.deployments) || [];
+  fillDeploymentIds(DEPS);
+  const order = ['deploying', 'pending', 'running', 'dry-run', 'partial', 'failed', 'interrupted'];
+  const by = DEPS.reduce((m, d) => (m[d.status] = (m[d.status] || 0) + 1, m), {});
+  const keys = order.filter((k) => by[k]).concat(Object.keys(by).filter((k) => !order.includes(k)));
+  $('mo-stats').innerHTML = `<div class="stat"><div class="k">전체 배포</div><div class="v">${DEPS.length}</div></div>` +
+    keys.map((k) => `<div class="stat"><div class="k">${depBadge(k)}</div><div class="v">${by[k]}</div></div>`).join('');
+
+  /* The listing is newest first, so the first deployment seen for a node and
+     work key is the one that holds the node folder now. */
+  const seen = new Map();
+  for (const d of DEPS) {
+    for (const n of d.nodes || []) {
+      const wk = workKeyOf(n, d);
+      const k = targetKey(n.target || {}) + '|' + wk.key;
+      if (!seen.has(k)) seen.set(k, { d, n, wk });
+    }
+  }
+  const rows = [...seen.values()];
+  $('mo-nodes').innerHTML = rows.length ? `<table>
+    <tr><th>노드</th><th style="width:130px">작업 키</th><th>무엇</th><th style="width:96px">상태</th>
+        <th>서비스 주소</th><th style="width:100px">배포</th><th style="width:170px">요청 시각</th></tr>
+    ${rows.map(({ d, n, wk }) => `<tr>
+      <td class="mono" style="font-size:12px">${esc(targetKey(n.target || {}))}</td>
+      <td class="mono" style="font-size:12px">${esc(wk.key)}${wk.derived ? ' <span class="b b-mut">계산</span>' : ''}</td>
+      <td class="mono" style="font-size:12px">${esc(whatOf(d.request))}</td>
+      <td>${depBadge(n.status)}</td>
+      <td class="mono" style="font-size:12px">${esc(n.serviceUrl || '-')}</td>
+      <td><a class="link mono" style="font-size:12px" onclick="openDeployment(${jsq(d.id)})">${esc(String(d.id).slice(0, 8))}</a></td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(d.createdAt))}</td>
+    </tr>`).join('')}</table>` : '<div class="empty">배포가 없습니다.</div>';
+}
+
+/* ---------- 도구 ---------- */
+const GRADE_NOTE = {
+  read: '조회만 합니다. 게이트에 걸리지 않고 항상 실행됩니다.',
+  review: '아무것도 만들지 않고 가능 여부와 비용만 돌려줍니다.',
+  write: '자원을 만들거나 상태를 바꿉니다. dry-run 이 켜져 있으면 막힙니다.',
+  destructive: '되돌릴 수 없습니다. dry-run 이 켜져 있으면 막힙니다.'
+};
+const GRADE_ORDER = ['read', 'review', 'write', 'destructive'];
+
+const gateBadge = (t) => t.guardedByDryRun ? '<span class="b b-on">걸림</span>' : '<span class="b b-mut">없음</span>';
+const gradeBadge = (g) => g ? `<span class="b b-${esc(g)}">${esc(g)}</span>` : '<span class="b b-mut">?</span>';
+
+/* engineToolsTable renders tools.exposed of the engine card: the tools the
+   natural language agent and outside agents call. The card carries no
+   description, so the table shows the name, grade and gate only. */
+function engineToolsTable(c) {
+  const exposed = ((c.tools && c.tools.exposed) || []).slice()
+    .sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade));
+  $('tl-eng-count').textContent = exposed.length + ' 개';
+  if (!exposed.length) return '<div class="empty">엔진 기술서에 공개 도구가 없습니다.</div>';
+  return `<div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">
+      엔진 MCP <code>${esc(c.mcpEndpoint || '-')}</code></div>
+    <table>
+      <tr><th style="width:230px">도구</th><th style="width:110px">등급</th><th>등급의 뜻</th><th style="width:78px">게이트</th></tr>
+      ${exposed.map((t) => `<tr>
+        <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b></td>
+        <td>${gradeBadge(t.grade)}</td>
+        <td style="font-size:12.5px;color:var(--ink-2)">${esc(GRADE_NOTE[t.grade] || '')}</td>
+        <td>${gateBadge(t)}</td>
+      </tr>`).join('')}
+    </table>`;
+}
+
+async function loadTools() {
+  const [r, c] = await Promise.all([api('GET', '/tools'), api('GET', '/engine/card')]);
+  wire($('tl-wire'), r);
+  wire($('tl-eng-wire'), c);
+
+  const card = c.ok && c.data && typeof c.data === 'object' ? c.data : null;
+  $('tl-eng-list').innerHTML = card ? engineToolsTable(card)
+    : failNote(c) + `<div class="note">자동화 엔진의 기술서를 못 읽어 엔진 도구와 <span class="b b-use">엔진이 사용</span> 표시를 낼 수 없습니다.</div>`;
+  if (!card) $('tl-eng-count').textContent = '';
+  const used = new Set(((card && card.tools && card.tools.uses) || []).map((t) => t.name));
+
+  if (!r.ok) { $('tl-gate').innerHTML = failNote(r); $('tl-list').innerHTML = ''; $('tl-count').textContent = ''; return; }
+
+  const dry = r.data.dryRun;
+  const list = r.data.tools || [];
+  $('tl-count').textContent = list.length + ' 개';
+
+  $('tl-gate').innerHTML = dry
+    ? `<div class="note"><b>dry-run 켜짐.</b> <code>write</code> 와 <code>destructive</code> 도구는
+       계획과 사전 검증까지만 하고 멈춥니다. 아래에서 <span class="b b-on">걸림</span> 이 붙은 것들입니다.<br><br>
+       이것은 <b>요청 파라미터가 아니라 서비스 설정</b>입니다. 자동화 엔진이 부르든 API 를 직접 부르든 도구 계층에서 막고,
+       엔진은 막힌 단계를 <span class="b b-st-blocked">blocked</span> 로 기록합니다.</div>`
+    : `<div class="note bad"><b>dry-run 꺼짐.</b> 쓰기 도구가 실제로 실행되고 과금됩니다.</div>`;
+
+  $('tl-list').innerHTML = GRADE_ORDER.map((g) => {
+    const items = list.filter((t) => t.grade === g);
+    if (!items.length) return '';
+    return `
+      <div style="margin-bottom:20px">
+        <div style="margin-bottom:6px">
+          <span class="b b-${g}">${g}</span>
+          <span style="font-size:12px;color:var(--ink-2);margin-left:8px">${esc(GRADE_NOTE[g] || '')}</span>
+        </div>
+        <table>
+          <tr><th style="width:230px">도구</th><th>하는 일</th><th style="width:78px">게이트</th></tr>
+          ${items.map((t) => `<tr>
+            <td class="mono" style="font-size:12px"><b>${esc(t.name)}</b>
+              ${used.has(t.name) ? '<span class="b b-use" style="margin-left:6px">엔진이 사용</span>' : ''}
+              <details class="wire" style="margin-top:6px;border:0;padding:0">
+                <summary style="font-size:11px">입력 스키마</summary>
+                <pre class="json" style="margin-top:6px;font-size:11px">${esc(JSON.stringify(t.inputSchema, null, 2))}</pre>
+              </details>
+            </td>
+            <td style="font-size:12.5px;color:var(--ink-2)">${esc(t.description)}</td>
+            <td>${gateBadge(t)}</td>
+          </tr>`).join('')}
+        </table>
+      </div>`;
+  }).join('');
+}
+
+/* ---------- 협력 기관 · 자연어 지시 ---------- */
+/* mdLite renders the markdown subset a model answer uses: headings, lists,
+   bold, inline code, paragraphs, rules and pipe tables. The whole text is
+   escaped first and only these patterns become fixed tags, so links, images
+   and raw HTML stay visible as escaped text. */
+function mdInline(s) {
+  return s.split(/(`[^`]+`)/).map((part, i) => i % 2
+    ? `<code>${part.slice(1, -1)}</code>`
+    : part.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('');
+}
+
+function mdLite(src) {
+  const lines = esc(src).replace(/\r\n?/g, '\n').split('\n');
+  const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+  const isSep = (l) => /^\s*\|?(\s*:?-{3,}:?\s*\|)+(\s*:?-{3,}:?\s*)?\|?\s*$/.test(l);
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((x) => mdInline(x.trim()));
+  const out = [];
+  let para = [];
+  let list = null;
+  const flush = () => {
+    if (para.length) out.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
+    if (list) {
+      // A model numbers items across blank lines and nested lists, so an
+      // ordered list keeps the number it started at instead of restarting at 1.
+      const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+      out.push(`<${list.tag}${start}>${list.items.map((x) => `<li>${mdInline(x.text)}${x.sub.length
+        ? `<ul>${x.sub.map((y) => `<li>${mdInline(y)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${list.tag}>`);
+    }
+    para = [];
+    list = null;
+  };
+  const item = (tag, text, start) => {
+    if (para.length || (list && list.tag !== tag)) flush();
+    if (!list) list = { tag, items: [], start: start || 1 };
+    list.items.push({ text, sub: [] });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    let m;
+    if (!l.trim()) { flush(); continue; }
+    if (isRow(l) && i + 1 < lines.length && isSep(lines[i + 1])) {
+      flush();
+      const head = cells(l);
+      const body = [];
+      i += 2;
+      while (i < lines.length && isRow(lines[i])) body.push(cells(lines[i++]));
+      i--;
+      out.push(`<table><tr>${head.map((x) => `<th>${x}</th>`).join('')}</tr>${body.map((r) =>
+        `<tr>${r.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('')}</table>`);
+      continue;
+    }
+    if ((m = /^\s*(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l))) {
+      flush();
+      const tag = m[1].length <= 2 ? 'h4' : 'h5';
+      out.push(`<${tag}>${mdInline(m[2])}</${tag}>`);
+      continue;
+    }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push('<hr>'); continue; }
+    // An indented bullet under an existing item is that item's sub-list.
+    if (list && (m = /^\s{2,}[-*+]\s+(.*)$/.exec(l))) { list.items[list.items.length - 1].sub.push(m[1]); continue; }
+    if ((m = /^\s*[-*+]\s+(.*)$/.exec(l))) { item('ul', m[1]); continue; }
+    if ((m = /^\s*(\d+)[.)]\s+(.*)$/.exec(l))) { item('ol', m[2], Number(m[1])); continue; }
+    if (list) flush();
+    para.push(l.trim());
+  }
+  flush();
+  return out.join('');
+}
+
+async function runIntent() {
+  const intent = $('in-q').value;
+  const ns = $('in-ns').value || 'default';
+
+  $('in-btn').disabled = true;
+  $('in-result').innerHTML = '';
+  const t0 = Date.now();
+  const tick = () => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('in-msg').textContent = `모델 응답 대기 ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}
+      (모의 에이전트의 LLM 이 엔진 도구 호출을 반복하므로 시간이 걸릴 수 있습니다)`;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+
+  const r = await api('POST', `/partner/nl/ns/${encodeURIComponent(ns)}/intents`, { intent });
+  clearInterval(timer);
+  wire($('in-wire'), r);
+
+  $('in-btn').disabled = false;
+  $('in-msg').textContent = '';
+
+  if (!r.ok) {
+    let extra = '';
+    const msg = (r.data && r.data.message) || '';
+    if (r.status === 502) {
+      extra = `<div class="note">자연어 에이전트(모의)가 응답하지 않습니다. 지시는 AI-App 서비스를 거쳐
+        에이전트(<code>AIAPP_MOCK_NL_URL</code>)로 넘어가므로, 에이전트가 떠 있는지 확인해 주세요.</div>`;
+    } else if (r.status === 503 && /tool server/i.test(msg)) {
+      extra = `<div class="note">에이전트가 자동화 엔진의 MCP 서버(<code>AIAPP_MOCK_NL_ENGINE_MCP_URL</code>)에 닿지 못했습니다.
+        엔진이 뜨면 다음 지시부터 다시 붙습니다.</div>`;
+    } else if (r.status === 503) {
+      extra = `<div class="note">모의 에이전트의 LLM 이 설정되지 않았습니다. <code>AIAPP_LLM_API_KEY</code> 를 주면
+        이 경로가 열립니다. <b>이노그리드 구현(AI-App, 자동화 엔진)은 이것과 무관하게 전부 동작합니다</b> -
+        엔진은 자동화 엔진 화면에서 구조화된 요청으로 직접 실행할 수 있습니다.</div>`;
+    }
+    $('in-result').innerHTML = failNote(r) + extra;
+    return;
+  }
+
+  const d = r.data || {};
+  const steps = d.steps || [];
+  const answer = d.answer || '';
+  const mk = /^(\[partner mock\])[ \t]*/.exec(answer);
+  $('in-result').innerHTML = `
+    <div class="stat mock" style="margin-bottom:12px">
+      <div class="k">에이전트의 답 · ${esc(d.runId || '')}</div>
+      <div class="v sm md">${mk ? `<div class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(mk[1])}</div>` : ''}${mdLite(mk ? answer.slice(mk[0].length) : answer)}</div>
+    </div>
+    ${steps.length ? `<table>
+      <tr><th style="width:34px">#</th><th>엔진 도구</th><th style="width:96px">등급</th>
+          <th style="width:86px">실행</th><th style="width:200px">엔진 실행</th><th>인자</th></tr>
+      ${steps.map((s, i) => `<tr>
+        <td>${i + 1}</td>
+        <td class="mono" style="font-size:12px">${esc(s.tool || s.name || '')}</td>
+        <td><span class="b b-${esc(s.grade || 'mut')}">${esc(s.grade || '?')}</span></td>
+        <td>${s.error
+              ? '<span class="b b-mut">실패</span>'
+              : s.executed === false
+                ? '<span class="b b-on">막힘</span>'
+                : '<span class="b b-off">실행됨</span>'}</td>
+        <td>${s.engineRunId
+              ? `<a class="link mono" style="font-size:12px" onclick="openEngineRun(${jsq(s.engineRunId)})">${esc(s.engineRunId)}</a>
+                 ${s.engineStatus ? stBadge(s.engineStatus) : ''}`
+              : '<span class="b b-mut">없음</span>'}</td>
+        <td><pre class="json" style="max-height:120px;font-size:11px">${esc(JSON.stringify(s.input ?? {}, null, 2))}</pre>
+          ${s.error ? `<div class="err" style="font-size:12px">${esc(s.error)}</div>` : ''}</td>
+      </tr>`).join('')}
+    </table>` : '<div class="empty">도구 호출이 없었습니다.</div>'}
+    ${steps.some((s) => s.executed === false && !s.error)
+      ? `<div class="note warn" style="margin-top:12px"><b>게이트가 막은 호출이 있습니다.</b>
+         엔진 실행 ID 를 누르면 어느 단계가 막혔는지 봅니다.</div>` : ''}
+    ${steps.some((s) => s.error)
+      ? `<div class="note" style="margin-top:12px"><b>실패한 호출이 있습니다.</b>
+         게이트와 무관하게 도구가 오류를 냈고, 서버가 낸 메시지를 그대로 보여 줍니다.</div>` : ''}`;
+}
+
+/* ---------- 협력 기관 · 인프라 추천 ---------- */
+/* SAMPLE_REC_APP holds the fields of the recommendation contract and nothing
+   else: what the partner institution's API reads from an application. */
+const SAMPLE_REC_APP = {
+  id: 'qwen3-vl-8b',
+  accelerator: { type: 'gpu', model: '', minCount: 1, minMemoryGiB: 24 },
+  resources: { minVCPU: 8, minMemoryGiB: 32 },
+  install: { osType: 'ubuntu 22.04' }
+};
+
+/* The AI-App service forwards /partner/rec/* to the recommendation API with
+   that prefix taken off, so these reach /recommendations/specs and /image. */
+const REC_SPECS = '/partner/rec/recommendations/specs';
+const REC_IMAGE = '/partner/rec/recommendations/image';
+
+function resetRecommend() {
+  $('rc-app').value = JSON.stringify(SAMPLE_REC_APP, null, 2);
+  $('rc-msg').textContent = '';
+  for (const id of ['rc-spec-out', 'rc-spec-wire', 'rc-img-out', 'rc-img-wire']) $(id).innerHTML = '';
+  renderRecommendCurl();
+}
+
+/* readRecApp reads the app JSON, or says why it cannot and returns null. */
+function readRecApp() {
+  let app;
+  try {
+    app = JSON.parse($('rc-app').value);
+  } catch (e) {
+    $('rc-msg').textContent = 'JSON 이 아닙니다: ' + e.message;
+    return null;
+  }
+  if (!app || typeof app !== 'object' || Array.isArray(app)) {
+    $('rc-msg').textContent = 'app 은 JSON 객체여야 합니다.';
+    return null;
+  }
+  $('rc-msg').textContent = '';
+  return app;
+}
+
+function specsBody(app) {
+  const limit = Number($('rc-limit').value) || 0;
+  return limit > 0 ? { app, limit } : { app };
+}
+
+/* recFailNote adds what a status means here: 502 from AI-App itself is the
+   API not reached, 502 from the API is CB-Tumblebug not answering it. */
+function recFailNote(r) {
+  let extra = '';
+  if (r.status === 502 && /not reachable from the AI-App service/.test((r.data && r.data.message) || '')) {
+    extra = `<div class="note info">AI-App 이 추천 API(<code>AIAPP_PARTNER_REC_URL</code>)에 닿지 못했습니다.
+      모의 구현(<code>mock-partner-recommender</code>)이 떠 있는지 확인해 주세요.</div>`;
+  } else if (r.status === 502) {
+    extra = `<div class="note info"><b>추천 API(모의)까지는 닿았습니다.</b> 모의 구현이 CB-Tumblebug 의 스펙·이미지 검색에서
+      답을 받지 못해 <code>502</code> 로 돌려준 것입니다. 모의 구현의 <code>AIAPP_TUMBLEBUG_BASE_URL</code> 을 확인해 주세요.</div>`;
+  } else if (r.status === 401) {
+    extra = `<div class="note info">추천 API 가 토큰을 거절했습니다. AI-App 은 이 화면의 토큰을 그대로 넘기므로
+      모의 구현의 <code>AIAPP_MOCK_RECOMMENDER_TOKEN</code> 은 <code>AIAPP_AUTH_TOKEN</code> 과 같아야 합니다.</div>`;
+  }
+  return failNote(r) + extra;
+}
+
+async function runSpecs() {
+  const app = readRecApp();
+  if (!app) return;
+  renderRecommendCurl();
+  $('rc-spec-btn').disabled = true;
+  $('rc-spec-out').innerHTML = '<div class="spin">추천 API 를 부르는 중...</div>';
+  const r = await api('POST', REC_SPECS, specsBody(app));
+  wire($('rc-spec-wire'), r, '스펙 추천 요청과 응답');
+  $('rc-spec-btn').disabled = false;
+  if (!r.ok) { $('rc-spec-out').innerHTML = recFailNote(r); return; }
+
+  const d = r.data || {};
+  const rows = d.candidates || [];
+  $('rc-spec-out').innerHTML = `
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">
+      출처 <span class="b b-mock">협력 기관 추천 API(모의)</span> · 후보 ${rows.length} 건</div>
+    ${d.reason ? `<div class="note" style="margin-top:0"><b>근거</b> ${esc(d.reason)}</div>` : ''}
+    ${rows.length ? `<table>
+      <tr><th>스펙</th><th>CSP · 리전</th><th>가속기</th><th>vCPU / 메모리</th><th>시간당</th></tr>
+      ${rows.map((c) => `<tr class="click" onclick="$('rc-spec').value=${jsq(c.id)}">
+        <td class="mono" style="font-size:12px">${esc(c.id)}</td>
+        <td style="font-size:12px">${esc(c.providerName || '-')} · ${esc(c.regionName || '-')}</td>
+        <td>${esc(c.acceleratorModel || c.acceleratorType || '-')}${c.acceleratorCount ? ` x${esc(c.acceleratorCount)}` : ''}
+          ${c.acceleratorMemoryGB ? ` · ${esc(c.acceleratorMemoryGB)}GB` : ''}</td>
+        <td>${esc(c.vCPU || '-')} / ${esc(c.memoryGiB || '-')}GiB</td>
+        <td>${esc(c.costPerHour ?? '-')}</td>
+      </tr>`).join('')}</table>` : '<div class="empty">조건에 맞는 스펙이 없습니다.</div>'}`;
+}
+
+async function runImage() {
+  const app = readRecApp();
+  if (!app) return;
+  const specId = $('rc-spec').value.trim();
+  if (!specId) { $('rc-msg').textContent = '이미지 추천에는 specId 가 필요합니다. 스펙 후보를 누르거나 직접 넣어 주세요.'; return; }
+  renderRecommendCurl();
+  $('rc-img-btn').disabled = true;
+  $('rc-img-out').innerHTML = '<div class="spin">추천 API 를 부르는 중...</div>';
+  const r = await api('POST', REC_IMAGE, { app, specId });
+  wire($('rc-img-wire'), r, '이미지 추천 요청과 응답');
+  $('rc-img-btn').disabled = false;
+  if (!r.ok) { $('rc-img-out').innerHTML = recFailNote(r); return; }
+  const d = r.data || {};
+  $('rc-img-out').innerHTML = `<table>
+    <tr><th style="width:90px">값</th><th>정한 것</th><th>출처</th><th>근거</th></tr>
+    <tr><td>이미지</td><td class="mono" style="font-size:12px">${esc(d.imageId || '-')}</td>
+      <td class="mono" style="font-size:12px">${esc(d.source || '-')}</td>
+      <td style="font-size:12px;color:var(--ink-2)">${esc(d.reason || '')}</td></tr>
+  </table>`;
+}
+
+/* shq quotes a string for a POSIX shell. */
+const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+
+/* renderRecommendCurl keeps the same two calls as curl commands through the
+   AI-App address, for trying the contract outside the console. */
+function renderRecommendCurl() {
+  let app;
+  try { app = JSON.parse($('rc-app').value); } catch (_) { app = null; }
+  if (!app) { $('rc-curl').innerHTML = ''; return; }
+  const origin = location.origin + BASE;
+  const call = (path, body) => `curl -sS -X POST ${shq(origin + path)} \\\n` +
+    `  -H 'Content-Type: application/json' \\\n` +
+    `  -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" \\\n` +
+    `  -d ${shq(JSON.stringify(body))}`;
+  const specId = $('rc-spec').value.trim() || '<스펙 후보의 id>';
+  $('rc-curl').innerHTML = `<summary>같은 호출을 curl 로 (참고용)</summary>
+    <div class="wire-body">
+      <pre class="log">${esc(call(REC_SPECS, specsBody(app)))}</pre>
+      <pre class="log">${esc(call(REC_IMAGE, { app, specId }))}</pre>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:6px">인증이 꺼져 있으면 <code>Authorization</code> 줄은 무시됩니다.</div>
+    </div>`;
+}
+
+/* ---------- 아카이브 ---------- */
+/* Three processes keep three archives: node deployment and control calls in
+   the AI-App service, workflow runs in the engine, intent runs in the partner
+   agent mock. All are read and merged by start time, and each row remembers
+   where it came from so its detail is read from the same place. The AI-App
+   listing is { records }, the other two { runs }. */
+const ARCHIVES = [
+  { path: '/archive', label: 'AI-App 배포·제어', key: 'records', mock: false },
+  { path: '/engine/runs', label: '자동화 엔진', key: 'runs', mock: false, engine: true },
+  { path: '/partner/nl/runs', label: '자연어 지시', key: 'runs', mock: true }
+];
+
+const KIND_KO = { 'node-deployment': '노드 배포', 'node-control': '노드 제어', intent: '자연어 지시' };
+
+/* targetOf names what a record was about: an instruction, the deployment
+   request it carried, or the deployment and action it named. */
+function targetOf(x) {
+  if (x.intent) return x.intent;
+  const i = x.input || (x.steps && x.steps[0] && x.steps[0].input) || {};
+  if (i.type) return [i.type, whatOf(i), targetsOf(i)].filter(Boolean).join(' · ');
+  return [i.deploymentId || i.id, i.action].filter(Boolean).join(' · ');
+}
+
+/* stepsStatus reads the state of a record that carries no status from its
+   steps. A node deployment record keeps the deployment status in its step
+   output; otherwise any error is failed, a step the gate held is blocked, and
+   every step executed is 실행됨. */
+function stepsStatus(x) {
+  const steps = x.steps || [];
+  const out = (steps[0] && steps[0].output) || {};
+  if (x.kind === 'node-deployment' && out.status) return depBadge(out.status);
+  if (x.error || steps.some((s) => s.error)) return stBadge('failed');
+  if (steps.some((s) => s.engineStatus === 'blocked' || s.executed === false)) return stBadge('blocked');
+  if (steps.length && steps.every((s) => s.executed)) return '<span class="b b-st-succeeded">실행됨</span>';
+  return '<span class="b b-mut">-</span>';
+}
+
+async function loadArchive() {
+  const results = await Promise.all(ARCHIVES.map((a) => api('GET', a.path)));
+  wire($('ar-wire'), results[1], 'GET /archive, GET /engine/runs, GET /partner/nl/runs 를 불렀습니다 (아래는 engine/runs)');
+
+  let notes = '';
+  const rows = [];
+  results.forEach((r, i) => {
+    if (!r.ok) {
+      notes += `<div class="note bad"><b>${esc(ARCHIVES[i].label)} 기록을 못 읽었습니다.</b></div>` + failNote(r);
+      return;
+    }
+    ((r.data && r.data[ARCHIVES[i].key]) || []).forEach((x) => rows.push({ ...x, _src: i }));
+  });
+  rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+
+  const bySrc = ARCHIVES.map((a, i) => {
+    const shown = rows.filter((x) => x._src === i).length;
+    return `${a.label} ${shown}${results[i].ok ? pageNote(results[i].data, shown) : ''}`;
+  }).join(' · ');
+  $('ar-count').textContent = rows.length + ' 건 (' + bySrc + ')';
+
+  if (!rows.length) {
+    $('ar-list').innerHTML = notes + `<div class="empty">아직 기록이 없습니다.
+      엔진 워크플로를 실행하거나 배포를 부르면 여기에 쌓입니다.</div>`;
+    return;
+  }
+
+  $('ar-list').innerHTML = notes + `<table>
+    <tr><th style="width:170px">실행 ID</th><th style="width:170px">출처</th><th style="width:130px">종류</th>
+        <th style="width:96px">상태</th><th>지시 / 대상</th><th style="width:170px">시각</th></tr>
+    ${rows.map((x) => {
+      const src = ARCHIVES[x._src];
+      const status = x.status ? stBadge(x.status) : stepsStatus(x);
+      return `<tr class="click" onclick="showRun(${x._src}, ${jsq(x.runId || x.id || '')})">
+      <td class="mono" style="font-size:12px">${esc(x.runId || x.id || '')}</td>
+      <td style="font-size:12px">${src.mock
+        ? `<span class="b b-mock">협력 기관 · 모의</span> ${esc(src.label)}` : esc(src.label)}</td>
+      <td><span class="b b-mut">${esc(x.workflow || x.kind || '-')}</span>${!x.workflow && KIND_KO[x.kind]
+        ? `<div style="font-size:11px;color:var(--ink-3)">${esc(KIND_KO[x.kind])}</div>` : ''}</td>
+      <td>${status}</td>
+      <td style="font-size:12.5px">${esc(targetOf(x))}</td>
+      <td style="font-size:12px;color:var(--ink-3)">${esc(fmtTime(x.startedAt || x.at))}</td>
+    </tr>`;
+    }).join('')}</table>`;
+}
+
+async function showRun(src, id) {
+  if (!id) return;
+  const r = await api('GET', ARCHIVES[src].path + '/' + encodeURIComponent(id));
+  $('ar-detail-panel').style.display = '';
+  $('ar-detail-id').textContent = ARCHIVES[src].label + ' · ' + id;
+  $('ar-detail-run').innerHTML = ARCHIVES[src].engine && r.ok ? renderRun(r.data || {}) : '';
+  $('ar-detail').textContent = r.data ? JSON.stringify(r.data, null, 2) : r.raw;
+  wire($('ar-detail-wire'), r);
+  $('ar-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ---------- boot ---------- */
+renderToken();
+resetNewModel();
+resetRecommend();
+addTarget();
+deployForm();
+engineForm();
+const start = (location.hash || '#overview').slice(1);
+show(loaders.hasOwnProperty(start) ? start : 'overview');
+</script>
+</body>
+</html>
