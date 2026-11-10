@@ -1,0 +1,18 @@
+{
+ "models": [
+  {
+   "id": 83754,
+   "ref": "aswathswasun/ganmodel",
+   "title": "GANmodel",
+   "subtitle": "",
+   "author": "aswath swasun",
+   "slug": "ganmodel",
+   "isPrivate": false,
+   "tags": [],
+   "instances": [],
+   "url": "https://www.kaggle.com/models/aswathswasun/ganmodel"
+  }
+ ],
+ "nextPageToken": "",
+ "totalResults": 4
+}

@@ -1,0 +1,58 @@
+[
+ {
+  "_id": "64fff537d522560505ad6567",
+  "id": "BAAI/bge-small-en-v1.5",
+  "cardData": {
+   "license": "mit"
+  },
+  "config": {
+   "architectures": [
+    "BertModel"
+   ],
+   "model_type": "bert"
+  },
+  "safetensors": {
+   "parameters": {
+    "I64": 512,
+    "F32": 33360000
+   },
+   "total": 33360512
+  },
+  "tags": [
+   "sentence-transformers",
+   "pytorch",
+   "onnx",
+   "safetensors"
+  ],
+  "pipeline_tag": "feature-extraction",
+  "library_name": "sentence-transformers"
+ },
+ {
+  "_id": "64fff5087f91f94040eee912",
+  "id": "BAAI/bge-large-en-v1.5",
+  "cardData": {
+   "license": "mit"
+  },
+  "config": {
+   "architectures": [
+    "BertModel"
+   ],
+   "model_type": "bert"
+  },
+  "safetensors": {
+   "parameters": {
+    "I64": 512,
+    "F32": 335141888
+   },
+   "total": 335142400
+  },
+  "tags": [
+   "sentence-transformers",
+   "pytorch",
+   "onnx",
+   "safetensors"
+  ],
+  "pipeline_tag": "feature-extraction",
+  "library_name": "sentence-transformers"
+ }
+]

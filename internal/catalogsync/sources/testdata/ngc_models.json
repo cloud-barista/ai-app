@@ -1,0 +1,563 @@
+{
+ "params": {
+  "query": "*:*",
+  "page": 0,
+  "pageSize": 4
+ },
+ "resultPageTotal": 1,
+ "resultTotal": 4,
+ "results": [
+  {
+   "groupValue": "_scored",
+   "totalCount": 2,
+   "resources": [
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nim/nvidia/audio2emotion_model",
+     "msgTimestamp": 1772847259130,
+     "orgName": "nim",
+     "teamName": "nvidia",
+     "name": "audio2emotion_model",
+     "displayName": "Audio2Emotion Model",
+     "dateCreated": "2024-12-03T04:41:09.540Z",
+     "dateModified": "2026-03-07T01:33:49.901Z",
+     "isPublic": true,
+     "weightPopular": 26112.2,
+     "sharedWithOrgs": [],
+     "sharedWithTeams": [
+      "nim/nvidia"
+     ],
+     "labels": [
+      {
+       "key": "general",
+       "values": [
+        "NSPECT-TJHA-A947",
+        "NVIDIA NIM",
+        "False"
+       ],
+       "unresolvedValues": [
+        "NSPECT-TJHA-A947",
+        "nimmcro_nvidia_nim",
+        "False"
+       ]
+      },
+      {
+       "key": "system",
+       "values": [
+        "signed models"
+       ],
+       "unresolvedValues": [
+        "signed models"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "Other"
+       ],
+       "unresolvedValues": [
+        "Other"
+       ]
+      },
+      {
+       "key": "hasSignedVersion",
+       "values": [
+        "true"
+       ],
+       "unresolvedValues": [
+        "true"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "FP16"
+       ],
+       "unresolvedValues": [
+        "FP16"
+       ]
+      },
+      {
+       "key": "publisher",
+       "values": [
+        "NVIDIA"
+       ],
+       "unresolvedValues": [
+        "NVIDIA"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "1267648220"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "a2e_v2.1_multi_b200_fp32_bs144_v6"
+      },
+      {
+       "key": "application",
+       "value": "Other"
+      },
+      {
+       "key": "format",
+       "value": "SavedModel"
+      },
+      {
+       "key": "logo",
+       "value": "https://assets.ngc.nvidia.com/products/api-catalog/images/audio2face-3d.jpg"
+      }
+     ]
+    },
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nim/snowflake/arctic-embed-l",
+     "msgTimestamp": 1787779550025,
+     "orgName": "nim",
+     "teamName": "snowflake",
+     "name": "arctic-embed-l",
+     "displayName": "Snowflake Arctic Embed Large Embedding",
+     "dateCreated": "2024-07-23T17:55:46.501Z",
+     "dateModified": "2024-07-27T00:42:35.543Z",
+     "isPublic": true,
+     "guestAccess": true,
+     "weightPopular": 5400.6,
+     "sharedWithOrgs": [],
+     "sharedWithTeams": [
+      "nim/snowflake"
+     ],
+     "labels": [
+      {
+       "key": "general",
+       "values": [
+        "NVIDIA NIM",
+        "Experimental",
+        "NSPECT-A2V9-7M6B"
+       ],
+       "unresolvedValues": [
+        "nimmcro_nvidia_nim",
+        "Experimental",
+        "NSPECT-A2V9-7M6B"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "Other"
+       ],
+       "unresolvedValues": [
+        "Other"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "N/A"
+       ],
+       "unresolvedValues": [
+        "N/A"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "668844074"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "2_FP16_onnx"
+      },
+      {
+       "key": "application",
+       "value": "Other"
+      },
+      {
+       "key": "format",
+       "value": "N/A"
+      },
+      {
+       "key": "logo",
+       "value": "https://developer-blogs.nvidia.com/wp-content/uploads/2024/03/nemo-retriever-graphic.png"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "groupValue": "MODEL",
+   "totalCount": 4,
+   "resources": [
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nim/nvidia/audio2emotion_model",
+     "msgTimestamp": 1772847259130,
+     "orgName": "nim",
+     "teamName": "nvidia",
+     "name": "audio2emotion_model",
+     "displayName": "Audio2Emotion Model",
+     "dateCreated": "2024-12-03T04:41:09.540Z",
+     "dateModified": "2026-03-07T01:33:49.901Z",
+     "isPublic": true,
+     "weightPopular": 26112.2,
+     "sharedWithOrgs": [],
+     "sharedWithTeams": [
+      "nim/nvidia"
+     ],
+     "labels": [
+      {
+       "key": "general",
+       "values": [
+        "NSPECT-TJHA-A947",
+        "NVIDIA NIM",
+        "False"
+       ],
+       "unresolvedValues": [
+        "NSPECT-TJHA-A947",
+        "nimmcro_nvidia_nim",
+        "False"
+       ]
+      },
+      {
+       "key": "system",
+       "values": [
+        "signed models"
+       ],
+       "unresolvedValues": [
+        "signed models"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "Other"
+       ],
+       "unresolvedValues": [
+        "Other"
+       ]
+      },
+      {
+       "key": "hasSignedVersion",
+       "values": [
+        "true"
+       ],
+       "unresolvedValues": [
+        "true"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "FP16"
+       ],
+       "unresolvedValues": [
+        "FP16"
+       ]
+      },
+      {
+       "key": "publisher",
+       "values": [
+        "NVIDIA"
+       ],
+       "unresolvedValues": [
+        "NVIDIA"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "1267648220"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "a2e_v2.1_multi_b200_fp32_bs144_v6"
+      },
+      {
+       "key": "application",
+       "value": "Other"
+      },
+      {
+       "key": "format",
+       "value": "SavedModel"
+      },
+      {
+       "key": "logo",
+       "value": "https://assets.ngc.nvidia.com/products/api-catalog/images/audio2face-3d.jpg"
+      }
+     ]
+    },
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nim/snowflake/arctic-embed-l",
+     "msgTimestamp": 1787779550025,
+     "orgName": "nim",
+     "teamName": "snowflake",
+     "name": "arctic-embed-l",
+     "displayName": "Snowflake Arctic Embed Large Embedding",
+     "dateCreated": "2024-07-23T17:55:46.501Z",
+     "dateModified": "2024-07-27T00:42:35.543Z",
+     "isPublic": true,
+     "guestAccess": true,
+     "weightPopular": 5400.6,
+     "sharedWithOrgs": [],
+     "sharedWithTeams": [
+      "nim/snowflake"
+     ],
+     "labels": [
+      {
+       "key": "general",
+       "values": [
+        "NVIDIA NIM",
+        "Experimental",
+        "NSPECT-A2V9-7M6B"
+       ],
+       "unresolvedValues": [
+        "nimmcro_nvidia_nim",
+        "Experimental",
+        "NSPECT-A2V9-7M6B"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "Other"
+       ],
+       "unresolvedValues": [
+        "Other"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "N/A"
+       ],
+       "unresolvedValues": [
+        "N/A"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "668844074"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "2_FP16_onnx"
+      },
+      {
+       "key": "application",
+       "value": "Other"
+      },
+      {
+       "key": "format",
+       "value": "N/A"
+      },
+      {
+       "key": "logo",
+       "value": "https://developer-blogs.nvidia.com/wp-content/uploads/2024/03/nemo-retriever-graphic.png"
+      }
+     ]
+    },
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nvidia/code_llama",
+     "msgTimestamp": 1731434076430,
+     "orgName": "nvidia",
+     "name": "code_llama",
+     "displayName": "Code Llama 13B",
+     "dateCreated": "2023-11-16T17:55:13.040Z",
+     "dateModified": "2024-11-12T17:54:36.430Z",
+     "isPublic": true,
+     "guestAccess": true,
+     "weightPopular": 40.2,
+     "sharedWithOrgs": [
+      "nvidia"
+     ],
+     "sharedWithTeams": [],
+     "labels": [
+      {
+       "key": "general",
+       "values": [
+        "NSPECT-WNG1-TFXP",
+        "Runs on RTX"
+       ],
+       "unresolvedValues": [
+        "NSPECT-WNG1-TFXP",
+        "pltfm_runs_on_rtx"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "Other"
+       ],
+       "unresolvedValues": [
+        "Other"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "OTHER"
+       ],
+       "unresolvedValues": [
+        "OTHER"
+       ]
+      },
+      {
+       "key": "publisher",
+       "values": [
+        "Meta"
+       ],
+       "unresolvedValues": [
+        "Meta"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "24147505821"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "1.1"
+      },
+      {
+       "key": "application",
+       "value": "Other"
+      },
+      {
+       "key": "format",
+       "value": "PY_TORCH_PTH"
+      },
+      {
+       "key": "logo",
+       "value": "https://catalog.ngc.nvidia.com/demos/llama2.jpg"
+      }
+     ]
+    },
+    {
+     "resourceType": "MODEL",
+     "resourceId": "nvidia/blueprint/cuda-autocomplete",
+     "msgTimestamp": 1781073176720,
+     "orgName": "nvidia",
+     "teamName": "blueprint",
+     "name": "cuda-autocomplete",
+     "displayName": "CUDA Autocomplete",
+     "dateCreated": "2026-06-07T07:53:22.759Z",
+     "dateModified": "2026-06-07T07:53:35.236Z",
+     "isPublic": true,
+     "guestAccess": true,
+     "weightPopular": 12.1,
+     "sharedWithOrgs": [],
+     "sharedWithTeams": [
+      "nvidia/blueprint"
+     ],
+     "labels": [
+      {
+       "key": "builtBy",
+       "values": [
+        "NVIDIA"
+       ],
+       "unresolvedValues": [
+        "NVIDIA"
+       ]
+      },
+      {
+       "key": "general",
+       "values": [
+        "CUDA",
+        "NLP",
+        "PyTorch",
+        "NSPECT-KKK3-TWRN",
+        "Code Generation",
+        "AI",
+        "DL",
+        "False",
+        "NVIDIA AI"
+       ],
+       "unresolvedValues": [
+        "CUDA",
+        "NLP",
+        "PyTorch",
+        "NSPECT-KKK3-TWRN",
+        "Code Generation",
+        "AI",
+        "DL",
+        "False",
+        "NVIDIA AI"
+       ]
+      },
+      {
+       "key": "system",
+       "values": [
+        "signed models"
+       ],
+       "unresolvedValues": [
+        "signed models"
+       ]
+      },
+      {
+       "key": "framework",
+       "values": [
+        "PyTorch"
+       ],
+       "unresolvedValues": [
+        "PyTorch"
+       ]
+      },
+      {
+       "key": "hasSignedVersion",
+       "values": [
+        "true"
+       ],
+       "unresolvedValues": [
+        "true"
+       ]
+      },
+      {
+       "key": "precision",
+       "values": [
+        "FP8"
+       ],
+       "unresolvedValues": [
+        "FP8"
+       ]
+      },
+      {
+       "key": "publisher",
+       "values": [
+        "NVIDIA"
+       ],
+       "unresolvedValues": [
+        "NVIDIA"
+       ]
+      }
+     ],
+     "attributes": [
+      {
+       "key": "latestVersionSizeInBytes",
+       "value": "15247181326"
+      },
+      {
+       "key": "latestVersionIdStr",
+       "value": "0.3.0"
+      },
+      {
+       "key": "application",
+       "value": "LANGUAGE_MODELING"
+      },
+      {
+       "key": "format",
+       "value": "safetensors"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

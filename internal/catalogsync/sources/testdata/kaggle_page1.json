@@ -1,0 +1,126 @@
+{
+ "models": [
+  {
+   "id": 3301,
+   "ref": "google/gemma",
+   "title": "Gemma",
+   "subtitle": "Gemma is a family of lightweight, open models built from the research and technology that Google used to create the Gemini models.",
+   "author": "Google",
+   "slug": "gemma",
+   "isPrivate": false,
+   "tags": [
+    {
+     "name": "text",
+     "fullPath": "data type > text"
+    },
+    {
+     "name": "text generation",
+     "fullPath": "task > text-generation"
+    },
+    {
+     "name": "text-to-text generation",
+     "fullPath": "task > text-to-text-generation"
+    },
+    {
+     "name": "english",
+     "fullPath": "language > english"
+    }
+   ],
+   "url": "https://www.kaggle.com/models/google/gemma",
+   "updateTime": "2024-05-08T23:16:54.775824Z",
+   "instances": [
+    {
+     "hasBaseModelInstanceInformation": true,
+     "id": 22007,
+     "slug": "1.1-2b-it",
+     "framework": "pyTorch",
+     "fineTunable": true,
+     "downloadUrl": "/models/google/gemma/PyTorch/1.1-2b-it/1/download",
+     "versionId": 26144,
+     "versionNumber": 1,
+     "trainingData": [],
+     "url": "https://www.kaggle.com/models/google/gemma/PyTorch/1.1-2b-it",
+     "licenseName": "Gemma",
+     "modelInstanceType": "kaggleVariant",
+     "externalBaseModelUrl": "",
+     "totalUncompressedBytes": 5033413740
+    },
+    {
+     "hasBaseModelInstanceInformation": false,
+     "id": 6216,
+     "slug": "2b",
+     "framework": "transformers",
+     "fineTunable": true,
+     "downloadUrl": "/models/google/gemma/Transformers/2b/2/download",
+     "versionId": 11384,
+     "versionNumber": 2,
+     "trainingData": [
+      "https://huggingface.co/gg-hf/golden-gate-2b"
+     ],
+     "url": "https://www.kaggle.com/models/google/gemma/Transformers/2b",
+     "licenseName": "Gemma",
+     "modelInstanceType": "baseModel",
+     "externalBaseModelUrl": "",
+     "totalUncompressedBytes": 15065880636
+    },
+    {
+     "hasBaseModelInstanceInformation": false,
+     "id": 15449,
+     "slug": "2b",
+     "framework": "gguf",
+     "fineTunable": true,
+     "downloadUrl": "/models/google/gemma/Gguf/2b/1/download",
+     "versionId": 18631,
+     "versionNumber": 1,
+     "trainingData": [],
+     "url": "https://www.kaggle.com/models/google/gemma/Gguf/2b",
+     "licenseName": "Gemma",
+     "modelInstanceType": "unspecified",
+     "externalBaseModelUrl": "",
+     "totalUncompressedBytes": 10031780672
+    }
+   ]
+  },
+  {
+   "id": 285,
+   "ref": "tensorflow/blazeface",
+   "title": "blazeface",
+   "subtitle": "Blazeface is a lightweight model that detects faces in images.",
+   "author": "TensorFlow",
+   "slug": "blazeface",
+   "isPrivate": false,
+   "tags": [
+    {
+     "name": "image",
+     "fullPath": "data type > image"
+    },
+    {
+     "name": "object detection",
+     "fullPath": "task > object-detection"
+    }
+   ],
+   "url": "https://www.kaggle.com/models/tensorflow/blazeface",
+   "updateTime": "2023-02-15T19:35:35.2032133Z",
+   "instances": [
+    {
+     "hasBaseModelInstanceInformation": false,
+     "id": 2379,
+     "slug": "default",
+     "framework": "tfJs",
+     "fineTunable": false,
+     "downloadUrl": "/models/tensorflow/blazeface/TfJs/default/1/download",
+     "versionId": 3196,
+     "versionNumber": 1,
+     "trainingData": [],
+     "url": "https://www.kaggle.com/models/tensorflow/blazeface/TfJs/default",
+     "licenseName": "Apache 2.0",
+     "modelInstanceType": "unspecified",
+     "externalBaseModelUrl": "",
+     "totalUncompressedBytes": 465804
+    }
+   ]
+  }
+ ],
+ "nextPageToken": "page-2-token",
+ "totalResults": 4
+}

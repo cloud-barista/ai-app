@@ -1,0 +1,360 @@
+package config
+
+import (
+	"crypto/rand"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAuthTokensReadFromEnv(t *testing.T) {
+	t.Setenv("AIAPP_AUTH_TOKEN", "")
+	t.Setenv("AIAPP_APP_TOKEN", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.Token != "" || cfg.App.Token != "" {
+		t.Errorf("tokens = %q, %q, want empty by default", cfg.Auth.Token, cfg.App.Token)
+	}
+
+	t.Setenv("AIAPP_AUTH_TOKEN", "served")
+	t.Setenv("AIAPP_APP_TOKEN", "sent")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.Token != "served" || cfg.App.Token != "sent" {
+		t.Errorf("tokens = %q, %q, want served, sent", cfg.Auth.Token, cfg.App.Token)
+	}
+}
+
+func TestHealthWaitDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("AIAPP_HEALTH_TIMEOUT", "")
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Health.Timeout != 15*time.Minute || cfg.Health.Interval != 20*time.Second {
+		t.Errorf("health = %+v, want 15m and 20s by default", cfg.Health)
+	}
+
+	t.Setenv("AIAPP_HEALTH_TIMEOUT", "2m")
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "5s")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Health.Timeout != 2*time.Minute || cfg.Health.Interval != 5*time.Second {
+		t.Errorf("health = %+v, want 2m and 5s", cfg.Health)
+	}
+
+	t.Setenv("AIAPP_HEALTH_INTERVAL", "0s")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "health interval") {
+		t.Errorf("Load error = %v, want one naming the health interval", err)
+	}
+}
+
+func TestModelStoreFile(t *testing.T) {
+	t.Setenv("AIAPP_MODEL_STORE_FILE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Model.StoreFile != "" {
+		t.Errorf("model store file = %q, want empty (memory only) by default", cfg.Model.StoreFile)
+	}
+
+	t.Setenv("AIAPP_MODEL_STORE_FILE", " ./data/models.json ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Model.StoreFile != "./data/models.json" {
+		t.Errorf("model store file = %q, want ./data/models.json", cfg.Model.StoreFile)
+	}
+}
+
+func TestDeploymentStoreFile(t *testing.T) {
+	t.Setenv("AIAPP_DEPLOYMENT_STORE_FILE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.StoreFile != "" {
+		t.Errorf("deployment store file = %q, want empty (memory only) by default", cfg.NodeDeploy.StoreFile)
+	}
+
+	t.Setenv("AIAPP_DEPLOYMENT_STORE_FILE", " ./data/deployments.json ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.StoreFile != "./data/deployments.json" {
+		t.Errorf("deployment store file = %q, want ./data/deployments.json", cfg.NodeDeploy.StoreFile)
+	}
+}
+
+func TestDeploymentOpenPorts(t *testing.T) {
+	t.Setenv("AIAPP_DEPLOYMENT_OPEN_PORTS", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.NodeDeploy.OpenPorts {
+		t.Error("open ports = false, want true by default")
+	}
+
+	t.Setenv("AIAPP_DEPLOYMENT_OPEN_PORTS", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NodeDeploy.OpenPorts {
+		t.Error("open ports = true, want false when AIAPP_DEPLOYMENT_OPEN_PORTS=false")
+	}
+}
+
+func TestAppStoreDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("AIAPP_APP_STORE_DIR", "")
+	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AppStore.Dir != "./data/apps" || cfg.AppStore.UploadMaxBytes != 256<<20 {
+		t.Errorf("app store = %+v, want ./data/apps and 256 MiB by default", cfg.AppStore)
+	}
+
+	t.Setenv("AIAPP_APP_STORE_DIR", " /srv/aiapp/apps ")
+	t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", "1048576")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AppStore.Dir != "/srv/aiapp/apps" || cfg.AppStore.UploadMaxBytes != 1<<20 {
+		t.Errorf("app store = %+v, want /srv/aiapp/apps and 1 MiB", cfg.AppStore)
+	}
+
+	for _, bad := range []string{"0", "-1", "256MiB"} {
+		t.Setenv("AIAPP_APP_UPLOAD_MAX_BYTES", bad)
+		if _, err := Load(); err == nil {
+			t.Errorf("upload bound %q accepted", bad)
+		}
+	}
+}
+
+func TestEngineAndPartnerNLDefaults(t *testing.T) {
+	for _, env := range []string{"AIAPP_ENGINE_PORT", "AIAPP_ENGINE_URL", "AIAPP_ENGINE_ARCHIVE_DIR", "AIAPP_MOCK_NL_URL", "AIAPP_PARTNER_REC_URL"} {
+		t.Setenv(env, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Engine.Port != 8091 || cfg.Engine.URL != "http://127.0.0.1:8091" || cfg.Engine.ArchiveDir != "./data/engine-archive" {
+		t.Errorf("engine = %+v, want port 8091 and its archive", cfg.Engine)
+	}
+	if cfg.PartnerNL.URL != "http://127.0.0.1:8093" {
+		t.Errorf("partner nl = %+v, want port 8093", cfg.PartnerNL)
+	}
+	if cfg.PartnerRec.URL != "http://127.0.0.1:8092" {
+		t.Errorf("partner rec = %+v, want port 8092", cfg.PartnerRec)
+	}
+
+	t.Setenv("AIAPP_MOCK_NL_URL", "http://nl.example:8093/")
+	t.Setenv("AIAPP_PARTNER_REC_URL", "http://rec.example:8092/")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.PartnerNL.URL != "http://nl.example:8093" {
+		t.Errorf("partner nl = %q, want the configured URL without the trailing slash", cfg.PartnerNL.URL)
+	}
+	if cfg.PartnerRec.URL != "http://rec.example:8092" {
+		t.Errorf("partner rec = %q, want the configured URL without the trailing slash", cfg.PartnerRec.URL)
+	}
+
+	t.Setenv("AIAPP_ENGINE_REGISTRY_URL", "http://registry.example/api/")
+	t.Setenv("AIAPP_ENGINE_REGISTRY_TOKEN", "secret")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Engine.RegistryURL != "http://registry.example/api" || cfg.Engine.RegistryToken != "secret" {
+		t.Errorf("engine registry = %q, %q", cfg.Engine.RegistryURL, cfg.Engine.RegistryToken)
+	}
+}
+
+// clearSemaphoreEnv makes the test independent of the shell it runs in.
+func clearSemaphoreEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"AIAPP_SEMAPHORE_URL", "AIAPP_SEMAPHORE_TOKEN", "AIAPP_SEMAPHORE_USERNAME", "AIAPP_SEMAPHORE_PASSWORD",
+		"AIAPP_SEMAPHORE_PROJECT", "AIAPP_SEMAPHORE_PLAYBOOK_DIR", "AIAPP_SEMAPHORE_POLL_INTERVAL",
+		"AIAPP_SEMAPHORE_TIMEOUT", "AIAPP_SEMAPHORE_UI_URL", "AIAPP_STAGE_ROOT",
+	} {
+		t.Setenv(name, "")
+	}
+}
+
+func TestSemaphoreAndStageDefaults(t *testing.T) {
+	clearSemaphoreEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := SemaphoreConfig{Project: "aiapp", PlaybookDir: "/ansible", PollInterval: 5 * time.Second, Timeout: 30 * time.Minute}
+	if cfg.Semaphore != want {
+		t.Errorf("semaphore = %+v, want %+v", cfg.Semaphore, want)
+	}
+	if cfg.Stage.Root != "/var/lib/aiapp/stage" {
+		t.Errorf("stage root = %q, want /var/lib/aiapp/stage", cfg.Stage.Root)
+	}
+}
+
+func TestSemaphoreAndStageOverrides(t *testing.T) {
+	clearSemaphoreEnv(t)
+	t.Setenv("AIAPP_SEMAPHORE_URL", "http://semaphore:3000/")
+	t.Setenv("AIAPP_SEMAPHORE_USERNAME", "admin")
+	t.Setenv("AIAPP_SEMAPHORE_PASSWORD", "pw")
+	t.Setenv("AIAPP_SEMAPHORE_PROJECT", "etri")
+	t.Setenv("AIAPP_SEMAPHORE_PLAYBOOK_DIR", "/playbooks/")
+	t.Setenv("AIAPP_SEMAPHORE_POLL_INTERVAL", "2s")
+	t.Setenv("AIAPP_SEMAPHORE_TIMEOUT", "1h")
+	t.Setenv("AIAPP_SEMAPHORE_UI_URL", " http://203.0.113.5:3000/ ")
+	t.Setenv("AIAPP_STAGE_ROOT", "/srv/stage/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := SemaphoreConfig{
+		URL: "http://semaphore:3000", Username: "admin", Password: "pw", Project: "etri",
+		PlaybookDir: "/playbooks", PollInterval: 2 * time.Second, Timeout: time.Hour,
+		UIURL: "http://203.0.113.5:3000",
+	}
+	if cfg.Semaphore != want {
+		t.Errorf("semaphore = %+v, want %+v", cfg.Semaphore, want)
+	}
+	if cfg.Stage.Root != "/srv/stage" {
+		t.Errorf("stage root = %q, want /srv/stage", cfg.Stage.Root)
+	}
+
+	t.Setenv("AIAPP_SEMAPHORE_USERNAME", "")
+	t.Setenv("AIAPP_SEMAPHORE_TOKEN", "tok")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load with a token: %v", err)
+	}
+	if cfg.Semaphore.Token != "tok" {
+		t.Errorf("token = %q, want tok", cfg.Semaphore.Token)
+	}
+}
+
+func TestSemaphoreAndStageInvalid(t *testing.T) {
+	cases := map[string]struct {
+		env  map[string]string
+		want string
+	}{
+		"zero poll interval":    {map[string]string{"AIAPP_SEMAPHORE_POLL_INTERVAL": "0s"}, "poll interval"},
+		"zero timeout":          {map[string]string{"AIAPP_SEMAPHORE_TIMEOUT": "0s"}, "semaphore timeout"},
+		"relative playbook dir": {map[string]string{"AIAPP_SEMAPHORE_PLAYBOOK_DIR": "ansible"}, "AIAPP_SEMAPHORE_PLAYBOOK_DIR"},
+		"relative stage root":   {map[string]string{"AIAPP_STAGE_ROOT": "data/stage"}, "AIAPP_STAGE_ROOT"},
+		"ui url without scheme": {map[string]string{"AIAPP_SEMAPHORE_UI_URL": "203.0.113.5:3000"}, "AIAPP_SEMAPHORE_UI_URL"},
+		"ui url not http":       {map[string]string{"AIAPP_SEMAPHORE_UI_URL": "javascript:alert(1)"}, "AIAPP_SEMAPHORE_UI_URL"},
+		"ui url with user":      {map[string]string{"AIAPP_SEMAPHORE_UI_URL": (&url.URL{Scheme: "http", User: url.UserPassword("admin", uiURLSecret), Host: "203.0.113.5"}).String()}, "AIAPP_SEMAPHORE_UI_URL"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			clearSemaphoreEnv(t)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Load error = %v, want one containing %q", err, tc.want)
+			}
+			if err != nil && strings.Contains(err.Error(), uiURLSecret) {
+				t.Errorf("Load error %q repeats the password of the URL", err)
+			}
+		})
+	}
+}
+
+func TestRecommenderNames(t *testing.T) {
+	t.Setenv("AIAPP_RECOMMENDER_MODEL", "")
+	t.Setenv("AIAPP_RECOMMENDER_APP", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Recommender.Model != "" || cfg.Recommender.App != "" {
+		t.Errorf("recommender = %+v, want both empty by default", cfg.Recommender)
+	}
+
+	t.Setenv("AIAPP_RECOMMENDER_MODEL", " khu ")
+	t.Setenv("AIAPP_RECOMMENDER_APP", "khu-apps")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Recommender.Model != "khu" || cfg.Recommender.App != "khu-apps" {
+		t.Errorf("recommender = %+v, want khu and khu-apps", cfg.Recommender)
+	}
+
+	t.Setenv("AIAPP_RECOMMENDER_APP", "KHU Apps")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AIAPP_RECOMMENDER_APP") {
+		t.Errorf("Load error = %v, want one naming AIAPP_RECOMMENDER_APP", err)
+	}
+}
+
+// uiURLSecret is a made-up password for the UI URL test, so no literal looks
+// like a secret.
+var uiURLSecret = "u-" + rand.Text()
+
+func TestCatalogSyncDefaultsAndOverrides(t *testing.T) {
+	for _, key := range []string{"ENABLED", "INTERVAL", "SOURCES", "LIMIT"} {
+		t.Setenv("AIAPP_CATALOG_SYNC_"+key, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := cfg.CatalogSync
+	if !got.Enabled || got.Interval != 24*time.Hour || got.Limit != 100 ||
+		strings.Join(got.Sources, ",") != "huggingface,ollama" {
+		t.Errorf("catalog sync = %+v, want on, 24h, 100, huggingface and ollama by default", got)
+	}
+
+	t.Setenv("AIAPP_CATALOG_SYNC_ENABLED", "false")
+	t.Setenv("AIAPP_CATALOG_SYNC_INTERVAL", "6h")
+	t.Setenv("AIAPP_CATALOG_SYNC_SOURCES", " ollama , huggingface,kaggle")
+	t.Setenv("AIAPP_CATALOG_SYNC_LIMIT", "20")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got = cfg.CatalogSync
+	if got.Enabled || got.Interval != 6*time.Hour || got.Limit != 20 || strings.Join(got.Sources, ",") != "ollama,huggingface,kaggle" {
+		t.Errorf("catalog sync = %+v, want off, 6h, 20, ollama, huggingface and kaggle", got)
+	}
+
+	for _, tc := range []struct{ key, value, want string }{
+		{"INTERVAL", "0s", "CATALOG_SYNC_INTERVAL"},
+		{"INTERVAL", "daily", "CATALOG_SYNC_INTERVAL"},
+		{"LIMIT", "0", "CATALOG_SYNC_LIMIT"},
+		{"LIMIT", "many", "CATALOG_SYNC_LIMIT"},
+		{"SOURCES", "huggingface,civitai", `"civitai"`},
+		{"SOURCES", "ollama,ollama", "twice"},
+		{"SOURCES", " , ", "at least one"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv("AIAPP_CATALOG_SYNC_"+tc.key, tc.value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Load error = %v, want one containing %s", err, tc.want)
+			}
+		})
+	}
+}

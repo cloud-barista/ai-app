@@ -1,0 +1,220 @@
+package rest
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog/log"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
+)
+
+// RestPostNodeDeployment godoc
+// @ID PostNodeDeployment
+// @Summary Deploy onto existing nodes
+// @Description Deploy an inference service or an uploaded AI application onto nodes CB-Tumblebug already runs. This service does not create VMs.
+// @Description
+// @Description type inference needs inference: modelId and artifactId from GET /models, and optionally runtimeId (a runtime profile from GET /runtimes the artifact lists; defaults to its first), gpu and args (extra runtime arguments appended after the ones the service sets and the catalog args of the artifact, runtimes[].args, which a repeated flag here overrides for vllm, such as ["--max-model-len","32768"] for vllm; at most 32, each 1 to 256 characters without control characters, never --model, --port or --host; ollama refuses them). A docker-compose.yml is rendered from the artifact and the runtime profile (preview it with GET /models/{modelId}/artifacts/{artifactId}/compose). type app needs app: name and version (0 takes the latest) from GET /apps. Both take env, written to a .env file next to the deployed files; names match [A-Z_][A-Z0-9_]*, values hold no line break and no single quote.
+// @Description
+// @Description Each target is {kind: node, nsId, infraId, nodeId, sshUser}. The cloud, region, zone, address, SSH user and SSH key are read from the node in CB-Tumblebug (public IP, or private IP when there is none). sshUser is optional (1 to 32 characters matching [a-z_][a-z0-9_-]*) and replaces the SSH user CB-Tumblebug reports (nodeUserName) in the Semaphore inventory, while the key stays the one CB-Tumblebug holds. Without sshUser, before the playbooks of a node run, the service logs in to the node over SSH with that key (authentication only, no command, 10 seconds per attempt, at most 6 attempts) as the CB-Tumblebug user and keeps it when the node accepts it. CB-Tumblebug creates its login user cb-user with useradd -G sudo, which fails on images without a sudo group (RHEL, Rocky, AlmaLinux and Amazon Linux use wheel), and such a node has no cb-user, while the image default user accepts the same key. So when the node refuses the CB-Tumblebug user, the default users of the node image (from its osType: ec2-user for Amazon Linux, RHEL and SUSE, rocky, almalinux then ec2-user, centos, fedora, opc then ec2-user for Oracle Linux, admin for Debian, ubuntu; ec2-user, ubuntu and admin for an OS not recognized; never root) are tried in order and the first accepted is used, with a note naming both users. When every user is refused, or the node cannot be reached yet (still booting), the CB-Tumblebug user is kept and a note says so; install-docker then waits for the node as before. nodes[].sshUser and nodes[].steps[].sshUser record the user the playbooks ran as, and nodes[].sshUserSource where it came from (request, tumblebug or fallback). kind k8s is reserved and answered with 422. When gpu is omitted it is taken from the node spec (acceleratorType gpu); a spec that cannot be read means no GPU, and nodes[].notes says why.
+// @Description
+// @Description For every node, in parallel up to a bound: the files are placed in <AIAPP_STAGE_ROOT>/<id>/<csp>-<nodeId>/, then Semaphore runs install-docker (with the NVIDIA Container Toolkit on a GPU node) and then compose-up (inference, which waits for the runtime health path from the node itself and, when the node uses the GPU, checks that the runtime runs on it: a vllm process in nvidia-smi, or an ollama log line of inference compute on CUDA or ROCm; the line found is kept in nodes[].gpuCheck) or copy-and-run (app, which runs the app script from the folder the files are copied to, then waits until every app port answers HTTP and fails the node when a container of the project restarted or exited with a non-zero code). On the node the files go to /opt/aiapp/<work key> and run as compose project aiapp-<work key>, where the work key is ms-<runtimeId> for an inference service and app-<name> for an app; nodes[].workKey and nodes[].nodeDir record them. Deploying the same work key to a node again replaces the previous deployment there. The SSH key is registered in Semaphore for the run only and deleted afterwards; it is never part of a record, a log or a response.
+// @Description
+// @Description Once the playbooks of a node succeed, the ports the deployment serves (nodes[].ports: the runtime port of an inference service; for an app, app.ports or else the ports the app version was uploaded with) are opened over TCP inbound from 0.0.0.0/0 in every CB-Tumblebug security group the node lists (securityGroupIds). Ports a group already lets in are not sent again. nodes[].openedPorts lists, per group and port, whether the rule was added or already there. A port that cannot be opened does not fail the node: nodes[].portsError says why and a note points to it. AIAPP_DEPLOYMENT_OPEN_PORTS=false (true by default) turns port opening off; the ports are then only recorded, with a note. A dry run opens nothing; nodes[].ports still lists the ports it would open.
+// @Description
+// @Description The request is checked against the catalogs first: a malformed request is 400, an unknown model, artifact, runtime or app is 404, and an artifact the runtime cannot run is 422. Every target node is then read from CB-Tumblebug: a node or infra CB-Tumblebug does not have is 404 naming the target nsId/infraId/nodeId, and CB-Tumblebug failing or not answering is 502. A refused request leaves no record. An accepted request answers 202 with the record in status pending; follow it with GET /deployments/{id}/progress until done is true (or GET /deployments/{id} for the whole record). With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), only the node look-up and the file placement are done, nothing is registered in Semaphore, and the finished record (status dry-run, with the rendered compose and the node addresses) is returned with 200.
+// @Tags [Deployment] Node Deployment
+// @Accept json
+// @Produce json
+// @Param request body model.NodeDeploymentReq true "What to deploy and where"
+// @Success 200 {object} model.NodeDeployment "Dry run: the files were placed and nothing was run"
+// @Success 202 {object} model.NodeDeployment "Accepted; the deployment goes on in the background"
+// @Failure 400 {object} model.SimpleMsg "Malformed request"
+// @Failure 404 {object} model.SimpleMsg "Model, artifact, runtime profile, application or target node not found"
+// @Failure 422 {object} model.SimpleMsg "A k8s target, or an artifact the runtime cannot run"
+// @Failure 500 {object} model.SimpleMsg "The record could not be written"
+// @Failure 502 {object} model.SimpleMsg "CB-Tumblebug failed or did not answer while the target nodes were read"
+// @Security BearerAuth
+// @Router /deployments [post]
+func (h *Handler) RestPostNodeDeployment(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var req model.NodeDeploymentReq
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: malformedBody})
+	}
+
+	d, err := h.nodeDeploy.Create(ctx, req)
+	if err != nil {
+		log.Warn().Err(err).Str("type", req.Type).Msg("Refused node deployment")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment failed to start")})
+	}
+	if d.DryRun {
+		return c.JSON(http.StatusOK, d)
+	}
+	return c.JSON(http.StatusAccepted, d)
+}
+
+// RestGetAllNodeDeployments godoc
+// @ID GetAllNodeDeployments
+// @Summary List deployments onto nodes
+// @Description List the deployments made through POST /deployments, newest first, with the status of every node. Each filter is optional and matched exactly; all given filters must match. nsId matches a deployment when any of its targets is in that namespace. Task output is left out; read it with GET /deployments/{id}/logs. Records are kept in AIAPP_DEPLOYMENT_STORE_FILE when it is set, and in memory otherwise. The list is paged after the filters: limit and offset pick the page, newest first, and total counts every deployment the filters keep.
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param type query string false "Deployment type" Enums(inference, app)
+// @Param nsId query string false "CB-Tumblebug namespace of any target"
+// @Param status query string false "Deployment status" Enums(pending, deploying, running, failed, partial, dry-run, interrupted, removing, removed, remove-failed)
+// @Param limit query int false "Most deployments to return, from 1 to 1000" default(100)
+// @Param offset query int false "Deployments to skip from the newest, 0 or more. Past the end gives an empty list" default(0)
+// @Success 200 {object} model.NodeDeploymentListResp "Deployments, newest first, one page of them with total, limit and offset"
+// @Failure 400 {object} model.SimpleMsg "limit is not from 1 to 1000, or offset is negative"
+// @Security BearerAuth
+// @Router /deployments [get]
+func (h *Handler) RestGetAllNodeDeployments(c echo.Context) error {
+	ctx := c.Request().Context()
+	filter := nodedeploy.ListFilter{
+		Type:   c.QueryParam("type"),
+		NsID:   c.QueryParam("nsId"),
+		Status: c.QueryParam("status"),
+	}
+	page, err := pageQuery(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: model.ValidationMessage(err)})
+	}
+	resp := model.NodeDeploymentListResp{}
+	resp.Deployments, resp.Page = model.Paginate(h.nodeDeploy.List(ctx, filter), page)
+	return c.JSON(http.StatusOK, resp)
+}
+
+// RestGetNodeDeployment godoc
+// @ID GetNodeDeployment
+// @Summary Get a deployment onto nodes
+// @Description Read one deployment: its status (pending, deploying, running, failed, partial, dry-run, interrupted; removing, removed or remove-failed once taken down with DELETE /deployments/{id}), and for every node its status, how it was reached (csp, region, zone, host, port, user, specId; never the key), whether it got the GPU and why, the stage folder, the rendered compose and service URL of an inference service, its phase (what the service is doing there, as in GET /deployments/{id}/progress), and every playbook run with its Semaphore task ID and status (set when the task starts and followed while it runs) and the Ansible task it is on (currentTask). For polling, GET /deployments/{id}/progress answers the same progress in a shorter body. Task output is left out; read it with GET /deployments/{id}/logs.
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeployment "Deployment record"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Security BearerAuth
+// @Router /deployments/{id} [get]
+func (h *Handler) RestGetNodeDeployment(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	d, err := h.nodeDeploy.Get(ctx, id)
+	if err != nil {
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment lookup failed")})
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+// RestGetNodeDeploymentProgress godoc
+// @ID GetNodeDeploymentProgress
+// @Summary Get the progress of a deployment
+// @Description Read the short progress of a deployment of either type (inference or app), made to be polled every few seconds after POST /deployments answers 202, and after DELETE /deployments/{id} answers 202, until done is true. It is computed from the deployment record and asks no node and no other service.
+// @Description
+// @Description done is false while the deployment is pending, deploying or removing, and true otherwise. running is true only when it ended running (the service is up on every node). A finished deployment that is not running is failed, partial (count.running and count.failed tell how many nodes), interrupted (the service restarted while it ran), dry-run, or removed or remove-failed once taken down. count has total, inProgress (pending, deploying, removing), running, failed (failed, interrupted, remove-failed), dryRun and removed.
+// @Description
+// @Description For every node: status, done, phase (reading-node, staging, checking-ssh, waiting-node-lock, install-docker, compose-up, copy-and-run, compose-down, opening-ports, done; a failed node keeps the phase it failed in) with phaseStartedAt, the last playbook started (step: playbook, Semaphore taskId and taskUrl as soon as the task starts, its status waiting, starting or running while it runs and success, error, stopped or rejected once it ended, and currentTask, the Ansible task it is on, such as "Wait until the service answers"), stepsDone of stepsTotal, error, host, serviceUrl and ports. The task status and currentTask are read from Semaphore every 5 seconds while the playbook runs.
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeploymentProgress "Progress of the deployment"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Security BearerAuth
+// @Router /deployments/{id}/progress [get]
+func (h *Handler) RestGetNodeDeploymentProgress(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	p, err := h.nodeDeploy.Progress(ctx, id)
+	if err != nil {
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment lookup failed")})
+	}
+	return c.JSON(http.StatusOK, p)
+}
+
+// RestGetNodeDeploymentLogs godoc
+// @ID GetNodeDeploymentLogs
+// @Summary Get the task output of a deployment
+// @Description Read the Semaphore task log of every playbook run on every node of a deployment, one line per entry with colour codes removed. While a task runs, its output is the log so far, read from Semaphore every 5 seconds; once it ends, the whole log. The tasks and their logs are also kept in Semaphore under the template of each playbook.
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeploymentLogs "Task output per node and step"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Security BearerAuth
+// @Router /deployments/{id}/logs [get]
+func (h *Handler) RestGetNodeDeploymentLogs(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	logs, err := h.nodeDeploy.Logs(ctx, id)
+	if err != nil {
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment lookup failed")})
+	}
+	return c.JSON(http.StatusOK, logs)
+}
+
+// RestPostNodeDeploymentControl godoc
+// @ID PostNodeDeploymentControl
+// @Summary Control the nodes of a deployment
+// @Description Apply a CB-Tumblebug lifecycle action (suspend, resume, reboot or terminate) to every node of a deployment, one call per node. A node CB-Tumblebug refuses is reported failed and the others still get the action. Nothing is sent, and every node is reported blocked, when dry run is on or the deployment was a dry run. Every call is archived (kind node-control).
+// @Tags [Deployment] Node Deployment
+// @Accept json
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Param request body model.NodeControlReq true "Lifecycle action"
+// @Success 200 {object} model.NodeControlResp "Per node result"
+// @Failure 400 {object} model.SimpleMsg "Unknown action"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Security BearerAuth
+// @Router /deployments/{id}/control [post]
+func (h *Handler) RestPostNodeDeploymentControl(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	var req model.NodeControlReq
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, model.SimpleMsg{Message: malformedBody})
+	}
+	resp, err := h.nodeDeploy.Control(ctx, id, req.Action)
+	if err != nil {
+		log.Warn().Err(err).Str("deploymentId", id).Str("action", req.Action).Msg("Failed to control deployment nodes")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Node control failed")})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// RestDeleteNodeDeployment godoc
+// @ID DeleteNodeDeployment
+// @Summary Take a deployment down from its nodes
+// @Description Stop and remove the containers of a deployment on every node: Semaphore runs compose-down, which is docker compose -p aiapp-<work key> down --remove-orphans, as the SSH user the node was deployed as (nodes[].sshUser, which is targets[].sshUser when the request gave it, or the image default user the deployment fell back to); no SSH login is tried again. Named volumes (for example model weights a runtime downloaded) and the node folder /opt/aiapp/<work key> are kept, so that the next deployment of the work key finds them. A node without the project has nothing to take down and succeeds. The ports the deployment opened (nodes[].openedPorts) stay open in the CB-Tumblebug security groups, since other workloads may share them; close them in CB-Tumblebug when needed.
+// @Description
+// @Description Only the latest deployment of a work key on a node is live there. A node where a later deployment of the same work key replaced this one is not touched, since stopping the project would stop the later deployment; it is marked removed and nodes[].notes names the later deployment. A node of a dry-run deployment, a node where the deployment never started its service (compose-up or copy-and-run never ran), and a node CB-Tumblebug no longer has are marked removed without running anything, each with a note.
+// @Description
+// @Description When some node needs compose-down, the answer is 202 with the record in status removing and nodes[].status removing; follow it with GET /deployments/{id} until it is removed (every node) or remove-failed (compose-down failed on some node; nodes[].error says why). DELETE again retries the nodes not removed yet. When no node needs compose-down, the finished record (status removed) is returned with 200. A deployment already removed is returned as it is with 200. With dry run on (AIAPP_TUMBLEBUG_DRY_RUN), nothing is sent to Semaphore: nodes that would be taken down keep their status and get a note, and the record is returned with 200. Every removal is archived (kind node-removal).
+// @Tags [Deployment] Node Deployment
+// @Produce json
+// @Param id path string true "Deployment ID"
+// @Success 200 {object} model.NodeDeployment "Nothing to run on any node, already removed, or dry run"
+// @Success 202 {object} model.NodeDeployment "Accepted; the nodes are taken down in the background"
+// @Failure 404 {object} model.SimpleMsg "Deployment not found"
+// @Failure 409 {object} model.SimpleMsg "The deployment is still pending or deploying, or is being taken down"
+// @Security BearerAuth
+// @Router /deployments/{id} [delete]
+func (h *Handler) RestDeleteNodeDeployment(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	d, err := h.nodeDeploy.Remove(ctx, id)
+	if err != nil {
+		log.Warn().Err(err).Str("deploymentId", id).Msg("Refused deployment removal")
+		return c.JSON(statusCodeFor(err), model.SimpleMsg{Message: messageFor(err, "Deployment removal failed")})
+	}
+	if d.Status == model.NodeDeployRemoving {
+		return c.JSON(http.StatusAccepted, d)
+	}
+	return c.JSON(http.StatusOK, d)
+}

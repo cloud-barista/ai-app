@@ -1,0 +1,41 @@
+{
+ "count": 2,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "creator": 24351382,
+   "id": 869770484,
+   "last_updated": "2025-03-27T21:26:50.877904Z",
+   "last_updater": 24351382,
+   "last_updater_username": "ignaciolopezluna020",
+   "name": "latest",
+   "repository": 26836189,
+   "full_size": 670541918,
+   "v2": true,
+   "tag_status": "inactive",
+   "tag_last_pulled": "2026-11-03T14:25:36.836595396Z",
+   "tag_last_pushed": "2025-03-27T21:26:50.877904Z",
+   "media_type": "application/vnd.docker.ai.model.config.v0.1+json",
+   "content_type": "model",
+   "digest": "sha256:e5e025b145ac69b5402b63632a348d0193144fba366c86175658505f55bd56bd"
+  },
+  {
+   "creator": 24351382,
+   "id": 869615077,
+   "last_updated": "2025-03-24T16:54:23.521818Z",
+   "last_updater": 24351382,
+   "last_updater_username": "ignaciolopezluna020",
+   "name": "335M-F16",
+   "repository": 26836189,
+   "full_size": 670541918,
+   "v2": true,
+   "tag_status": "inactive",
+   "tag_last_pulled": "2026-11-03T14:25:36.836595396Z",
+   "tag_last_pushed": "2025-03-24T16:54:23.521818Z",
+   "media_type": "application/vnd.docker.ai.model.config.v0.1+json",
+   "content_type": "model",
+   "digest": "sha256:e5e025b145ac69b5402b63632a348d0193144fba366c86175658505f55bd56bd"
+  }
+ ]
+}

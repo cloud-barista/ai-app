@@ -1,0 +1,259 @@
+package modelcat
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+)
+
+func fetched(id, name string, runtimes ...string) model.Model {
+	compat := make([]model.RuntimeCompat, 0, len(runtimes))
+	for _, r := range runtimes {
+		compat = append(compat, model.RuntimeCompat{RuntimeID: r})
+	}
+	return model.Model{ID: id, Name: name, Origin: model.OriginHuggingFace, Artifacts: []model.Artifact{{
+		ID: "hf", Source: "huggingface", Ref: "org/" + id, Format: "hf", Runtimes: compat,
+	}}}
+}
+
+func TestApplySync(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	first := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+
+	counts, err := store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{
+		fetched("hf-a", "A", "vllm"),
+		fetched("hf-b", "B"),
+		fetched("qwen3-vl-8b", "Collides with the seed", "vllm"),
+		{ID: "hf-bad", Name: "No artifacts"},
+		fetched("hf-a", "A again", "vllm"),
+	}, first)
+	if err != nil {
+		t.Fatalf("ApplySync: %v", err)
+	}
+	if want := (SyncCounts{Added: 2, Skipped: 1, Invalid: 2}); counts != want {
+		t.Errorf("first counts = %+v, want %+v", counts, want)
+	}
+	seed, _ := store.Get(ctx, "qwen3-vl-8b")
+	if seed.Origin != model.OriginSeed || seed.Name == "Collides with the seed" || seed.SyncedAt != nil {
+		t.Errorf("seed entry changed: %+v", seed)
+	}
+	a, err := store.Get(ctx, "hf-a")
+	if err != nil {
+		t.Fatalf("Get hf-a: %v", err)
+	}
+	if a.Name != "A" || a.Origin != model.OriginHuggingFace || a.Stale || a.SyncedAt == nil || !a.SyncedAt.Equal(first) {
+		t.Errorf("added = %+v", a)
+	}
+
+	// A deployment verifies hf-a on vllm, then a person registers a model of
+	// an ID the next fetch also returns.
+	verified := first.Add(time.Hour)
+	a.Artifacts[0].Runtimes[0].VerifiedAt = &verified
+	a.Origin = model.OriginHuggingFace
+	if _, err := store.Register(ctx, *a); err != nil {
+		t.Fatalf("Register hf-a: %v", err)
+	}
+	manual := fetched("hf-c", "Manual")
+	manual.Origin = model.OriginManual
+	if _, err := store.Register(ctx, manual); err != nil {
+		t.Fatalf("Register hf-c: %v", err)
+	}
+
+	second := first.Add(24 * time.Hour)
+	renamed := fetched("hf-a", "A renamed", "vllm", "ollama")
+	renamed.Artifacts[0].Runtimes[1].VerifiedAt = &second
+	counts, err = store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{renamed, fetched("hf-c", "From the source")}, second)
+	if err != nil {
+		t.Fatalf("ApplySync: %v", err)
+	}
+	if want := (SyncCounts{Updated: 1, Staled: 1, Skipped: 1}); counts != want {
+		t.Errorf("second counts = %+v, want %+v", counts, want)
+	}
+	a, _ = store.Get(ctx, "hf-a")
+	if a.Name != "A renamed" || !a.SyncedAt.Equal(second) || len(a.Artifacts[0].Runtimes) != 2 {
+		t.Fatalf("updated = %+v", a)
+	}
+	if got := a.Artifacts[0].Runtimes[0].VerifiedAt; got == nil || !got.Equal(verified) {
+		t.Errorf("vllm verifiedAt = %v, want %v kept", got, verified)
+	}
+	if got := a.Artifacts[0].Runtimes[1].VerifiedAt; got != nil {
+		t.Errorf("ollama verifiedAt = %v, want none: a source cannot verify", got)
+	}
+	if c, _ := store.Get(ctx, "hf-c"); c.Origin != model.OriginManual || c.Name != "Manual" {
+		t.Errorf("manual entry changed: %+v", c)
+	}
+	b, _ := store.Get(ctx, "hf-b")
+	if !b.Stale || !b.SyncedAt.Equal(first) || b.Name != "B" {
+		t.Errorf("missing entry = %+v, want stale with syncedAt kept", b)
+	}
+
+	// The file holds the merge: a reopened store sees the same.
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if b, _ := reopened.Get(ctx, "hf-b"); !b.Stale {
+		t.Errorf("reopened hf-b = %+v, want stale", b)
+	}
+
+	third := second.Add(24 * time.Hour)
+	counts, err = store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{fetched("hf-a", "A"), fetched("hf-b", "B")}, third)
+	if err != nil {
+		t.Fatalf("ApplySync: %v", err)
+	}
+	if want := (SyncCounts{Updated: 2}); counts != want {
+		t.Errorf("third counts = %+v, want %+v", counts, want)
+	}
+	if b, _ := store.Get(ctx, "hf-b"); b.Stale || !b.SyncedAt.Equal(third) {
+		t.Errorf("reappeared = %+v, want not stale", b)
+	}
+	if got := ids(store.List(ctx, Filter{Origin: model.OriginSeed})); len(got) != 3 {
+		t.Errorf("seed models = %v, want the three untouched", got)
+	}
+}
+
+func TestApplySyncLeavesOtherSourcesAlone(t *testing.T) {
+	ctx := context.Background()
+	store := seeded(t, "")
+	at := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	ollama := fetched("ollama-a", "Ollama A")
+	if _, err := store.ApplySync(ctx, model.OriginOllama, []model.Model{ollama}, at); err != nil {
+		t.Fatalf("ApplySync ollama: %v", err)
+	}
+	counts, err := store.ApplySync(ctx, model.OriginHuggingFace, nil, at)
+	if err != nil {
+		t.Fatalf("ApplySync huggingface: %v", err)
+	}
+	if counts != (SyncCounts{}) {
+		t.Errorf("counts = %+v, want none", counts)
+	}
+	if m, _ := store.Get(ctx, "ollama-a"); m.Stale || m.Origin != model.OriginOllama {
+		t.Errorf("ollama entry = %+v, want untouched by a huggingface run", m)
+	}
+}
+
+// TestApplySyncKeepsDescriptionAndParameters stores the description and the
+// artifact parameters a source returns, through the file.
+func TestApplySyncKeepsDescriptionAndParameters(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	m := fetched("hf-a", "A", "vllm")
+	m.Description = "A small model."
+	m.Artifacts[0].Parameters = "8.2B"
+	m.Artifacts[0].SizeGiB = 16.3
+	if _, err := store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{m}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reopened.Get(ctx, "hf-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != "A small model." || got.Artifacts[0].Parameters != "8.2B" || got.Artifacts[0].SizeGiB != 16.3 ||
+		!got.Deployable || !got.Artifacts[0].Deployable {
+		t.Errorf("stored = %+v", got)
+	}
+}
+
+// TestRemoveOtherOrigins deletes the entries of sync origins not kept and
+// never seed or manual ones.
+func TestRemoveOtherOrigins(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	if _, err := store.Register(ctx, model.Model{ID: "mine", Name: "Mine", Origin: model.OriginManual,
+		Artifacts: []model.Artifact{{ID: "a", Source: "ngc", Ref: "nvidia/mine", Format: "hf"}}}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	for origin, id := range map[string]string{model.OriginHuggingFace: "hf-a", model.OriginNGC: "ngc-a", model.OriginKaggle: "kaggle-a"} {
+		if _, err := store.ApplySync(ctx, origin, []model.Model{fetched(id, id)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := store.RemoveOtherOrigins(ctx, []string{model.OriginHuggingFace, model.OriginOllama})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 2 || removed[model.OriginNGC] != 1 || removed[model.OriginKaggle] != 1 {
+		t.Errorf("removed = %v", removed)
+	}
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(reopened.List(ctx, Filter{})); strings.Join(got, ",") != "hf-a,mine,ministral-3-8b,qwen3-embedding-0.6b,qwen3-vl-8b" {
+		t.Errorf("left in the file = %v, want hf-a, the seed models and mine", got)
+	}
+	if removed, err := store.RemoveOtherOrigins(ctx, []string{model.OriginHuggingFace}); err != nil || removed != nil {
+		t.Errorf("second removal = %v, %v; want nothing", removed, err)
+	}
+}
+
+func TestApplySyncRefusesNonSyncOrigins(t *testing.T) {
+	store := seeded(t, "")
+	for _, origin := range []string{"", model.OriginSeed, model.OriginManual, "unknown"} {
+		if _, err := store.ApplySync(context.Background(), origin, nil, time.Now()); err == nil {
+			t.Errorf("ApplySync(%q) = nil error, want refused", origin)
+		}
+	}
+}
+
+func TestMarkVerified(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "models.json")
+	store := seeded(t, path)
+	synced := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	if _, err := store.ApplySync(ctx, model.OriginHuggingFace, []model.Model{fetched("hf-a", "A", "vllm", "ollama")}, synced); err != nil {
+		t.Fatalf("ApplySync: %v", err)
+	}
+
+	at := time.Date(2026, 11, 4, 12, 30, 0, 0, time.FixedZone("KST", 9*60*60))
+	marked, err := store.MarkVerified(ctx, "hf-a", "hf", "vllm", at)
+	if err != nil || !marked {
+		t.Fatalf("MarkVerified = %v, %v, want true", marked, err)
+	}
+
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open again: %v", err)
+	}
+	got, err := reopened.Get(ctx, "hf-a")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	runtimes := got.Artifacts[0].Runtimes
+	if runtimes[0].VerifiedAt == nil || !runtimes[0].VerifiedAt.Equal(at) || runtimes[0].VerifiedAt.Location() != time.UTC {
+		t.Errorf("vllm verifiedAt = %v, want %v in UTC", runtimes[0].VerifiedAt, at)
+	}
+	if runtimes[1].VerifiedAt != nil {
+		t.Errorf("ollama verifiedAt = %v, want none", runtimes[1].VerifiedAt)
+	}
+	if got.Origin != model.OriginHuggingFace || got.SyncedAt == nil || !got.SyncedAt.Equal(synced) || got.Stale {
+		t.Errorf("origin %q syncedAt %v stale %v changed", got.Origin, got.SyncedAt, got.Stale)
+	}
+
+	for _, c := range []struct{ modelID, artifactID, runtimeID string }{
+		{"nope", "hf", "vllm"},
+		{"hf-a", "nope", "vllm"},
+		{"hf-a", "hf", "tgi"},
+	} {
+		marked, err := store.MarkVerified(ctx, c.modelID, c.artifactID, c.runtimeID, at)
+		if err != nil || marked {
+			t.Errorf("MarkVerified(%s, %s, %s) = %v, %v, want false without error", c.modelID, c.artifactID, c.runtimeID, marked, err)
+		}
+	}
+	if got, _ := store.Get(ctx, "hf-a"); got.Artifacts[0].Runtimes[1].VerifiedAt != nil {
+		t.Errorf("a refused mark changed ollama: %v", got.Artifacts[0].Runtimes[1].VerifiedAt)
+	}
+}

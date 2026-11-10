@@ -1,0 +1,579 @@
+// Package config loads runtime configuration from environment variables.
+package config
+
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/spf13/viper"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
+)
+
+const envPrefix = "AIAPP"
+
+// recommenderNamePattern is what a recommender name may look like, the same
+// rule internal/recommend registers names under.
+var recommenderNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+
+// DefaultTumblebugBaseURL is where the service looks for CB-Tumblebug when
+// nothing says otherwise.
+//
+// It is a default rather than a required value so that the service starts with
+// no configuration at all. Everything that does not touch a cloud - the model
+// catalog, the application store, the tool listing, the archive, the API
+// documentation - works without CB-Tumblebug, and refusing to start took all of
+// that away to enforce a setting the deployment path would have reported anyway.
+// The startup log says which URL is in use and whether it came from the
+// environment, so a service pointed at the wrong place says so on the first line
+// instead of at the first deployment.
+const DefaultTumblebugBaseURL = "http://localhost:1323/tumblebug"
+
+// Config holds all runtime configuration for the service.
+type Config struct {
+	Server    ServerConfig
+	Tumblebug TumblebugConfig
+	Engine    EngineConfig
+	// PartnerNL is where the partner natural language agent is reached.
+	PartnerNL PartnerNLConfig
+	// PartnerRec is where the partner recommendation API is reached.
+	PartnerRec PartnerRecConfig
+	App        AppConfig
+	Archive    ArchiveConfig
+	Model      ModelConfig
+	AppStore   AppStoreConfig
+	Auth       AuthConfig
+	Health     HealthConfig
+	// Semaphore runs the playbooks that install onto a node.
+	Semaphore SemaphoreConfig
+	// Stage is the shared folder deployment files are placed in for Semaphore.
+	Stage StageConfig
+	// NodeDeploy holds where node deployment records are kept.
+	NodeDeploy NodeDeployConfig
+	// Recommender names the model and application recommenders.
+	Recommender RecommenderConfig
+	// CatalogSync fills the model catalog from public model sources.
+	CatalogSync CatalogSyncConfig
+}
+
+// ServerConfig holds the HTTP settings of the AI-App service.
+type ServerConfig struct {
+	Port int
+}
+
+// TumblebugConfig holds CB-Tumblebug connection settings.
+//
+// ImageNamespace and DefaultOSType are read only by the partner recommender
+// mock, which searches the image catalog; the AI-App service deploys onto nodes
+// that already run and picks no image.
+type TumblebugConfig struct {
+	BaseURL          string
+	Username         string
+	Password         string
+	Timeout          time.Duration
+	CredentialHolder string
+	// ImageNamespace holds the shared node image catalog, which is not the
+	// namespace a deployment is created in.
+	ImageNamespace string
+	// SpecNamespace holds the shared node spec catalog. It is separate from
+	// ImageNamespace because the two catalogs are separate resource types, even
+	// though a default install keeps both in the same namespace.
+	SpecNamespace string
+	// DefaultOSType is the image family used when an application does not name one.
+	DefaultOSType string
+	// DryRun keeps every infrastructure-changing tool from reaching CB-Tumblebug.
+	// It defaults to true so that an agent run can never provision by accident.
+	DryRun bool
+	// BaseURLFromDefault records that nothing configured BaseURL. The caller
+	// reports it at startup: a service quietly pointed at a built-in address is
+	// the one failure here that would otherwise only surface at deployment time.
+	BaseURLFromDefault bool
+}
+
+// EngineConfig holds the automation engine settings: the AI application
+// management automation agent of AI-Ops, which runs fixed workflows without a
+// model.
+type EngineConfig struct {
+	// Port is the HTTP port the engine process listens on.
+	Port int
+	// URL is where the AI-App service forwards engine requests.
+	URL string
+	// ArchiveDir holds the engine run archive, apart from the other archives.
+	ArchiveDir string
+	// RegistryURL is the agent registry the engine card is posted to at
+	// startup. Empty leaves registration off.
+	RegistryURL string
+	// RegistryToken is sent to the registry as a bearer token when set.
+	RegistryToken string
+}
+
+// PartnerNLConfig holds where the AI-App service forwards /aiapp/partner/nl/*:
+// the partner institution's natural language agent. Natural language
+// interpretation is the partner institution's area; until its agent exists,
+// this points at the mock of it.
+type PartnerNLConfig struct {
+	URL string
+}
+
+// PartnerRecConfig holds where the AI-App service forwards
+// /aiapp/partner/rec/*: the partner institution's infrastructure
+// recommendation API. The AI-App service does not call it itself; the route
+// lets the console reach it from the same origin. Until the partner's API
+// exists, this points at the mock of it.
+type PartnerRecConfig struct {
+	URL string
+}
+
+// AppConfig holds how the engine reaches the AI-App service.
+type AppConfig struct {
+	// MCPURL is the Streamable HTTP endpoint of the AI-App MCP server.
+	MCPURL string
+	// Token is sent as a bearer token to the AI-App MCP server when set.
+	Token string
+}
+
+// AuthConfig holds the bearer token this process requires of its callers.
+type AuthConfig struct {
+	// Token is required on every route but readiness, the console and the API
+	// documentation. Empty turns authentication off.
+	Token string
+}
+
+// HealthConfig holds how long an automation engine workflow waiting for a
+// deployment to end keeps asking, and how often.
+type HealthConfig struct {
+	Timeout  time.Duration
+	Interval time.Duration
+}
+
+// SemaphoreConfig holds how the AI-App service reaches Semaphore UI, which runs
+// the deployment playbooks against a node over SSH.
+type SemaphoreConfig struct {
+	// URL is the Semaphore base URL, without /api. Empty leaves node
+	// deployment unavailable; everything else works.
+	URL string
+	// Token is a Semaphore API token. When set it is used instead of the
+	// user name and password. Missing credentials are reported when a
+	// deployment reaches Semaphore, not at startup, for the same reason the
+	// CB-Tumblebug URL has a default.
+	Token    string
+	Username string
+	Password string
+	// Project is the Semaphore project deployments are registered in. It is
+	// created when it does not exist.
+	Project string
+	// PlaybookDir is where the playbooks are mounted inside the Semaphore
+	// container. It is registered as the project's repository.
+	PlaybookDir string
+	// PollInterval is how often a running task is asked for its status.
+	PollInterval time.Duration
+	// Timeout bounds one task, from start to a final status.
+	Timeout time.Duration
+	// UIURL is the Semaphore web UI as a browser reaches it, for example
+	// http://203.0.113.5:3000. URL is where this service reaches the API,
+	// which inside compose is a container name no browser resolves. Every
+	// recorded playbook run links to its task page under UIURL; empty leaves
+	// the links out.
+	UIURL string
+}
+
+// StageConfig holds the shared folder of deployment files.
+type StageConfig struct {
+	// Root is mounted at the same path in the AI-App and the Semaphore
+	// containers, so a path under it means the same files to both. It must be
+	// absolute because it is passed to Semaphore as is.
+	Root string
+}
+
+// NodeDeployConfig holds where the records of deployments onto existing nodes
+// are kept.
+type NodeDeployConfig struct {
+	// StoreFile is the JSON file every deployment record is written to after
+	// each change and read from at startup. Empty keeps the records in memory,
+	// so they are lost on restart.
+	StoreFile string
+	// OpenPorts opens the ports a deployment serves inbound from 0.0.0.0/0
+	// in every CB-Tumblebug security group of the node, once its playbooks
+	// succeed (AIAPP_DEPLOYMENT_OPEN_PORTS, true by default). Off, the ports
+	// are recorded and left for an operator to open.
+	OpenPorts bool
+}
+
+// RecommenderConfig names the implementations of internal/recommend that
+// answer POST /aiapp/recommendations/models and /apps. Empty leaves that route
+// answering 501. Whether a name is registered is checked at startup, where the
+// registry is linked in.
+type RecommenderConfig struct {
+	// Model is the model recommender name.
+	Model string
+	// App is the application recommender name.
+	App string
+}
+
+// CatalogSyncConfig holds how the model catalog is filled from public model
+// sources.
+type CatalogSyncConfig struct {
+	// Enabled turns the sync on (AIAPP_CATALOG_SYNC_ENABLED, true by
+	// default). A source whose host does not answer is skipped, so a service
+	// without internet access runs with it on; false turns it off.
+	Enabled bool
+	// Interval is the wait between scheduled runs, after the one at startup
+	// (AIAPP_CATALOG_SYNC_INTERVAL, 24h by default).
+	Interval time.Duration
+	// Sources are the sources to run, in order, by origin name
+	// (AIAPP_CATALOG_SYNC_SOURCES, a comma separated list,
+	// DefaultSyncSources by default). The entries of a sync source left out
+	// are deleted from the catalog at the end of each run.
+	Sources []string
+	// Limit caps how many models one listing of a source returns
+	// (AIAPP_CATALOG_SYNC_LIMIT, 100 by default).
+	Limit int
+}
+
+// SyncSources are the origins the catalog sync can collect from.
+var SyncSources = []string{model.OriginHuggingFace, model.OriginOllama, model.OriginDockerModelRunner,
+	model.OriginNGC, model.OriginKaggle}
+
+// DefaultSyncSources are the sources the catalog sync runs when
+// AIAPP_CATALOG_SYNC_SOURCES is not set, in order. docker-model-runner, ngc
+// and kaggle are left out because no runtime profile serves their artifacts
+// yet; setting the variable turns them on.
+var DefaultSyncSources = []string{model.OriginHuggingFace, model.OriginOllama}
+
+// ArchiveConfig holds the deployment/control archive location.
+type ArchiveConfig struct {
+	Dir string
+}
+
+// ModelConfig holds where the AI model catalog is kept.
+type ModelConfig struct {
+	// StoreFile is the JSON file the model catalog is written to after every
+	// change and read from at startup. The built-in models are seeded only
+	// when the file does not exist yet. Empty keeps the catalog in memory, so
+	// it starts from the built-in models on every start.
+	StoreFile string
+}
+
+// AppStoreConfig holds where uploaded AI applications are kept.
+type AppStoreConfig struct {
+	// Dir is the directory every uploaded version is written under and read
+	// back from at startup.
+	Dir string
+	// UploadMaxBytes bounds the script and files of one upload together.
+	UploadMaxBytes int64
+}
+
+// Load reads configuration from environment variables and validates it.
+func Load() (*Config, error) {
+	v := viper.New()
+	v.SetEnvPrefix(envPrefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	v.SetDefault("server.port", 8090)
+	v.SetDefault("tumblebug.base_url", DefaultTumblebugBaseURL)
+	v.SetDefault("tumblebug.timeout", 20*time.Minute)
+	v.SetDefault("tumblebug.credential_holder", "")
+	v.SetDefault("tumblebug.image_namespace", "system")
+	v.SetDefault("tumblebug.spec_namespace", "system")
+	v.SetDefault("tumblebug.default_os_type", "ubuntu 22.04")
+	v.SetDefault("tumblebug.dry_run", true)
+	v.SetDefault("engine.port", 8091)
+	v.SetDefault("engine.url", "http://127.0.0.1:8091")
+	v.SetDefault("engine.archive_dir", "./data/engine-archive")
+	v.SetDefault("mock_nl.url", "http://127.0.0.1:8093")
+	v.SetDefault("partner_rec.url", "http://127.0.0.1:8092")
+	v.SetDefault("app.mcp_url", "http://127.0.0.1:8090/aiapp/mcp")
+	v.SetDefault("archive.dir", "./data/archive")
+	v.SetDefault("app.store_dir", "./data/apps")
+	v.SetDefault("app.upload_max_bytes", 256<<20)
+	v.SetDefault("health.timeout", 15*time.Minute)
+	v.SetDefault("health.interval", 20*time.Second)
+	v.SetDefault("semaphore.project", "aiapp")
+	v.SetDefault("semaphore.playbook_dir", "/ansible")
+	v.SetDefault("semaphore.poll_interval", 5*time.Second)
+	v.SetDefault("semaphore.timeout", 30*time.Minute)
+	v.SetDefault("stage.root", "/var/lib/aiapp/stage")
+	v.SetDefault("deployment.open_ports", true)
+	v.SetDefault("catalog_sync.enabled", true)
+	v.SetDefault("catalog_sync.interval", 24*time.Hour)
+	v.SetDefault("catalog_sync.sources", strings.Join(DefaultSyncSources, ","))
+	v.SetDefault("catalog_sync.limit", 100)
+
+	// AutomaticEnv only resolves keys that viper already knows about.
+	for _, key := range []string{
+		"server.port",
+		"tumblebug.base_url",
+		"tumblebug.username",
+		"tumblebug.password",
+		"tumblebug.timeout",
+		"tumblebug.credential_holder",
+		"tumblebug.image_namespace",
+		"tumblebug.spec_namespace",
+		"tumblebug.default_os_type",
+		"tumblebug.dry_run",
+		"engine.port",
+		"engine.url",
+		"engine.archive_dir",
+		"engine.registry_url",
+		"engine.registry_token",
+		"mock_nl.url",
+		"partner_rec.url",
+		"app.mcp_url",
+		"app.token",
+		"archive.dir",
+		"model.store_file",
+		"app.store_dir",
+		"app.upload_max_bytes",
+		"auth.token",
+		"health.timeout",
+		"health.interval",
+		"semaphore.url",
+		"semaphore.token",
+		"semaphore.username",
+		"semaphore.password",
+		"semaphore.project",
+		"semaphore.playbook_dir",
+		"semaphore.poll_interval",
+		"semaphore.timeout",
+		"semaphore.ui_url",
+		"stage.root",
+		"deployment.store_file",
+		"deployment.open_ports",
+		"recommender.model",
+		"recommender.app",
+		"catalog_sync.enabled",
+		"catalog_sync.interval",
+		"catalog_sync.sources",
+		"catalog_sync.limit",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("failed to bind env for %q: %w", key, err)
+		}
+	}
+
+	cfg := &Config{
+		Server: ServerConfig{
+			Port: v.GetInt("server.port"),
+		},
+		Tumblebug: TumblebugConfig{
+			BaseURL:          strings.TrimRight(v.GetString("tumblebug.base_url"), "/"),
+			Username:         v.GetString("tumblebug.username"),
+			Password:         v.GetString("tumblebug.password"),
+			Timeout:          v.GetDuration("tumblebug.timeout"),
+			CredentialHolder: v.GetString("tumblebug.credential_holder"),
+			ImageNamespace:   v.GetString("tumblebug.image_namespace"),
+			SpecNamespace:    v.GetString("tumblebug.spec_namespace"),
+			DefaultOSType:    v.GetString("tumblebug.default_os_type"),
+			DryRun:           v.GetBool("tumblebug.dry_run"),
+			// AutomaticEnv resolves the key whether or not the variable is set,
+			// so the environment is the thing to ask.
+			BaseURLFromDefault: os.Getenv(envPrefix+"_TUMBLEBUG_BASE_URL") == "",
+		},
+		Engine: EngineConfig{
+			Port:          v.GetInt("engine.port"),
+			URL:           strings.TrimRight(v.GetString("engine.url"), "/"),
+			ArchiveDir:    v.GetString("engine.archive_dir"),
+			RegistryURL:   strings.TrimRight(v.GetString("engine.registry_url"), "/"),
+			RegistryToken: v.GetString("engine.registry_token"),
+		},
+		PartnerNL: PartnerNLConfig{
+			URL: strings.TrimRight(v.GetString("mock_nl.url"), "/"),
+		},
+		PartnerRec: PartnerRecConfig{
+			URL: strings.TrimRight(v.GetString("partner_rec.url"), "/"),
+		},
+		App: AppConfig{
+			MCPURL: v.GetString("app.mcp_url"),
+			Token:  v.GetString("app.token"),
+		},
+		Archive: ArchiveConfig{
+			Dir: v.GetString("archive.dir"),
+		},
+		Model: ModelConfig{
+			StoreFile: strings.TrimSpace(v.GetString("model.store_file")),
+		},
+		AppStore: AppStoreConfig{
+			Dir:            strings.TrimSpace(v.GetString("app.store_dir")),
+			UploadMaxBytes: v.GetInt64("app.upload_max_bytes"),
+		},
+		Auth: AuthConfig{
+			Token: v.GetString("auth.token"),
+		},
+		Health: HealthConfig{
+			Timeout:  v.GetDuration("health.timeout"),
+			Interval: v.GetDuration("health.interval"),
+		},
+		Semaphore: SemaphoreConfig{
+			URL:          strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.url")), "/"),
+			Token:        v.GetString("semaphore.token"),
+			Username:     v.GetString("semaphore.username"),
+			Password:     v.GetString("semaphore.password"),
+			Project:      strings.TrimSpace(v.GetString("semaphore.project")),
+			PlaybookDir:  strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.playbook_dir")), "/"),
+			PollInterval: v.GetDuration("semaphore.poll_interval"),
+			Timeout:      v.GetDuration("semaphore.timeout"),
+			UIURL:        strings.TrimRight(strings.TrimSpace(v.GetString("semaphore.ui_url")), "/"),
+		},
+		Stage: StageConfig{
+			Root: filepath.Clean(strings.TrimSpace(v.GetString("stage.root"))),
+		},
+		NodeDeploy: NodeDeployConfig{
+			StoreFile: strings.TrimSpace(v.GetString("deployment.store_file")),
+			OpenPorts: v.GetBool("deployment.open_ports"),
+		},
+		Recommender: RecommenderConfig{
+			Model: strings.TrimSpace(v.GetString("recommender.model")),
+			App:   strings.TrimSpace(v.GetString("recommender.app")),
+		},
+		CatalogSync: CatalogSyncConfig{
+			Enabled:  v.GetBool("catalog_sync.enabled"),
+			Interval: v.GetDuration("catalog_sync.interval"),
+			Sources:  splitList(v.GetString("catalog_sync.sources")),
+			Limit:    v.GetInt("catalog_sync.limit"),
+		},
+	}
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func (c *Config) validate() error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("invalid server port: %d", c.Server.Port)
+	}
+	if c.Tumblebug.BaseURL == "" {
+		return fmt.Errorf("%s_TUMBLEBUG_BASE_URL must not be set to an empty value", envPrefix)
+	}
+	if c.Tumblebug.Timeout <= 0 {
+		return fmt.Errorf("invalid tumblebug timeout: %s", c.Tumblebug.Timeout)
+	}
+	if c.Tumblebug.ImageNamespace == "" {
+		return fmt.Errorf("%s_TUMBLEBUG_IMAGE_NAMESPACE is required", envPrefix)
+	}
+	if c.Tumblebug.SpecNamespace == "" {
+		return fmt.Errorf("%s_TUMBLEBUG_SPEC_NAMESPACE is required", envPrefix)
+	}
+	if c.Tumblebug.DefaultOSType == "" {
+		return fmt.Errorf("%s_TUMBLEBUG_DEFAULT_OS_TYPE is required", envPrefix)
+	}
+	if c.Engine.Port <= 0 || c.Engine.Port > 65535 {
+		return fmt.Errorf("invalid engine port: %d", c.Engine.Port)
+	}
+	if c.Engine.URL == "" {
+		return fmt.Errorf("%s_ENGINE_URL is required", envPrefix)
+	}
+	if c.Engine.ArchiveDir == "" {
+		return fmt.Errorf("%s_ENGINE_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.PartnerNL.URL == "" {
+		return fmt.Errorf("%s_MOCK_NL_URL is required", envPrefix)
+	}
+	if c.PartnerRec.URL == "" {
+		return fmt.Errorf("%s_PARTNER_REC_URL is required", envPrefix)
+	}
+	if c.App.MCPURL == "" {
+		return fmt.Errorf("%s_APP_MCP_URL is required", envPrefix)
+	}
+	if c.Archive.Dir == "" {
+		return fmt.Errorf("%s_ARCHIVE_DIR is required", envPrefix)
+	}
+	if c.AppStore.Dir == "" {
+		return fmt.Errorf("%s_APP_STORE_DIR is required", envPrefix)
+	}
+	if c.AppStore.UploadMaxBytes <= 0 {
+		return fmt.Errorf("%s_APP_UPLOAD_MAX_BYTES must be a positive number of bytes", envPrefix)
+	}
+	if c.Health.Timeout <= 0 {
+		return fmt.Errorf("invalid health timeout: %s", c.Health.Timeout)
+	}
+	if c.Health.Interval <= 0 {
+		return fmt.Errorf("invalid health interval: %s", c.Health.Interval)
+	}
+	if err := c.Semaphore.validate(); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(c.Stage.Root) {
+		return fmt.Errorf("%s_STAGE_ROOT must be an absolute path, got %q", envPrefix, c.Stage.Root)
+	}
+	for _, setting := range []struct{ env, name string }{
+		{"RECOMMENDER_MODEL", c.Recommender.Model},
+		{"RECOMMENDER_APP", c.Recommender.App},
+	} {
+		if setting.name != "" && !recommenderNamePattern.MatchString(setting.name) {
+			return fmt.Errorf("%s_%s must match [a-z0-9][a-z0-9._-]* and be at most 63 characters, got %q",
+				envPrefix, setting.env, setting.name)
+		}
+	}
+	return c.CatalogSync.validate()
+}
+
+func (s CatalogSyncConfig) validate() error {
+	if s.Interval <= 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_INTERVAL must be a positive Go duration such as 24h", envPrefix)
+	}
+	if s.Limit <= 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_LIMIT must be a positive number", envPrefix)
+	}
+	if len(s.Sources) == 0 {
+		return fmt.Errorf("%s_CATALOG_SYNC_SOURCES must name at least one of %s",
+			envPrefix, strings.Join(SyncSources, ", "))
+	}
+	for i, name := range s.Sources {
+		if !slices.Contains(SyncSources, name) {
+			return fmt.Errorf("%s_CATALOG_SYNC_SOURCES names %q, which is not one of %s",
+				envPrefix, name, strings.Join(SyncSources, ", "))
+		}
+		if slices.Contains(s.Sources[:i], name) {
+			return fmt.Errorf("%s_CATALOG_SYNC_SOURCES names %q twice", envPrefix, name)
+		}
+	}
+	return nil
+}
+
+// splitList splits a comma separated list, trimming each entry and dropping
+// empty ones.
+func splitList(raw string) []string {
+	var out []string
+	for _, entry := range strings.Split(raw, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func (s SemaphoreConfig) validate() error {
+	if s.Project == "" {
+		return fmt.Errorf("%s_SEMAPHORE_PROJECT is required", envPrefix)
+	}
+	if !strings.HasPrefix(s.PlaybookDir, "/") {
+		return fmt.Errorf("%s_SEMAPHORE_PLAYBOOK_DIR must be an absolute path, got %q", envPrefix, s.PlaybookDir)
+	}
+	if s.PollInterval <= 0 {
+		return fmt.Errorf("invalid semaphore poll interval: %s", s.PollInterval)
+	}
+	if s.Timeout <= 0 {
+		return fmt.Errorf("invalid semaphore timeout: %s", s.Timeout)
+	}
+	if s.UIURL != "" {
+		u, err := url.Parse(s.UIURL)
+		if err != nil {
+			return fmt.Errorf("%s_SEMAPHORE_UI_URL is not a URL", envPrefix)
+		}
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("%s_SEMAPHORE_UI_URL must be an http or https URL with a host and no credentials, "+
+				"query or fragment, got %q", envPrefix, u.Redacted())
+		}
+	}
+	return nil
+}
