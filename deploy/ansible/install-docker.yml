@@ -1,0 +1,342 @@
+# Installs Docker Engine with the compose plugin, and the NVIDIA Container
+# Toolkit on GPU nodes. The distribution family is chosen from ID and ID_LIKE
+# in /etc/os-release:
+#
+#   debian  ubuntu, debian: Docker's apt repository for ubuntu or debian with
+#           the release codename, NVIDIA's apt repository.
+#   rhel    rhel, rocky, almalinux, centos (Stream), ol, fedora: Docker's rpm
+#           repository (linux/rhel for rhel, linux/fedora for fedora,
+#           linux/centos for the others), NVIDIA's rpm repository. dnf may
+#           replace packages that conflict with docker (podman, runc), as
+#           Docker's install guide asks.
+#   amazon  amzn (Amazon Linux 2023): docker from the distribution repository,
+#           which has no compose plugin package, so the compose plugin binary
+#           is installed by hand (see below); NVIDIA's rpm repository.
+#
+# Any other distribution, Amazon Linux 2 included (end of life, and its yum and
+# Python are older than this playbook expects), stops the play with the list
+# of supported IDs.
+#
+# Extra vars (passed by AI-App as the Semaphore task environment):
+#   gpu   optional, true on a node with an NVIDIA GPU (default false)
+#
+# The play first waits for the node to accept the connection: a VM that has
+# just turned Running may not have its login user yet.
+#
+# A node that already has docker with the compose plugin is left as it is. A
+# node with docker but without the compose plugin gets the compose package its
+# own sources offer (docker-compose-plugin from Docker, moby-compose from
+# Microsoft on Azure images). On apt nodes it fails when they offer none,
+# because its docker came from somewhere this playbook does not manage; on dnf
+# nodes it installs the compose plugin by hand instead.
+#
+# By hand means the way Docker documents it: the release binary of
+# compose_version for the node's architecture, checked against the release's
+# .sha256 file, as /usr/local/lib/docker/cli-plugins/docker-compose.
+#
+# On a GPU node the NVIDIA runtime is registered with docker whenever docker
+# does not list it, also when the toolkit came with the image.
+- name: Install Docker
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    docker_keyring: /etc/apt/keyrings/docker.asc
+    nvidia_keyring: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    compose_version: v5.7.0
+    compose_plugin: /usr/local/lib/docker/cli-plugins/docker-compose
+    supported_ids: ubuntu, debian, rhel, rocky, almalinux, centos, ol, fedora, amzn (Amazon Linux 2023)
+  tasks:
+    - name: Wait for the node to accept the connection
+      ansible.builtin.wait_for_connection:
+        sleep: 10
+        timeout: 600
+
+    - name: Read the distribution
+      ansible.builtin.shell: |
+        . /etc/os-release
+        echo "${ID:-}"
+        echo "${ID_LIKE:-}"
+        echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+        echo "${VERSION_ID:-}"
+        if command -v dpkg >/dev/null 2>&1; then dpkg --print-architecture; else echo; fi
+        uname -m
+      register: os_release
+      changed_when: false
+
+    - name: Work out the distribution family
+      vars:
+        distro_id: "{{ os_release.stdout_lines[0] }}"
+        distro_like: "{{ os_release.stdout_lines[1].split() }}"
+      ansible.builtin.set_fact:
+        os_id: "{{ distro_id }}"
+        os_version: "{{ os_release.stdout_lines[3] }}"
+        os_codename: "{{ os_release.stdout_lines[2] }}"
+        os_deb_arch: "{{ os_release.stdout_lines[4] }}"
+        os_machine: "{{ os_release.stdout_lines[5] }}"
+        os_family: >-
+          {%- if distro_id == 'amzn' -%}
+          {{ 'amazon' if os_release.stdout_lines[3] is version('2022', '>=') else 'other' }}
+          {%- elif distro_id in ['ubuntu', 'debian'] or 'ubuntu' in distro_like or 'debian' in distro_like -%}
+          debian
+          {%- elif distro_id in ['rhel', 'rocky', 'almalinux', 'centos', 'ol', 'fedora']
+                or 'rhel' in distro_like or 'centos' in distro_like or 'fedora' in distro_like -%}
+          rhel
+          {%- else -%}
+          other
+          {%- endif -%}
+        docker_apt_distro: "{{ 'ubuntu' if distro_id == 'ubuntu' or 'ubuntu' in distro_like else 'debian' }}"
+        docker_rpm_distro: >-
+          {{ distro_id if distro_id in ['rhel', 'fedora']
+             else 'centos' if distro_id in ['rocky', 'almalinux', 'centos', 'ol'] or 'rhel' in distro_like or 'centos' in distro_like
+             else 'fedora' }}
+        compose_by_hand: false
+
+    - name: Check for docker
+      ansible.builtin.shell: command -v docker
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check for the compose plugin
+      ansible.builtin.command: docker compose version
+      register: compose_check
+      changed_when: false
+      failed_when: false
+      when: docker_check.rc == 0
+
+    - name: Add the compose plugin to a docker that has none
+      when: docker_check.rc == 0 and compose_check.rc != 0
+      block:
+        - name: Refuse a distribution this playbook does not know
+          ansible.builtin.fail:
+            msg: >-
+              docker is installed but "docker compose" is not available, and install-docker
+              supports only {{ supported_ids }}, found {{ os_id }} {{ os_version }}; install the compose plugin for this docker
+          when: os_family == 'other'
+
+        - name: Find a compose package in the node's apt sources
+          # The policy is read into a variable first: grep -q in a pipe would
+          # stop reading early and fail apt-cache with SIGPIPE.
+          ansible.builtin.shell: |
+            apt-get update -qq || true
+            for pkg in docker-compose-plugin moby-compose; do
+              policy=$(apt-cache policy "$pkg" 2>/dev/null)
+              if grep -q 'Candidate: [0-9]' <<<"$policy"; then
+                echo "$pkg"
+                exit 0
+              fi
+            done
+          args:
+            executable: /bin/bash
+          register: compose_apt_package
+          changed_when: false
+          when: os_family == 'debian'
+
+        - name: Refuse a docker without a compose package
+          ansible.builtin.fail:
+            msg: docker is installed but "docker compose" is not available and no apt source offers docker-compose-plugin or moby-compose; install the compose plugin for this docker
+          when: os_family == 'debian' and compose_apt_package.stdout | trim == ''
+
+        - name: Find a compose package in the node's dnf repositories
+          ansible.builtin.shell: |
+            for pkg in docker-compose-plugin moby-compose; do
+              if dnf -q list --available "$pkg" >/dev/null 2>&1; then
+                echo "$pkg"
+                exit 0
+              fi
+            done
+          register: compose_dnf_package
+          changed_when: false
+          when: os_family in ['rhel', 'amazon']
+
+        - name: Install the compose package
+          ansible.builtin.package:
+            name: >-
+              {{ (compose_dnf_package if os_family in ['rhel', 'amazon'] else compose_apt_package).stdout | trim }}
+          when: not (os_family in ['rhel', 'amazon'] and compose_dnf_package.stdout | trim == '')
+
+        - name: Install the compose plugin by hand when no repository offers it
+          ansible.builtin.set_fact:
+            compose_by_hand: true
+          when: os_family in ['rhel', 'amazon'] and compose_dnf_package.stdout | trim == ''
+
+    - name: Install docker
+      when: docker_check.rc != 0
+      block:
+        - name: Refuse a distribution this playbook does not know
+          ansible.builtin.fail:
+            msg: "install-docker supports only {{ supported_ids }}, found {{ os_id }} {{ os_version }}"
+          when: os_family == 'other'
+
+        - name: Install docker from Docker's apt repository
+          when: os_family == 'debian'
+          block:
+            - name: Install the repository prerequisites
+              ansible.builtin.apt:
+                name: [ca-certificates, curl]
+                update_cache: true
+
+            - name: Create the keyring folder
+              ansible.builtin.file:
+                path: /etc/apt/keyrings
+                state: directory
+                mode: "0755"
+
+            - name: Download the Docker signing key
+              ansible.builtin.get_url:
+                url: https://download.docker.com/linux/{{ docker_apt_distro }}/gpg
+                dest: "{{ docker_keyring }}"
+                mode: "0644"
+
+            - name: Add the Docker repository
+              ansible.builtin.copy:
+                dest: /etc/apt/sources.list.d/docker.list
+                content: >-
+                  deb [arch={{ os_deb_arch }} signed-by={{ docker_keyring }}]
+                  https://download.docker.com/linux/{{ docker_apt_distro }} {{ os_codename }} stable
+                mode: "0644"
+
+            - name: Install Docker Engine and the compose plugin
+              ansible.builtin.apt:
+                name:
+                  - docker-ce
+                  - docker-ce-cli
+                  - containerd.io
+                  - docker-buildx-plugin
+                  - docker-compose-plugin
+                update_cache: true
+
+        - name: Install docker from Docker's rpm repository
+          when: os_family == 'rhel'
+          block:
+            - name: Add the Docker repository
+              ansible.builtin.get_url:
+                url: https://download.docker.com/linux/{{ docker_rpm_distro }}/docker-ce.repo
+                dest: /etc/yum.repos.d/docker-ce.repo
+                mode: "0644"
+
+            - name: Install Docker Engine and the compose plugin
+              ansible.builtin.dnf:
+                name:
+                  - docker-ce
+                  - docker-ce-cli
+                  - containerd.io
+                  - docker-buildx-plugin
+                  - docker-compose-plugin
+                allowerasing: true
+
+        - name: Install docker from the Amazon Linux repository
+          when: os_family == 'amazon'
+          block:
+            - name: Install docker
+              ansible.builtin.dnf:
+                name: docker
+
+            - name: Install the compose plugin by hand, the repository has none
+              ansible.builtin.set_fact:
+                compose_by_hand: true
+
+        - name: Start docker
+          ansible.builtin.service:
+            name: docker
+            state: started
+            enabled: true
+
+    - name: Install the compose plugin binary
+      when: compose_by_hand
+      block:
+        - name: Create the CLI plugin folder
+          ansible.builtin.file:
+            path: "{{ compose_plugin | dirname }}"
+            state: directory
+            mode: "0755"
+
+        - name: Download the compose plugin and check its sha256
+          vars:
+            compose_url: https://github.com/docker/compose/releases/download/{{ compose_version }}/docker-compose-linux-{{ os_machine }}
+          ansible.builtin.get_url:
+            url: "{{ compose_url }}"
+            checksum: sha256:{{ compose_url }}.sha256
+            dest: "{{ compose_plugin }}"
+            mode: "0755"
+
+        - name: Check the compose plugin
+          ansible.builtin.command: docker compose version
+          changed_when: false
+
+    - name: Check the compose plugin again
+      ansible.builtin.command: docker compose version
+      changed_when: false
+      when: docker_check.rc == 0 and compose_check.rc != 0 and not compose_by_hand
+
+    - name: Install the NVIDIA Container Toolkit
+      when: gpu | default(false) | bool
+      block:
+        - name: Check for the toolkit
+          ansible.builtin.shell: command -v nvidia-ctk
+          register: nvidia_check
+          changed_when: false
+          failed_when: false
+
+        - name: Install the toolkit from NVIDIA's apt repository
+          when: nvidia_check.rc != 0 and os_family == 'debian'
+          block:
+            - name: Install the repository prerequisites
+              ansible.builtin.apt:
+                name: [ca-certificates, curl, gnupg]
+                update_cache: true
+
+            - name: Download the NVIDIA signing key
+              ansible.builtin.shell: >-
+                set -o pipefail &&
+                curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey
+                | gpg --dearmor --yes -o {{ nvidia_keyring }}
+              args:
+                executable: /bin/bash
+                creates: "{{ nvidia_keyring }}"
+
+            - name: Add the NVIDIA repository
+              ansible.builtin.shell: >-
+                set -o pipefail &&
+                curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+                | sed 's#deb https://#deb [signed-by={{ nvidia_keyring }}] https://#g'
+                > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+              args:
+                executable: /bin/bash
+                creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+            - name: Install the toolkit
+              ansible.builtin.apt:
+                name: nvidia-container-toolkit
+                update_cache: true
+
+        - name: Install the toolkit from NVIDIA's rpm repository
+          when: nvidia_check.rc != 0 and os_family in ['rhel', 'amazon']
+          block:
+            - name: Add the NVIDIA repository
+              ansible.builtin.get_url:
+                url: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+                dest: /etc/yum.repos.d/nvidia-container-toolkit.repo
+                mode: "0644"
+
+            - name: Install the toolkit
+              ansible.builtin.dnf:
+                name: nvidia-container-toolkit
+
+        - name: Read the runtimes docker knows
+          ansible.builtin.command: docker info --format '{{ '{{' }}json .Runtimes{{ '}}' }}'
+          register: docker_runtimes
+          changed_when: false
+
+        - name: Register the NVIDIA runtime with docker
+          ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+          register: nvidia_configure
+          changed_when: "'Wrote updated config' in nvidia_configure.stdout + nvidia_configure.stderr"
+          when: "'nvidia' not in docker_runtimes.stdout"
+
+        - name: Restart docker
+          ansible.builtin.service:
+            name: docker
+            state: restarted
+          when: "'nvidia' not in docker_runtimes.stdout"

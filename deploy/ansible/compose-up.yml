@@ -1,0 +1,149 @@
+# Copies a staged compose project to the node, starts it, and optionally waits
+# until it answers.
+#
+# A node runs one model service per engine. Deploying the same work key again
+# replaces the files in its folder (tasks/place-files.yml) and the containers
+# of its compose project; model services of other engines are left alone.
+#
+# Extra vars (passed by AI-App as the Semaphore task environment):
+#   stage_dir       staged folder with docker-compose.yml, as seen inside the
+#                   Semaphore container
+#   node_dir        folder on the node: /opt/aiapp/<work key>, where the work
+#                   key is ms-<engine>
+#   compose_project compose project name: aiapp-<work key>
+#   deployment_id   the deployment that ran; not used on the node, only
+#                   shown with the task in Semaphore
+#   wait_services   optional list of one-shot services that must exit 0 before
+#                   the service counts as ready, for example the ollama
+#                   model-pull service; waited for with `docker compose wait`
+#   wait_timeout    optional, seconds to wait for each of them (default 1800)
+#   health_url      optional; polled from the node itself with curl
+#   health_retries  optional, attempts before giving up (default 60)
+#   health_delay    optional, seconds between attempts (default 10)
+#   gpu_check       optional; set when the engine was given the GPU, to check
+#                   after the service answers that it actually runs on it.
+#                   nvidia-smi: a process of a container of the compose
+#                   project must be in `nvidia-smi --query-compute-apps`
+#                   (host PIDs, matched against `docker top` of each
+#                   container). log: a line of the gpu_log_service log must
+#                   match gpu_log_pattern (grep -E). Otherwise the node fails,
+#                   since the deployment would serve from the CPU. On success
+#                   the matched line is printed after "aiapp-gpu-check: ".
+#   gpu_log_service compose service whose log is read, for log
+#   gpu_log_pattern grep -E pattern the GPU line matches, for log
+#   gpu_log_evidence optional grep -E pattern of the lines to show when
+#                   gpu_log_pattern matches none, for log
+#   gpu_check_retries optional, attempts (default 6)
+#   gpu_check_delay optional, seconds between attempts (default 5); the
+#                   engine may take the GPU a little after it answers
+#
+# Docker must already be installed; run install-docker.yml first.
+- name: Start the staged compose project
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check the compose project name
+      ansible.builtin.assert:
+        that:
+          - compose_project is defined and compose_project is match('^aiapp-[a-z0-9][a-z0-9_-]*$')
+        fail_msg: compose_project is required and must be aiapp-<work key>
+        quiet: true
+
+    - name: Place the files
+      ansible.builtin.include_tasks: tasks/place-files.yml
+
+    # --force-recreate: a redeploy with the same compose file, as heal does,
+    # must replace an unhealthy container rather than leave it running.
+    - name: Start the project, replacing what the previous deployment left
+      ansible.builtin.command:
+        argv: [docker, compose, -p, "{{ compose_project }}", up, -d, --remove-orphans, --force-recreate]
+        chdir: "{{ node_dir }}"
+      register: compose_result
+      changed_when: true
+
+    - name: Show the compose output
+      ansible.builtin.debug:
+        var: compose_result.stderr_lines
+
+    - name: Wait until the one-shot services exit
+      ansible.builtin.shell: >-
+        timeout {{ wait_timeout | default(1800) | int }}
+        docker compose -p {{ compose_project | quote }} wait {{ item | quote }}
+      args:
+        chdir: "{{ node_dir }}"
+      loop: "{{ wait_services | default([]) }}"
+      register: wait_result
+      changed_when: false
+      # Compose v5.6 prints 'container "<id>" exited with status code <n>'
+      # and exits with <n>; the output is checked too, in case a compose
+      # version exits 0 whatever the code it prints.
+      failed_when: >-
+        wait_result.rc != 0 or
+        (wait_result.stdout | trim) is not search('(^|\\s)0$')
+
+    - name: Wait until the service answers
+      ansible.builtin.command:
+        argv: [curl, -fsS, -o, /dev/null, --max-time, "10", "{{ health_url }}"]
+      register: health_result
+      until: health_result.rc == 0
+      retries: "{{ health_retries | default(60) | int }}"
+      delay: "{{ health_delay | default(10) | int }}"
+      changed_when: false
+      when: health_url is defined and health_url | length > 0
+
+    - name: Check that the runtime uses the GPU
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          {% if gpu_check == 'nvidia-smi' %}
+          apps=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1) || {
+            echo "nvidia-smi failed: $apps"; exit 1; }
+          pids=" "
+          for c in $(docker compose -p {{ compose_project | quote }} ps -q); do
+            pids="$pids$(docker top "$c" -o pid | tail -n +2 | tr '\n' ' ')"
+          done
+          while IFS= read -r line; do
+            pid=${line%%,*}
+            pid=${pid// /}
+            [ -n "$pid" ] || continue
+            case "$pids" in *" $pid "*) echo "$line"; exit 0;; esac
+          done <<< "$apps"
+          echo "no GPU compute process belongs to {{ compose_project }}; nvidia-smi lists: ${apps:-nothing}"
+          exit 1
+          {% elif gpu_check == 'log' %}
+          logs=$(docker compose -p {{ compose_project | quote }} logs --no-color --no-log-prefix {{ gpu_log_service | quote }} 2>&1) || {
+            echo "cannot read the log of" {{ gpu_log_service | quote }}": $logs"; exit 1; }
+          if line=$(grep -E -m1 -- {{ gpu_log_pattern | quote }} <<< "$logs"); then
+            echo "$line"; exit 0
+          fi
+          echo "no line of the" {{ gpu_log_service | quote }} "log matches" {{ gpu_log_pattern | quote }}
+          {% if gpu_log_evidence | default('') | length > 0 %}
+          grep -E -- {{ gpu_log_evidence | quote }} <<< "$logs" | tail -n 3
+          {% endif %}
+          exit 1
+          {% else %}
+          echo "unknown gpu_check" {{ gpu_check | quote }}"; want nvidia-smi or log"
+          exit 1
+          {% endif %}
+      args:
+        chdir: "{{ node_dir }}"
+      register: gpu_result
+      until: gpu_result.rc == 0
+      retries: "{{ gpu_check_retries | default(6) | int }}"
+      delay: "{{ gpu_check_delay | default(5) | int }}"
+      changed_when: false
+      failed_when: false
+      when: gpu_check is defined and gpu_check | length > 0
+
+    - name: Fail when the runtime is not on the GPU
+      ansible.builtin.fail:
+        msg: >-
+          The GPU was requested but the runtime is not running on it
+          ({{ gpu_check }} check): {{ gpu_result.stdout | default('') | trim }}
+      when: gpu_check is defined and gpu_check | length > 0 and gpu_result.rc != 0
+
+    - name: Show the line that puts the runtime on the GPU
+      ansible.builtin.debug:
+        msg: "aiapp-gpu-check: {{ gpu_check }}: {{ gpu_result.stdout_lines | last }}"
+      when: gpu_check is defined and gpu_check | length > 0
