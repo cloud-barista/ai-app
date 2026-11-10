@@ -1,0 +1,220 @@
+// Command ai-app-server serves the AI-App service: the AI model catalog, the
+// registered AI applications, deployment of both onto nodes CB-Tumblebug already
+// runs, the tools as an MCP server, the operator console and the deploy and
+// control archive.
+//
+// The automation engine runs as cmd/ai-automation-engine and reaches the tools
+// over MCP. Natural language instructions are the partner institution's area;
+// its agent, a mock under mock/partner/nlagent until the real one exists, calls
+// the engine. Both are forwarded from here so that the console keeps one
+// address.
+package main
+
+import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/rs/zerolog/log"
+
+	"github.com/ish-hcc/ai-agent-proto/internal/appstore"
+	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync"
+	"github.com/ish-hcc/ai-agent-proto/internal/catalogsync/sources"
+	"github.com/ish-hcc/ai-agent-proto/internal/config"
+	"github.com/ish-hcc/ai-agent-proto/internal/modelcat"
+	"github.com/ish-hcc/ai-agent-proto/internal/nodedeploy"
+	"github.com/ish-hcc/ai-agent-proto/internal/recommend"
+	"github.com/ish-hcc/ai-agent-proto/internal/rest"
+	"github.com/ish-hcc/ai-agent-proto/internal/semaphore"
+	"github.com/ish-hcc/ai-agent-proto/internal/tools"
+	"github.com/ish-hcc/ai-agent-proto/internal/tumblebug"
+)
+
+const shutdownTimeout = 10 * time.Second
+
+// nodeDeployShutdownTimeout bounds the wait for running node deployments at
+// shutdown. Each stops its Semaphore task and deletes the SSH key it
+// registered, which may take up to a minute when Semaphore is slow.
+const nodeDeployShutdownTimeout = 70 * time.Second
+
+// @title AI-MCMP AI-App Service (Prototype)
+// @version 0.1.0
+// @description Keeps an AI model catalog (models, the artifacts each is published as, and the inference runtime profiles they run on), registers AI applications as a name, files and a script with versions, deploys an inference service or an application onto nodes CB-Tumblebug already runs through Semaphore, publishes the same capabilities as MCP tools and archives every deploy and control call. Automation engine routes and the partner natural language agent routes are forwarded to their own processes.
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @BasePath /aiapp
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description "Bearer <token>". Required on every route but readiness, the console and this documentation when AIAPP_AUTH_TOKEN is set.
+func main() {
+	ctx := context.Background()
+
+	// The settings file is optional. Every setting has a default, so a checkout
+	// with no file starts and serves everything that does not touch a cloud.
+	if err := config.LoadEnvFile(config.DefaultEnvFile); err != nil {
+		log.Error().Err(err).Str("file", config.DefaultEnvFile).Msg("Failed to read the settings file")
+		os.Exit(1)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load configuration")
+		os.Exit(1)
+	}
+
+	archiveStore, err := archive.NewStore(cfg.Archive.Dir)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open archive")
+		os.Exit(1)
+	}
+
+	modelCatalog, loaded, err := modelcat.Open(cfg.Model.StoreFile)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open AI model catalog")
+		os.Exit(1)
+	}
+	if !loaded {
+		if err := modelcat.Seed(ctx, modelCatalog); err != nil {
+			log.Error().Err(err).Msg("Failed to seed AI model catalog")
+			os.Exit(1)
+		}
+	}
+	if cfg.Model.StoreFile == "" {
+		log.Warn().Msg("AIAPP_MODEL_STORE_FILE is not set: the AI model catalog is kept in memory and registered models are lost on restart")
+	}
+
+	syncCtx, stopSync := context.WithCancel(ctx)
+	defer stopSync()
+	var syncRunner *catalogsync.Runner
+	if cfg.CatalogSync.Enabled {
+		syncSources, err := sources.New(cfg.CatalogSync.Sources)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to set up catalog sync sources")
+			os.Exit(1)
+		}
+		syncRunner = catalogsync.NewRunner(modelCatalog, syncSources,
+			catalogsync.Options{Limit: cfg.CatalogSync.Limit}, cfg.CatalogSync.Interval)
+		log.Info().Strs("sources", cfg.CatalogSync.Sources).Str("interval", cfg.CatalogSync.Interval.String()).
+			Int("limit", cfg.CatalogSync.Limit).Msg("Catalog sync is on")
+	} else {
+		log.Info().Msg("AIAPP_CATALOG_SYNC_ENABLED is off: the model catalog is not filled from public sources")
+	}
+
+	appStore, err := appstore.Open(cfg.AppStore.Dir, cfg.AppStore.UploadMaxBytes)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open AI application store")
+		os.Exit(1)
+	}
+
+	tumblebugClient := tumblebug.NewClient(cfg.Tumblebug)
+
+	deploymentStore, err := nodedeploy.OpenStore(cfg.NodeDeploy.StoreFile)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to open node deployment records")
+		os.Exit(1)
+	}
+	if cfg.NodeDeploy.StoreFile == "" {
+		log.Warn().Msg("AIAPP_DEPLOYMENT_STORE_FILE is not set: node deployment records are kept in memory and lost on restart")
+	}
+	semaphoreClient := semaphore.NewClient(cfg.Semaphore)
+	nodeDeployService := nodedeploy.NewService(tumblebugClient, semaphoreClient,
+		modelCatalog, appStore, deploymentStore, archiveStore, nodedeploy.Options{
+			StageRoot:     cfg.Stage.Root,
+			SpecNamespace: cfg.Tumblebug.SpecNamespace,
+			DryRun:        cfg.Tumblebug.DryRun,
+			OpenPorts:     cfg.NodeDeploy.OpenPorts,
+		})
+	if cfg.Semaphore.URL == "" {
+		log.Warn().Msg("AIAPP_SEMAPHORE_URL is not set: deployments onto nodes fail when they reach Semaphore, unless dry run is on")
+	}
+	if cfg.Semaphore.UIURL == "" {
+		log.Info().Msg("AIAPP_SEMAPHORE_UI_URL is not set: deployment records carry no links to their Semaphore tasks")
+	}
+
+	recommender, err := recommend.Open(cfg.Recommender.Model, cfg.Recommender.App,
+		recommend.NewCatalog(modelCatalog, appStore))
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to set up recommenders")
+		os.Exit(1)
+	}
+	if cfg.Recommender.Model == "" || cfg.Recommender.App == "" {
+		log.Info().Str("model", cfg.Recommender.Model).Str("app", cfg.Recommender.App).
+			Msg("A recommender is not configured: its recommendation route answers 501")
+	}
+
+	registry := tools.NewRegistry(cfg.Tumblebug.DryRun)
+	tools.RegisterModels(registry, modelCatalog)
+	tools.RegisterApps(registry, appStore)
+	tools.RegisterNodeDeploy(registry, nodeDeployService)
+
+	// Which CB-Tumblebug this talks to is worth one line at startup whatever the
+	// answer, because a service pointed at the wrong platform behaves normally
+	// until the first deployment and then fails somewhere far from the cause.
+	if cfg.Tumblebug.BaseURLFromDefault {
+		log.Warn().Str("url", cfg.Tumblebug.BaseURL).Str("source", "default").
+			Msg("CB-Tumblebug base URL was not configured, so deployment calls will not reach a real platform")
+	} else {
+		log.Info().Str("url", cfg.Tumblebug.BaseURL).Str("source", "environment").
+			Msg("Using CB-Tumblebug")
+	}
+	if cfg.Tumblebug.DryRun {
+		log.Warn().Msg("Dry run is on: node deployments place their files and stop before Semaphore, and node control calls are blocked")
+	}
+	if cfg.Auth.Token == "" {
+		log.Warn().Msg("AIAPP_AUTH_TOKEN is not set: authentication is off and every route is open")
+	}
+
+	server := rest.NewAppServer(cfg, rest.AppDependencies{
+		Archive: archiveStore,
+		Tools:   registry,
+		Models:  modelCatalog,
+		Apps:    appStore,
+
+		NodeDeploy: nodeDeployService,
+		Recommend:  recommender,
+		Status:     rest.NewStatusChecker(cfg, semaphoreClient, tumblebugClient),
+		Sync:       syncRunner,
+	})
+	rest.MarkReady()
+	if syncRunner != nil {
+		syncRunner.Start(syncCtx)
+	}
+
+	go func() {
+		log.Info().Int("port", server.Port()).Str("basePath", rest.BasePath).
+			Int("tools", len(registry.Names())).Str("engineUrl", cfg.Engine.URL).Str("partnerNlUrl", cfg.PartnerNL.URL).
+			Str("partnerRecUrl", cfg.PartnerRec.URL).Msg("Starting server")
+		if err := server.Start(); err != nil {
+			log.Error().Err(err).Msg("Server stopped unexpectedly")
+			os.Exit(1)
+		}
+	}()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	stopSync()
+
+	// Node deployments are shut down whether or not the HTTP server stopped
+	// cleanly: each deletes the SSH key it registered in Semaphore.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	serverErr := server.Shutdown(shutdownCtx)
+	cancel()
+	deployCtx, cancelDeploy := context.WithTimeout(context.Background(), nodeDeployShutdownTimeout)
+	deployErr := nodeDeployService.Shutdown(deployCtx)
+	cancelDeploy()
+	if serverErr != nil {
+		log.Error().Err(serverErr).Msg("Graceful shutdown failed")
+	}
+	if deployErr != nil {
+		log.Error().Err(deployErr).Msg("Node deployments did not finish cleaning up")
+	}
+	if serverErr != nil || deployErr != nil {
+		os.Exit(1)
+	}
+	log.Info().Msg("Server stopped")
+}
