@@ -215,7 +215,7 @@ in another zone, use a new node group name, because CB-Tumblebug reuses the firs
 |---|---|---|
 | Infra provider (ETRI) | Creates GPU VMs with CB-Tumblebug, then deploys runtimes, models and apps with `POST /aiapp/deployments`; the Travel Planner portal reads `GET /aiapp/endpoints` | [docs/api/etri.md](docs/api/etri.md) |
 | AI-Web portal (BESP) | Reads the catalog, requests deployments, shows progress and endpoints | [docs/api/besp.md](docs/api/besp.md) |
-| Model and app recommendation (Kyung Hee University) | Implements recommenders behind `internal/recommend`; AI-App exposes the catalog metadata unchanged as input | [docs/api/khu.md](docs/api/khu.md) |
+| Model and app recommendation, update decisions, AI-Ops integration (Kyung Hee University) | Implements recommenders behind `internal/recommend`; AI-App exposes the catalog metadata unchanged as input. The same guide covers the split of app updates and the open points of the AI-Ops integration | [docs/api/khu.md](docs/api/khu.md) |
 | Natural language agent (partner) | Calls the engine's MCP tools (`/aiapp/engine/mcp`); a mock lives in `mock/partner/nlagent` | [API guide](docs/api/README.md) |
 | Infra recommender (partner) | Proposed contract `POST /recommendations/specs` and `/image`; a mock lives in `mock/partner/recommender`. AI-App does not call it | [API guide](docs/api/README.md) |
 | Inference optimization (partner) | Consumes deployment records (`GET /aiapp/deployments`) and engine run records (`GET /aiapp/engine/runs`) | [API guide](docs/api/README.md) |
@@ -259,7 +259,7 @@ The documents under `docs/` are written in Korean.
 | [docs/api/README.md](docs/api/README.md) | Developers calling the API | Call order, auth, errors, async deployment and progress, ports, full API list, request shapes, example apps with screenshots |
 | [docs/api/etri.md](docs/api/etri.md) | Infra provider | VM requirements, tested images per CSP, deploying the three node travel scenario |
 | [docs/api/besp.md](docs/api/besp.md) | Portal developers | Screens and calls for catalog, deployment, progress and endpoints |
-| [docs/api/khu.md](docs/api/khu.md) | Recommendation implementers | The `internal/recommend` interface and how to register an implementation |
+| [docs/api/khu.md](docs/api/khu.md) | Recommendation implementers, AI-Ops integrators | The `internal/recommend` interface and how to register an implementation, the split of app updates and versions, call directions and contract gaps with AI-Ops |
 | [docs/api/live-test-2026-11-03.md](docs/api/live-test-2026-11-03.md) | Everyone | Results of the run on real GPU VMs |
 | [docs/api/examples/](docs/api/examples) | Everyone | Runnable curl scripts `00` to `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | Maintainers | Data model and deployment design, open problems |
@@ -299,6 +299,8 @@ was deployed with the API alone and every service answered from outside. See [th
 | Item | Owner |
 |---|---|
 | Model and app recommendation behind `/aiapp/recommendations/*` | Kyung Hee University (`internal/recommend`) |
+| App updates: keep the previous version when a replacement fails, roll back, replace node by node ([khu.md section 6](docs/api/khu.md#6-응용-업데이트와-버전)) | AI-App runs them, Kyung Hee University decides. Who triggers them is open |
+| AI-Ops integration: call direction, per-deployment performance metrics, app information ([khu.md sections 7-9](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | Open |
 | Real infra recommender and natural language agent replacing the mocks (point `AIAPP_PARTNER_REC_URL` / `AIAPP_MOCK_NL_URL` at them) | Partner institutions |
 | Kubernetes deployment targets (`kind: k8s`) | Planned for year 3 |
 | Restricting serving port sources, closing ports, secret handling for `env` | Open |

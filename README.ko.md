@@ -196,7 +196,7 @@ AI-App 이 CB-Tumblebug 에서 부르는 것:
 |---|---|---|
 | 인프라 제공 (ETRI) | CB-Tumblebug 으로 GPU VM 을 만들고 `POST /aiapp/deployments` 로 런타임·모델·응용을 배포. Travel Planner 포털이 `GET /aiapp/endpoints` 의 주소를 씀 | [docs/api/etri.md](docs/api/etri.md) |
 | AI-Web 포털 (BESP) | 카탈로그를 읽고, 배포를 요청하고, 진행과 주소를 보여 줌 | [docs/api/besp.md](docs/api/besp.md) |
-| 모델·응용 추천 (경희대) | `internal/recommend` 뒤에 추천 구현을 넣음. AI-App 은 판단 재료인 카탈로그 메타데이터를 원래 값 그대로 내줌 | [docs/api/khu.md](docs/api/khu.md) |
+| 모델·응용 추천, 업데이트 판단, AI-Ops 연동 (경희대) | `internal/recommend` 뒤에 추천 구현을 넣음. AI-App 은 판단 재료인 카탈로그 메타데이터를 원래 값 그대로 내줌. 응용 업데이트와 AI-Ops 연동의 분담·협의 항목도 같은 문서에 있음 | [docs/api/khu.md](docs/api/khu.md) |
 | 자연어 에이전트 (협력 기관) | 엔진의 MCP 도구(`/aiapp/engine/mcp`)를 부름. 모의 구현이 `mock/partner/nlagent` 에 있음 | [API 가이드](docs/api/README.md) |
 | 인프라 추천 (협력 기관) | 제안 계약 `POST /recommendations/specs`, `/image`. 모의 구현이 `mock/partner/recommender` 에 있음. AI-App 은 부르지 않음 | [API 가이드](docs/api/README.md) |
 | 추론 최적화 (협력 기관) | 배포 기록(`GET /aiapp/deployments`)과 엔진 실행 기록(`GET /aiapp/engine/runs`)을 입력으로 씀 | [API 가이드](docs/api/README.md) |
@@ -238,7 +238,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | [docs/api/README.md](docs/api/README.md) | API 를 부르는 개발자 | 부르는 순서, 인증, 오류, 비동기 배포와 진행 보기, 포트, 전체 API 목록, 요청 모양, 예시 응용과 화면 |
 | [docs/api/etri.md](docs/api/etri.md) | 인프라 제공 기관 | VM 요건, CSP 별로 써 본 이미지, 노드 세 대 여행 시나리오 배포 |
 | [docs/api/besp.md](docs/api/besp.md) | 포털 개발자 | 카탈로그·배포·진행·주소 화면과 호출 |
-| [docs/api/khu.md](docs/api/khu.md) | 추천 구현자 | `internal/recommend` 인터페이스와 구현 등록 방법 |
+| [docs/api/khu.md](docs/api/khu.md) | 추천 구현자, AI-Ops 연동 담당 | `internal/recommend` 인터페이스와 구현 등록 방법, 응용 업데이트·버전 분담, AI-Ops 와의 호출 방향과 계약 차이 |
 | [docs/api/live-test-2026-11-03.md](docs/api/live-test-2026-11-03.md) | 모두 | 실제 GPU VM 에서 돌린 결과 |
 | [docs/api/examples/](docs/api/examples) | 모두 | 바로 돌려 볼 수 있는 curl 스크립트 `00` ~ `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | 유지보수자 | 데이터 모델과 배포 설계, 열린 문제 |
@@ -278,6 +278,8 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | 항목 | 담당 |
 |---|---|
 | `/aiapp/recommendations/*` 뒤의 모델·응용 추천 | 경희대 (`internal/recommend`) |
+| 응용 업데이트: 교체 실패 때 앞 버전 유지, 되돌리기, 순차 교체 ([khu.md 6절](docs/api/khu.md#6-응용-업데이트와-버전)) | 이노그리드 실행, 경희대 판단. 실행 주체는 협의 |
+| AI-Ops 연동: 호출 방향, 배포별 성능 지표, 응용 정보 ([khu.md 7~9절](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | 협의 |
 | 모의 구현을 대신할 실제 인프라 추천과 자연어 에이전트 (`AIAPP_PARTNER_REC_URL` / `AIAPP_MOCK_NL_URL` 을 그쪽으로) | 협력 기관 |
 | 쿠버네티스 배포 대상 (`kind: k8s`) | 3차년도 계획 |
 | 서빙 포트 출처 제한, 포트 닫기, `env` 비밀값 처리 | 미정 |

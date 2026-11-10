@@ -1,9 +1,24 @@
-# 경희대: 모델·응용 추천을 넣을 자리
+# 경희대: 추천을 넣을 자리, 응용 업데이트, AI-Ops 연동
 
-> 대상: 나중에 이 repo 에 모델·응용 추천을 구현할 경희대 개발자.
+> 대상: 이 repo 에 모델·응용 추천을 구현하거나, AI-Ops 에서 AI-App 과 연동할 경희대 개발자.
 > 공통 내용(인증, 오류 형식)은 [README.md](README.md) 에 있습니다.
 > API 가 어디로 열려 있는지는 [README.md 1-1절](README.md#1-1-api-는-어디로-열려-있나), Semaphore 는 [3-1절](README.md#3-1-semaphore-가-무엇인가),
 > 예시 응용 셋의 동작과 실제 화면은 [12절](README.md#12-예시-응용-셋은-어떻게-동작하나) 에 있습니다.
+
+## 0. 경희대가 맡는 것과 이 문서의 절
+
+AI-App 과 AI-Ops 연동에서 경희대가 맡는 것은 셋입니다. 이노그리드 쪽이 무엇을 내주고 어디에 붙는지를 같이 적습니다.
+
+| 항목 | 이노그리드 | 경희대 | AI-App 에서 붙는 곳 | 절 |
+|---|---|---|---|---|
+| AI 반도체 응용 요구 분석 및 인프라 추천 | 추천 경로와 요청·응답 형식, 카탈로그, 후보 검증 | 추천 알고리즘 | `POST /aiapp/recommendations/*` (`internal/recommend`) | 1~5 |
+| AI 반도체 응용 배포 자동화 및 업데이트 | 배포 실행, 응용 등록·버전 저장 | 업데이트를 언제 무엇으로 할지 판단 | `POST /aiapp/deployments`, 응용 버전 | 6 |
+| AI-Ops 와 AI-App 연동 | 자동배포/자동제어 엔진 (`cmd/ai-automation-engine`, LLM 없음) | 응용 배포·운영 정보 기반 추론 최적화 | 엔진 workflow·MCP, 배포·주소 API | 7, 8 |
+
+이 분담은 경희대 1차년도 2차 워크숍 발표자료(2026-10-20) 31쪽의 기관별 역할 분담(경희대: 판단 모듈과 입출력 규격 제공,
+이노그리드: 응용 등록·버전 관리, 배포 실행, 응용 모니터링, 판단 모듈 호출 및 실행 결과 전달)과
+[cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) 의 `docs/roadmap.md` "기관 간 연동 과제" 절을 따랐습니다.
+**호출 방향과 업데이트 실행 주체는 아직 정해지지 않았습니다**(7-2절, 9절).
 
 ## 1. 이번 시험에서는
 
@@ -275,3 +290,112 @@ MCP: `http://<AI-App 호스트>:8090/aiapp/mcp` (Streamable HTTP, 같은 `Author
 
 다만 **AI-App 은 바깥 추천 서비스를 부르지 않습니다.** `POST /aiapp/recommendations/*` 가 그 서비스의 답을 내게 하려면 3절의 구현
 안에서 그 서비스를 HTTP 로 부르는 얇은 어댑터를 넣어야 합니다. 그 어댑터가 받을 주소·토큰 설정은 아직 없어서 구현할 때 같이 정합니다.
+
+## 6. 응용 업데이트와 버전
+
+### 6-1. AI-App 이 지금 하는 것
+
+| 무엇 | 지금 동작 | 근거 |
+|---|---|---|
+| 응용 버전 | `POST /aiapp/apps` 로 같은 이름을 올릴 때마다 1부터 하나씩 오르는 정수 버전이 붙습니다. 배포 때 `app.version` 으로 고르고, 빼면 최신입니다 | `internal/model/appbundle.go:33-42` |
+| 모델 버전 | 없습니다. 같은 모델의 태그·양자화는 아티팩트로 따로 있고, 같은 `modelId` 로 다시 등록하면 앞 항목을 바꿉니다 | `internal/modelcat/modelcat.go:148` |
+| 업데이트(교체) | 같은 노드에 같은 작업을 다시 배포하면 앞의 것을 바꿉니다. 작업은 work key 로 갈립니다: 추론 서비스 `ms-<runtimeId>`, 응용 `app-<name>`. 그래서 같은 런타임에 다른 모델을 올려도 교체입니다 | `internal/rest/endpoints.go:18` |
+| 노드에 지금 떠 있는 것 | `GET /aiapp/endpoints` 가 노드·work key 마다 `deploymentId`, 응용이면 `name`·`version`, 추론 서비스면 `modelId`·`artifactId`·`runtimeId` 를 줍니다 | `internal/model/endpoint.go:50-81` |
+| 교체가 실패하면 | 새 배포가 서비스를 띄우기 **전에** 실패하면(예 `install-docker`) 앞 배포가 그대로 남습니다. 띄운 **뒤에** 실패하면 같은 compose 프로젝트를 다시 만들었으므로 앞 컨테이너도 없어져 주소가 사라집니다 | `internal/rest/endpoints.go:18` |
+| 없는 것 | 롤백(앞 버전으로 되돌리기), 노드를 하나씩 바꾸는 순차 교체, 교체 실패 때 앞 버전 유지, 업데이트 이력 조회 | |
+
+지금은 "앞 버전으로 되돌리기" 를 하려면 호출자가 앞 `version` 으로 `POST /aiapp/deployments` 를 다시 부릅니다. 무엇이 앞 버전이었는지는
+배포 목록(`GET /aiapp/deployments?type=app`)의 `request.app.version` 을 거꾸로 따라가야 압니다.
+
+### 6-2. 나누는 방법 (제안)
+
+| 무엇 | 누가 | 근거 |
+|---|---|---|
+| 버전 저장(응용 등록·버전 목록)과 교체 실행 | 이노그리드 | 발표자료 31쪽 "응용 등록·버전 관리", "배포 실행". ai-ops `docs/roadmap.md` 도 같음 |
+| 언제 무엇으로 바꿀지, 성공·실패 판정, 롤백 조건 | 경희대 | 발표자료 31쪽 "배포·운영 판단 메커니즘" |
+| 업데이트를 실제로 누가 부르는지(실행 주체) | 협의 | 발표자료 32쪽 P1 "자동 업데이트 연동: 배포 버전, 업데이트 제약, 성공·실패 판정, 롤백 조건 및 실행 주체 협의" |
+
+경희대 ai-ops 의 Revision(실행 구성의 버전)은 복제본 수·자원 같은 **배포 구성**의 버전이고, 위의 응용 버전과는 다릅니다.
+연동하면 "응용 버전 + 배포 구성 Revision" 두 축을 같이 들고 다녀야 합니다.
+
+### 6-3. 이노그리드 쪽에 필요한 것 (협의 뒤 구현)
+
+- 교체 실패 때 앞 버전을 살려 두는 배포 방식(새 프로젝트로 띄운 뒤 바꾸기)
+- 앞 버전으로 되돌리는 경로와 노드별 업데이트 이력
+- 여러 노드를 하나씩 바꾸고 중간에 멈추는 순차 교체
+
+## 7. AI-Ops 와 AI-App 연동
+
+### 7-1. ai-ops 에 있는 것
+
+[cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) `main` 의 `4a93f06`(2026-11-04) 코드와 문서를 읽고 정리했습니다. 띄워서 불러 보지는 않았습니다.
+
+| 경로 | 서비스 | 하는 일 |
+|---|---|---|
+| `POST /api/v1/application-profiles` | llmop | 자연어 또는 구조화 App Spec 을 `ApplicationProfile`(CPU·메모리·가속기·복제본·SLO)로 바꿈 |
+| `POST /api/v1/resource-recommendations` | resource_ops | `ApplicationProfile` 로 자원 후보를 걸러 점수화한 `ResourceRecommendation` |
+| `POST /api/v1/deployment-plans` | deployment_agent | 위 두 결과를 받아 `DEPLOY`/`REJECT`/`RETRY` 와 `DesiredDeploymentSpec`. **배포를 실행하지 않음** ("AppDeploy와 실제 VM은 계획 생성에 필요하지 않습니다", `deployment_agent/docs/usage.md`) |
+| `POST /api/v1/agent-control/flows/{id}/appdeploy/prepare`, `/submit` | deployment_agent | 승인된 Revision 1 을 외부 실행 모듈(AppDeployer)의 요청으로 바꿔 보냄. 실제로 배포를 넘기는 곳은 여기 |
+| `POST /api/v1/agent-control/deployment-status`, `/optimization-feedback` | deployment_agent | 배포 상태와 실측 성능을 받아 유지·확장·축소를 판단하고 Revision n+1 |
+| `GET`·`POST /api/v1/agents` | deployment_agent | 에이전트 등록. `role`, `endpoint`, `invocation_path`, `capabilities`, `bounded_actions` 가 필수 |
+
+ai-ops 에는 MCP 를 부르는 코드가 없습니다(저장소 전체 검색 0건). 외부 실행 모듈은 REST 로 부릅니다
+(`deployment_agent/go/service-control-api/internal/appdeploy/client.go`).
+
+### 7-2. 호출 방향 두 가지
+
+경희대 자료 안에서도 두 방향이 다 나옵니다. 어느 쪽으로 갈지는 협의 항목입니다.
+
+| | A. 이노그리드가 판단을 받아 실행 | B. 경희대가 판단 뒤 실행을 요청 |
+|---|---|---|
+| 근거 | 발표자료 31쪽: 이노그리드 연동 책임 "판단 모듈 호출 및 실행 결과 전달" | 발표자료 20쪽: prepare → submit 으로 "AppDeployer 에 실행 요청". ai-ops PoC 구현이 이 구조 |
+| 흐름 | 자동배포/자동제어 엔진이 llmop → resource_ops → `deployment-plans` 를 부르고, 판단을 AI-App 배포 요청으로 바꿔 실행한 뒤 결과를 `deployment-status`·`optimization-feedback` 로 보냄 | ai-ops 가 판단까지 하고, 실행 어댑터의 대상을 AppDeployer 에서 AI-App(REST 또는 엔진 MCP)으로 바꿔 배포를 요청 |
+| 이노그리드가 할 일 | 엔진에 판단 API 호출 단계, `DesiredDeploymentSpec` → `POST /aiapp/deployments` 변환, 결과 회신 | ai-ops 어댑터가 부를 API 를 맞춤. 성능 지표 API |
+| 경희대가 할 일 | 판단 API 와 입출력 규격 유지 | AI-App 용 실행 어댑터. 명세에 배포할 노드를 담기(7-3절) |
+| `deployment-plans` 의 자리 | 엔진이 부름 | ai-ops 안에서 씀. AI-App 과는 직접 이어지지 않음 |
+
+어느 쪽이든 AI-App MCP 를 `deployment-plans` 에 바로 붙이는 구조는 아닙니다. `deployment-plans` 는 입력으로 llmop·resource_ops 의 결과가 필요하고, 출력은 실행이 아니라 계획입니다.
+
+### 7-3. 계약이 안 맞는 곳
+
+ai-ops 의 실행 모듈 계약(`internal/appdeploy/models.go`, manifest `deployment.khu.ai/v1alpha1`)과 AI-App API 의 차이입니다.
+
+| 무엇 | ai-ops 가 기대하는 것 | AI-App |
+|---|---|---|
+| 배포할 노드 | 실행 모듈이 고름. ai-ops 의 `resource_hints` 는 실행 모듈에 강제되지 않음 | 요청에 `nsId`/`infraId`/`nodeId` 가 반드시 있어야 함 ([README.md 10절](README.md#10-배포-요청-모양)). 최종 VM 형상·배치 결정은 ETRI(발표자료 31쪽) |
+| 무엇을 올리나 | `app_version_id` 하나 | 응용은 `name` + 정수 `version`, 추론 서비스는 `modelId` + `artifactId` + `runtimeId` |
+| 자원 | `resources{cpu, memory, gpu, storage}`, `accelerator` | 받지 않음. 노드가 이미 정해져 있으므로 노드 스펙을 따름 |
+| 내리기 | `POST /deployments/{id}/stop` | `DELETE /aiapp/deployments/{id}` |
+| 운영 지표 | `GET /deployments/{id}/metrics`(지연·처리량), `GET /monitoring/summary` | 없음(8절) |
+| 필드 이름 | snake_case | camelCase |
+| 에이전트 등록 | `POST /api/v1/agents` 에 `role`, `endpoint`, `invocation_path`, `capabilities`, `bounded_actions` | 엔진은 자기 카드(`name`, `displayName`, `workflows`, `mcpEndpoint` 등)를 `<registry>/agents` 로 보냄 (`internal/engine/card.go`, `internal/registration/registration.go:202`). 필드가 달라 그대로는 받아들여지지 않을 것으로 보임(보내 보지는 않음) |
+
+## 8. 운영 정보 넘기기
+
+경희대의 "응용 배포·운영 정보 기반 추론 최적화" 는 배포 상태와 실측 성능이 입력입니다(발표자료 20쪽, 32쪽 P0 "모니터링·실행 피드백").
+
+| ai-ops 가 받는 것 | AI-App 이 지금 줄 수 있는 것 | 없는 것 |
+|---|---|---|
+| 배포 상태 (`deployment-status`) | `GET /aiapp/deployments/{id}` 의 `status`·노드별 상태, `GET .../progress`, `GET .../logs`, `GET /aiapp/endpoints` 의 `nodeStatus`·`available` | 실패 원인의 분류 코드(지금은 로그 문장) |
+| 실측 성능 (`optimization-feedback`) | 없음 | 응답 지연(p95), 처리량, 오류 수, CPU·GPU 사용률 |
+| 응용 정보 (발표자료 32쪽 P0 "응용 정보 연동") | `GET /aiapp/apps`(이름·버전·포트), `GET /aiapp/models`(용도·입력·크기·파라미터) | 응용의 용도·필요 자원·워크로드 특성([4절](#4-한계-추천-재료)) |
+
+추론 서비스는 vLLM `/metrics` 처럼 런타임이 지표를 내지만 AI-App 은 그것을 모으지 않습니다. 성능 지표를 어디서 모아 어떤 단위·주기로 넘길지는 협의 항목입니다.
+
+## 9. 방향과 상관없이 할 일과 협의 항목
+
+호출 방향(7-2절)이 정해지지 않아도 이노그리드가 먼저 준비할 수 있는 것입니다.
+
+| 할 일 | 발표자료 32쪽 | 관련 절 |
+|---|---|---|
+| 응용 정보 제공: 응용 카탈로그에 용도·필요 자원·워크로드 특성 | P0 응용 정보 연동 | 4, 8 |
+| 성능 지표: 배포별 지연·처리량·사용률을 읽는 API | P0 모니터링·실행 피드백 | 8 |
+| 버전·업데이트 기록: 교체 실패 때 앞 버전 유지, 되돌리기, 이력 | P1 자동 업데이트 연동 | 6 |
+
+기관 간에 정해야 할 것입니다.
+
+- 호출 방향과 실행 주체(7-2절의 A·B, 업데이트 실행 주체)
+- 배포할 노드를 누가 정해 어떻게 넘기는지(경희대 추천 결과, ETRI 의 최종 VM 결정, AI-App `targets[]` 의 관계)
+- 식별자 대응: ai-ops `app_id`·`app_version`·`app_version_id` 와 AI-App 응용 `name`·`version`, 추론 서비스 `modelId`·`artifactId`, 흐름 ID(`correlation_id`)를 AI-App 배포 ID 와 잇는 방법
+- 인증: AI-App 은 Bearer 토큰, ai-ops 는 지금 localhost 기준
+- 에이전트 등록 형식(7-3절 마지막 줄)
