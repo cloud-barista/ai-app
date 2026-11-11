@@ -2,7 +2,7 @@
 
 Ubuntu 관리 호스트에 CB-Tumblebug, AI-App과 Semaphore를 설치하고, AWS GPU VM 한 대에서 Ollama와 Qwen3-VL-8B를 실행하는 절차다. Open WebUI 연결, AI-Ops 연결과 시험 종료 절차를 포함한다. 관리 호스트와 GPU VM은 별도 서버이며, 관리 호스트는 GPU 없이 사용할 수 있다.
 
-2026-11-11에 Ubuntu 22.04.5, Docker 29.7.2, Compose 5.4.0, CB-Tumblebug `b808b9a2`에서 GPU 배포와 추론 응답을 확인했다. AI-App은 `khu` 브랜치에서 이 문서와 스크립트, Semaphore 출력 설정을 포함한 체크아웃을 사용한다. 실제 검증 조합은 AWS 서울 `g4dn.xlarge`, NVIDIA T4 16GB, Ubuntu 22.04 NVIDIA 드라이버 이미지, Ollama `0.40.13`, `qwen3-vl:8b`다.
+2026-11-11에 Ubuntu 22.04.5, Docker 29.7.2, Compose 5.4.0, CB-Tumblebug `b808b9a2`에서 GPU 배포와 추론 응답을 확인했다. AI-App은 이 문서와 스크립트, Semaphore 출력 설정을 포함한 체크아웃(main 의 `8d9df7c` 이후, 시험 당시는 khu 브랜치 `3943d19`)을 사용한다. 실제 검증 조합은 AWS 서울 `g4dn.xlarge`, NVIDIA T4 16GB, Ubuntu 22.04 NVIDIA 드라이버 이미지, Ollama `0.40.13`, `qwen3-vl:8b`다.
 
 ## 1. 호스트 준비
 
@@ -307,7 +307,7 @@ NODE_PRIVATE_IP="$(curl -sS -u "$TB_USER" \
 
 ## 9. AI-Ops 연결
 
-AI-Ops의 Go 모듈을 호스트에서 실행하려면 Go 1.25 이상과 `GOTOOLCHAIN=auto`를 준비한다. 사용할 LLM의 후보 설정에는 `candidate_id`, `llm_type`, `actual_model`, OpenAI 호환 `endpoint`, `enabled=true`가 필요하다. 실행 환경에서 접근 가능한 모델로 설정한다. 후보 예시는 `llmop/config/application_profile_llm_candidates.json`에 있다. [OpsLLM 설정](../../../ai-ops/llmop/go/service-control-api/README.md)
+AI-Ops의 Go 모듈을 호스트에서 실행하려면 Go 1.25 이상과 `GOTOOLCHAIN=auto`를 준비한다. 사용할 LLM의 후보 설정에는 `candidate_id`, `llm_type`, `actual_model`, OpenAI 호환 `endpoint`, `enabled=true`가 필요하다. 실행 환경에서 접근 가능한 모델로 설정한다. 후보 예시는 `llmop/config/application_profile_llm_candidates.json`에 있다. [OpsLLM 설정](https://github.com/cloud-barista/ai-ops/blob/main/llmop/go/service-control-api/README.md)
 
 앞에서 배포한 GPU 모델을 OpsLLM 자연어 시험에 사용하려면 다음처럼 후보를 작성한다. `OLLAMA_URL`은 7절에서 확인한 노드의 Ollama 주소다.
 
@@ -381,7 +381,7 @@ curl -sS -H "Authorization: Bearer $AIAPP_AUTH_TOKEN" \
   http://localhost:8090/aiapp/partner/nl/ns/default/intents | jq
 ```
 
-응답의 OpsLLM 실행 ID와 실제 모델, 엔진 호출 결과를 확인한다. AI-App 콘솔에서도 같은 자연어 요청을 보낼 수 있다. 승인된 배포·업데이트와 추론 최적화의 입력은 해당 API 계약에 맞춰 준비한다. [AI-Ops 실행 설정](../../../ai-ops/docs/getting-started.md) · [승인 배포](approved-deployment.md) · [추론 최적화](inference-optimization.md)
+응답의 OpsLLM 실행 ID와 실제 모델, 엔진 호출 결과를 확인한다. AI-App 콘솔에서도 같은 자연어 요청을 보낼 수 있다. 승인된 배포·업데이트와 추론 최적화의 입력은 해당 API 계약에 맞춰 준비한다. [AI-Ops 실행 설정](https://github.com/cloud-barista/ai-ops/blob/main/docs/getting-started.md) · [승인 배포](approved-deployment.md) · [추론 최적화](inference-optimization.md)
 
 기동 후에는 AI-Ops의 통합 시험 스크립트로 자연어 카탈로그 조회, 실제 배포 상태 조회, REST·MCP 실행 기록의 일치를 확인한다. 현재 사용 중인 추론 배포 ID를 지정한다.
 
@@ -432,7 +432,7 @@ curl -sS -u "$TB_USER" -X DELETE \
 curl -sS -u "$TB_USER" "$TB_URL/ns/$NS_ID/infra?option=id" | jq '.output'
 ```
 
-CSP 콘솔에서도 VM 종료와 남은 디스크·네트워크 자원을 확인한다. AI-App의 서비스 제거는 모델 볼륨·폴더와 열린 포트를 보존하며, VM 사용료는 VM이 실행 중인 동안 이어진다. Infra 삭제 후 공유 네트워크 등이 남을 수 있다. [공유 자원 정리](../../../cb-tumblebug/docs/feature_guide/ko/shared-resource-management.md)
+CSP 콘솔에서도 VM 종료와 남은 디스크·네트워크 자원을 확인한다. AI-App의 서비스 제거는 모델 볼륨·폴더와 열린 포트를 보존하며, VM 사용료는 VM이 실행 중인 동안 이어진다. Infra 삭제 후 공유 네트워크 등이 남을 수 있다. [공유 자원 정리](https://github.com/cloud-barista/cb-tumblebug/blob/b808b9a2/docs/feature_guide/ko/shared-resource-management.md)
 
 관리 서비스를 정지한다.
 
