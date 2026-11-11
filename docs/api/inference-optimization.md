@@ -4,7 +4,7 @@ AI-App의 `optimization/policy.py`는 관측 레코드와 부하 시험 결과�
 
 ## 실측 자료
 
-하나의 데이터셋에서는 준비된 노드, GPU UUID, 모델·아티팩트, 런타임 이미지, 응용 버전과 요청 분포를 고정한다. 초기 AI-Ops 배포 준비의 `max_num_seqs`로 기준값을 지정하고, 후속 후보는 승인된 업데이트에서 `--max-num-seqs`로 적용한다. 각 설정에서 워밍업 뒤 부하를 발생시킨다. 최소 두 부하 수준과 두 설정을 시험하고, 그 조합 전체를 시간순으로 다섯 번 이상 반복한다. 각 반복에서는 조합별 관측 창이 겹치지 않도록 한다. 새 Revision을 적용하기 전에 현재 창의 관측 JSON을 받는다. [AI-Ops 초기 설정과 승인](../../../ai-ops/deployment_agent/docs/aiapp-intent-approval.md#추론-최적화-제안-승인)
+하나의 데이터셋에서는 준비된 노드, GPU UUID, 모델·아티팩트, 런타임 이미지, 응용 버전과 요청 분포를 고정한다. 초기 AI-Ops 배포 준비의 `max_num_seqs`로 기준값을 지정하고, 후속 후보는 승인된 업데이트에서 `--max-num-seqs`로 적용한다. 각 설정에서 워밍업 뒤 부하를 발생시킨다. 최소 두 부하 수준과 두 설정을 시험하고, 그 조합 전체를 시간순으로 다섯 번 이상 반복한다. 각 반복에서는 조합별 관측 창이 겹치지 않도록 한다. 새 Revision을 적용하기 전에 현재 창의 관측 JSON을 받는다. [AI-Ops 초기 설정과 승인](../../../ai-ops/app_automation_agent/docs/aiapp-intent-approval.md#추론-최적화-제안-승인)
 
 데이터셋은 한 줄에 시험 하나를 담은 JSONL 파일이다. 각 행의 `observation`에는 MCP가 반환한 관측 레코드 전체를 넣는다. `load`에는 같은 창에서 부하 발생기가 기록한 아래 값을 넣는다. `withinSLO`에는 지정한 지연 기준을 충족한 성공 요청만 센다. 실패와 타임아웃은 `failed`에 포함한다. `workloadId`는 요청 본문과 길이 분포를 고정한 실험 구성의 버전이다.
 
@@ -133,7 +133,7 @@ python optimization/policy.py preview current-sample.json artifacts/vllm-policy-
 
 적용 후보는 실측 자료로 검증한 `UPDATE`이며 관측 창 종료 후 30분 이내여야 한다. 엔진은 과거 전환의 두 Revision과 Run이 현재와 같은 노드·기준 구성·후보 설정인지 확인한다. 전환은 현재 관측 창 시작 전에 끝나야 한다. 계측이 빠지면 `transition_evidence_required`, 기록이 맞지 않으면 `transition_evidence_invalid`, 두 응용 응답 사이의 공백이 상한을 넘으면 `transition_downtime_exceeds_budget`을 반환한다. 보수적 유효 처리량은 최대 업데이트 중단 시간과 평가 기간을 기준으로 계산하고, 예측 오차를 반영한 뒤에도 최소 개선 폭과 SLO를 충족해야 한다. `fixture`, `KEEP`, `ABSTAIN`은 조회용 제안이다. 이미 적용한 이전 제안의 사후 비교에는 당시 게시물과 실제 중단 시간을 사용한다.
 
-AI-Ops에서 `/api/v1/agent-control/flows/{correlation_id}/aiapp/optimizations/{proposal_id}`의 `GET`으로 제안과 다음 Revision을 읽는다. `/approve`에 `{"digest":"<proposalId>"}`를 보내 승인한다. AI-Ops는 승인 직전에 근거를 다시 확인하고, 이전 구성에서 `--max-num-seqs`만 바꾼 다음 Revision을 기존 적용 API에 제출한다. [AI-Ops 권한과 요청 형식](../../../ai-ops/deployment_agent/docs/aiapp-intent-approval.md#추론-최적화-제안-승인) · [승인 적용](approved-deployment.md)
+AI-Ops에서 `/api/v1/agent-control/flows/{correlation_id}/aiapp/optimizations/{proposal_id}`의 `GET`으로 제안과 다음 Revision을 읽는다. `/approve`에 `{"digest":"<proposalId>"}`를 보내 승인한다. AI-Ops는 승인 직전에 근거를 다시 확인하고, 이전 구성에서 `--max-num-seqs`만 바꾼 다음 Revision을 기존 적용 API에 제출한다. [AI-Ops 권한과 요청 형식](../../../ai-ops/app_automation_agent/docs/aiapp-intent-approval.md#추론-최적화-제안-승인) · [승인 적용](approved-deployment.md)
 
 ### Compose에서 호스트 제안 읽기
 

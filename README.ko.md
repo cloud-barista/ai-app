@@ -19,6 +19,7 @@ CB-Tumblebug 노드에 설치하고, 서빙 포트를 열고, 그 주소를 알�
 - [API](#api)
 - [문서](#문서)
 - [지금 되는 것](#지금-되는-것)
+- [시험 결과](#시험-결과)
 - [제약](#제약)
 - [앞으로 할 것](#앞으로-할-것)
 - [설정](#설정)
@@ -257,6 +258,25 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 
 2026-11-03 에 노드 세 대 여행 시나리오(vLLM 임베딩 + Dify, Ollama Qwen3-VL + Open WebUI, vLLM Ministral + Langflow)를
 API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. [시험 결과](docs/api/live-test-2026-11-03.md)를 보십시오.
+
+## 시험 결과
+
+### 2026-11-11 GPU 배포·AI-Ops 통합 시험
+
+AWS 서울 리전의 `g4dn.xlarge`·Tesla T4·Ubuntu 22.04 노드에서 Ollama와 `qwen3-vl:8b`를 실행했습니다. 같은 모델을 AI-Ops의 구축형 OpsLLM으로 연결했습니다. 배포는 기존 AI-App API와 Semaphore를 사용했습니다.
+
+| 시험 | 확인한 결과 |
+|---|---|
+| Semaphore 배포 | Compose에서 기본 Ansible 출력 콜백을 지정한 뒤 설치·Compose 작업이 완료됐고 추론 배포가 `running`이 됐습니다. |
+| GPU 실행 | 런타임의 GPU 점검을 통과했고 로그에서 Tesla T4와 CUDA를 확인했습니다. |
+| 실제 추론 응답 | `POST /api/generate`가 `2 + 2` 질문에 HTTP `200`, 답 `4`, `done: true`를 반환했습니다. |
+| AI-Ops 연동 | 8090의 자연어 카탈로그·배포 상태 조회와 OpsLLM·엔진 Run 연결을 확인했습니다. MCP·REST 기록 일치와 재시작 복구도 통과했습니다. |
+| 자동 검사 | `go test ./...`, `go vet ./...`, `scripts/gpu-test.sh`의 모의 HTTP 회귀 시험 9개를 통과했습니다. 실제 노드에서는 스크립트의 `status`·`test` 명령도 통과했습니다. |
+| 자원 정리 | AWS에서 GPU VM의 `terminated` 상태와 루트 EBS 삭제를 확인했고 CB-Tumblebug의 시험 Infra도 제거됐습니다. |
+
+재현 절차와 범위는 [설치·시험 가이드](docs/api/gpu-installation.md)와 [경희대 구현 기록](docs/api/khu-implementation.md)에 있습니다. 환경별 실행 ID·원시 결과는 Git에서 제외한 로컬 기록에 보관합니다.
+
+이번 시험에서는 승인 Revision 경로의 실제 배포·업데이트, vLLM·DCGM 최적화 성능, 외부 구독형·공개 모델 제공처, 새 호스트의 전체 설치와 새 스크립트의 `deploy` 실배포 실행은 확인하지 않았습니다. 시험용 VM은 종료했으므로 재시험 전에 노드와 LLM 접속 설정을 다시 준비해야 합니다.
 
 ## 제약
 

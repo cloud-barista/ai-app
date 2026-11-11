@@ -19,6 +19,7 @@ An automation engine on top runs fixed deploy, heal, control and status workflow
 - [API](#api)
 - [Documentation](#documentation)
 - [What works today](#what-works-today)
+- [Test results](#test-results)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
 - [Configuration](#configuration)
@@ -214,9 +215,10 @@ in another zone, use a new node group name, because CB-Tumblebug reuses the firs
 | Infra provider (ETRI) | Creates GPU VMs with CB-Tumblebug, then deploys runtimes, models and apps with `POST /aiapp/deployments`; the Travel Planner portal reads `GET /aiapp/endpoints` | [docs/api/etri.md](docs/api/etri.md) |
 | AI-Web portal (BESP) | Reads the catalog, requests deployments, shows progress and endpoints | [docs/api/besp.md](docs/api/besp.md) |
 | Model and app recommendation (Kyung Hee University) | Implements recommenders behind `internal/recommend`; AI-App exposes the catalog metadata unchanged as input | [docs/api/khu.md](docs/api/khu.md) |
-| Natural language agent (partner) | Calls the engine's MCP tools (`/aiapp/engine/mcp`); a mock lives in `mock/partner/nlagent` | [API guide](docs/api/README.md) |
-| Infra recommender (partner) | Proposed contract `POST /recommendations/specs` and `/image`; a mock lives in `mock/partner/recommender`. AI-App does not call it | [API guide](docs/api/README.md) |
-| Inference optimization (partner) | Consumes deployment records (`GET /aiapp/deployments`) and engine run records (`GET /aiapp/engine/runs`) | [API guide](docs/api/README.md) |
+| Natural language agent (Kyung Hee University, AI-Ops) | Uses the existing `/aiapp/partner/nl/*` proxy and engine MCP. AI-Ops manages OpsLLM routing, Registry, permissions and approvals; the original mock remains in `mock/partner/nlagent` | [KHU implementation](docs/api/khu-implementation.md) |
+| Infra recommender (Kyung Hee University, AI-App) | Adds `cmd/khu-infra-recommender` behind the existing `/aiapp/partner/rec/*` proxy for CB-Tumblebug spec and image recommendations. Select it with `AIAPP_PARTNER_REC_URL`; the original mock remains in place | [Infra recommendation](docs/api/infra-recommendation.md) |
+| Approved deployment and updates (Kyung Hee University, AI-App) | Connects approved revisions to the existing engine and deployment tools through a separate authenticated MCP endpoint | [Approved deployment](docs/api/approved-deployment.md) |
+| Inference observation and optimization (Kyung Hee University, AI-App) | Joins approved deployment and engine records to vLLM/DCGM metrics, then predicts configuration changes. AI-Ops reviews and approves published proposals | [Observation](docs/api/inference-observation.md), [Optimization](docs/api/inference-optimization.md) |
 
 Two API layers, two kinds of callers:
 
@@ -255,6 +257,8 @@ The documents under `docs/` are written in Korean.
 | Document | For | Contents |
 |---|---|---|
 | [docs/api/README.md](docs/api/README.md) | Developers calling the API | Call order, auth, errors, async deployment and progress, ports, full API list, request shapes, example apps with screenshots |
+| [docs/api/khu-implementation.md](docs/api/khu-implementation.md) | Maintainers and partner developers | KHU additions, existing Innogrid features reused, AI-App/AI-Ops responsibilities, integration paths and verification scope |
+| [docs/api/gpu-installation.md](docs/api/gpu-installation.md) | Operators | Host setup, GPU deployment, AI-Ops integration, test scripts and cleanup |
 | [docs/api/etri.md](docs/api/etri.md) | Infra provider | VM requirements, tested images per CSP, deploying the three node travel scenario |
 | [docs/api/besp.md](docs/api/besp.md) | Portal developers | Screens and calls for catalog, deployment, progress and endpoints |
 | [docs/api/khu.md](docs/api/khu.md) | Recommendation implementers | The `internal/recommend` interface and how to register an implementation |
@@ -277,6 +281,25 @@ The documents under `docs/` are written in Korean.
 
 On 2026-11-03 the three node travel scenario (vLLM embedding + Dify, Ollama Qwen3-VL + Open WebUI, vLLM Ministral + Langflow)
 was deployed with the API alone and every service answered from outside. See [the test report](docs/api/live-test-2026-11-03.md).
+
+## Test results
+
+### 2026-11-11 GPU deployment and AI-Ops integration
+
+The test used an AWS `g4dn.xlarge` in Seoul with a Tesla T4 GPU and Ubuntu 22.04. Ollama served `qwen3-vl:8b`, which also acted as the self-hosted OpsLLM for AI-Ops. Deployment used the existing AI-App API and Semaphore.
+
+| Test | Observed result |
+|---|---|
+| Deployment through Semaphore | After selecting the built-in Ansible callback in Compose, installation and Compose tasks completed and the inference deployment reached `running`. |
+| GPU execution | The runtime checks passed and logs reported Tesla T4 and CUDA. |
+| Model response | `POST /api/generate` returned HTTP `200`, answer `4` for `2 + 2`, and `done: true`. |
+| AI-Ops integration | Natural-language catalog and deployment-status queries succeeded through port `8090`. OpsLLM and engine run IDs were linked; MCP/REST record parity and restart recovery passed. |
+| Automated checks | `go test ./...`, `go vet ./...` and nine mocked HTTP regression tests for `scripts/gpu-test.sh` passed. The script's `status` and `test` commands also passed against the real node. |
+| Cleanup | AWS reported the GPU VM as `terminated`; the root EBS volume was deleted and the test Infra disappeared from CB-Tumblebug. |
+
+See the [installation and test guide](docs/api/gpu-installation.md) and [KHU implementation record](docs/api/khu-implementation.md) for reproduction steps and scope. Environment-specific run IDs and raw results remain in local records excluded from Git.
+
+This run did not verify live approved-revision deployment or updates, vLLM/DCGM optimization gains, external subscription or open-weights providers, a clean-host installation, or the new script's live `deploy` command. The test VM is terminated; another run requires a prepared node and updated LLM endpoint configuration.
 
 ## Limitations
 
