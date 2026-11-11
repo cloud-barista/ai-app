@@ -217,8 +217,9 @@ in another zone, use a new node group name, because CB-Tumblebug reuses the firs
 | AI-Web portal (BESP) | Reads the catalog, requests deployments, shows progress and endpoints | [docs/api/besp.md](docs/api/besp.md) |
 | Model and app recommendation, update decisions, AI-Ops integration (Kyung Hee University) | Implements recommenders behind `internal/recommend`; AI-App exposes the catalog metadata unchanged as input. The same guide covers the split of app updates and the open points of the AI-Ops integration | [docs/api/khu.md](docs/api/khu.md) |
 | Natural language agent (partner) | Calls the engine's MCP tools (`/aiapp/engine/mcp`); a mock lives in `mock/partner/nlagent` | [API guide](docs/api/README.md) |
-| Infra recommender (partner) | Proposed contract `POST /recommendations/specs` and `/image`; a mock lives in `mock/partner/recommender`. AI-App does not call it | [API guide](docs/api/README.md) |
-| Inference optimization (partner) | Consumes deployment records (`GET /aiapp/deployments`) and engine run records (`GET /aiapp/engine/runs`) | [API guide](docs/api/README.md) |
+| Infra recommender (Kyung Hee University) | `POST /aiapp/partner/rec/recommendations/specs` and `/image` go to the recommender at `AIAPP_PARTNER_REC_URL`. Kyung Hee's `cmd/khu-infra-recommender` (8094) reads the CB-Tumblebug spec and image catalogs; without it the mock in `mock/partner/recommender` answers | [docs/api/infra-recommendation.md](docs/api/infra-recommendation.md) |
+| Approved deployments (Kyung Hee AI-Ops) | AI-Ops sends the inference and app deployments it approved to the approval MCP (`/aiapp/engine/automation/mcp`) and the engine applies them revision by revision | [docs/api/approved-deployment.md](docs/api/approved-deployment.md) |
+| Inference optimization (Kyung Hee University) | Reads the vLLM and GPU metrics of an approved revision from Prometheus (`get_inference_observation`); `optimization/policy.py` proposes vLLM setting changes | [docs/api/inference-optimization.md](docs/api/inference-optimization.md) |
 
 Two API layers, two kinds of callers:
 
@@ -340,10 +341,16 @@ was deployed with the API alone and every service answered from outside. See [th
 | `AIAPP_ENGINE_PORT` | `8091` | Engine | Engine port |
 | `AIAPP_ENGINE_URL` | `http://127.0.0.1:8091` | App | Where `/aiapp/engine/*` is forwarded |
 | `AIAPP_MOCK_NL_URL` | `http://127.0.0.1:8093` | App | Where `/aiapp/partner/nl/*` is forwarded (natural language agent, mock today) |
-| `AIAPP_PARTNER_REC_URL` | `http://127.0.0.1:8092` | App | Where `/aiapp/partner/rec/*` is forwarded (infra recommender, mock today) |
+| `AIAPP_PARTNER_REC_URL` | `http://127.0.0.1:8092` | App | Where `/aiapp/partner/rec/*` is forwarded (infra recommender; the mock by default, Kyung Hee's recommender at `http://127.0.0.1:8094`) |
+| `AIAPP_KHU_REC_ADDR` | `127.0.0.1:8094` | Rec | Address Kyung Hee's infra recommender listens on |
 | `AIAPP_APP_MCP_URL` | `http://127.0.0.1:8090/aiapp/mcp` | Engine | AI-App MCP server the engine uses |
 | `AIAPP_AUTH_TOKEN` | | App, Engine, NL | Bearer token for every route except readiness, console and Swagger. Empty turns auth off |
 | `AIAPP_APP_TOKEN` | | Engine, NL | Token the engine sends to the AI-App MCP server |
+| `AIAPP_ENGINE_APPROVAL_TOKEN` | | App, Engine | Token of the AI-Ops approval MCP only. Empty turns the approval paths off. Needs `AIAPP_AUTH_TOKEN` set to a different value |
+| `AIAPP_ENGINE_APPLY_ENABLED` | `false` | Engine | Exposes the tools that really apply an approved revision; needs the approval token |
+| `AIAPP_DEPLOY_SECRET_*` | | App | Secrets an approved deployment's `app.envFrom` refers to by name |
+| `AIAPP_OBSERVATION_PROMETHEUS_URL` / `_TOKEN` | | Engine | Prometheus to read the vLLM and DCGM metrics of an approved revision from |
+| `AIAPP_OPTIMIZATION_PROPOSAL_DIR` | | Engine | Folder the optimization proposal JSON files are read from |
 | `AIAPP_TUMBLEBUG_BASE_URL` | `http://localhost:1323/tumblebug` | App, Rec | CB-Tumblebug |
 | `AIAPP_TUMBLEBUG_USERNAME` / `_PASSWORD` | | App, Rec | Basic auth |
 | `AIAPP_TUMBLEBUG_CREDENTIAL_HOLDER` | | App, Rec | `x-credential-holder` header |

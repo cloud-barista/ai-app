@@ -198,8 +198,9 @@ AI-App 이 CB-Tumblebug 에서 부르는 것:
 | AI-Web 포털 (BESP) | 카탈로그를 읽고, 배포를 요청하고, 진행과 주소를 보여 줌 | [docs/api/besp.md](docs/api/besp.md) |
 | 모델·응용 추천, 업데이트 판단, AI-Ops 연동 (경희대) | `internal/recommend` 뒤에 추천 구현을 넣음. AI-App 은 판단 재료인 카탈로그 메타데이터를 원래 값 그대로 내줌. 응용 업데이트와 AI-Ops 연동의 분담·협의 항목도 같은 문서에 있음 | [docs/api/khu.md](docs/api/khu.md) |
 | 자연어 에이전트 (협력 기관) | 엔진의 MCP 도구(`/aiapp/engine/mcp`)를 부름. 모의 구현이 `mock/partner/nlagent` 에 있음 | [API 가이드](docs/api/README.md) |
-| 인프라 추천 (협력 기관) | 제안 계약 `POST /recommendations/specs`, `/image`. 모의 구현이 `mock/partner/recommender` 에 있음. AI-App 은 부르지 않음 | [API 가이드](docs/api/README.md) |
-| 추론 최적화 (협력 기관) | 배포 기록(`GET /aiapp/deployments`)과 엔진 실행 기록(`GET /aiapp/engine/runs`)을 입력으로 씀 | [API 가이드](docs/api/README.md) |
+| 인프라 추천 (경희대) | `POST /aiapp/partner/rec/recommendations/specs`, `/image` 를 `AIAPP_PARTNER_REC_URL` 의 추천기로 넘김. 경희대 구현은 `cmd/khu-infra-recommender`(8094)로 CB-Tumblebug 스펙·이미지 카탈로그를 읽고, 설정하지 않으면 `mock/partner/recommender` 모의가 답함 | [docs/api/infra-recommendation.md](docs/api/infra-recommendation.md) |
+| 승인 배포 (경희대 AI-Ops) | AI-Ops 가 승인한 추론·응용 배포를 승인 전용 MCP(`/aiapp/engine/automation/mcp`)로 보내고 엔진이 Revision 단위로 적용 | [docs/api/approved-deployment.md](docs/api/approved-deployment.md) |
+| 추론 최적화 (경희대) | 승인한 Revision 의 vLLM·GPU 지표를 Prometheus 에서 읽어(`get_inference_observation`) `optimization/policy.py` 가 vLLM 설정 변경을 제안 | [docs/api/inference-optimization.md](docs/api/inference-optimization.md) |
 
 API 는 두 층이고 부르는 쪽이 다릅니다.
 
@@ -319,10 +320,16 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | `AIAPP_ENGINE_PORT` | `8091` | Engine | 엔진 포트 |
 | `AIAPP_ENGINE_URL` | `http://127.0.0.1:8091` | App | `/aiapp/engine/*` 을 넘길 곳 |
 | `AIAPP_MOCK_NL_URL` | `http://127.0.0.1:8093` | App | `/aiapp/partner/nl/*` 을 넘길 곳 (자연어 에이전트, 지금은 모의) |
-| `AIAPP_PARTNER_REC_URL` | `http://127.0.0.1:8092` | App | `/aiapp/partner/rec/*` 을 넘길 곳 (인프라 추천, 지금은 모의) |
+| `AIAPP_PARTNER_REC_URL` | `http://127.0.0.1:8092` | App | `/aiapp/partner/rec/*` 을 넘길 곳 (인프라 추천. 기본은 모의, 경희대 추천기는 `http://127.0.0.1:8094`) |
+| `AIAPP_KHU_REC_ADDR` | `127.0.0.1:8094` | Rec | 경희대 인프라 추천기가 듣는 주소 |
 | `AIAPP_APP_MCP_URL` | `http://127.0.0.1:8090/aiapp/mcp` | Engine | 엔진이 쓰는 AI-App MCP 서버 |
 | `AIAPP_AUTH_TOKEN` | | App, Engine, NL | 준비 상태·콘솔·Swagger 를 뺀 전 경로의 bearer 토큰. 비면 인증 꺼짐 |
 | `AIAPP_APP_TOKEN` | | Engine, NL | 엔진이 AI-App MCP 서버에 보내는 토큰 |
+| `AIAPP_ENGINE_APPROVAL_TOKEN` | | App, Engine | AI-Ops 승인 MCP 전용 토큰. 비면 승인 경로가 꺼짐. 쓰려면 `AIAPP_AUTH_TOKEN` 도 있어야 하고 서로 달라야 함 |
+| `AIAPP_ENGINE_APPLY_ENABLED` | `false` | Engine | 승인한 Revision 을 실제로 적용하는 도구를 엶. 승인 토큰이 필요함 |
+| `AIAPP_DEPLOY_SECRET_*` | | App | 승인 배포의 `app.envFrom` 이 이름으로 참조하는 비밀값 |
+| `AIAPP_OBSERVATION_PROMETHEUS_URL` / `_TOKEN` | | Engine | 승인 Revision 의 vLLM·DCGM 지표를 읽을 Prometheus |
+| `AIAPP_OPTIMIZATION_PROPOSAL_DIR` | | Engine | 최적화 제안 JSON 을 읽을 폴더 |
 | `AIAPP_TUMBLEBUG_BASE_URL` | `http://localhost:1323/tumblebug` | App, Rec | CB-Tumblebug |
 | `AIAPP_TUMBLEBUG_USERNAME` / `_PASSWORD` | | App, Rec | basic auth |
 | `AIAPP_TUMBLEBUG_CREDENTIAL_HOLDER` | | App, Rec | `x-credential-holder` 헤더 |
