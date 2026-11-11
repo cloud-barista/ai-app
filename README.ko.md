@@ -240,7 +240,9 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | [docs/api/etri.md](docs/api/etri.md) | 인프라 제공 기관 | VM 요건, CSP 별로 써 본 이미지, 노드 세 대 여행 시나리오 배포 |
 | [docs/api/besp.md](docs/api/besp.md) | 포털 개발자 | 카탈로그·배포·진행·주소 화면과 호출 |
 | [docs/api/khu.md](docs/api/khu.md) | 추천 구현자, AI-Ops 연동 담당 | `internal/recommend` 인터페이스와 구현 등록 방법, 응용 업데이트·버전 분담, AI-Ops 와의 호출 방향과 계약 차이 |
-| [docs/api/live-test-2026-11-03.md](docs/api/live-test-2026-11-03.md) | 모두 | 실제 GPU VM 에서 돌린 결과 |
+| [docs/api/khu-collaboration.md](docs/api/khu-collaboration.md) | 경희대, 이노그리드 | 지금 코드와 2차 워크샵 발표의 대조, 같이 정할 것을 그림과 함께 |
+| [docs/test/live-test-2026-11-03.md](docs/test/live-test-2026-11-03.md) | 모두 | 실제 GPU VM 에서 돌린 결과 |
+| [docs/test/gpu-driver-test-2026-11-09.md](docs/test/gpu-driver-test-2026-11-09.md) | AI-App 개발자 | Azure AMD 노드의 GPU 드라이버 설치 시험, Secure Boot·MOK 관련 확인 |
 | [docs/api/examples/](docs/api/examples) | 모두 | 바로 돌려 볼 수 있는 curl 스크립트 `00` ~ `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | 유지보수자 | 데이터 모델과 배포 설계, 열린 문제 |
 | [examples/apps/](examples/apps) | 응용 작성자 | 업로드용 Open WebUI, Langflow, Dify 묶음 |
@@ -258,7 +260,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | 연동 | CB-Tumblebug 0.13.8, Semaphore UI v2.12.17, AI-App 도구 13개와 엔진 도구 5개의 MCP(Streamable HTTP), 엔진 카드를 등록하는 에이전트 레지스트리(`POST {registry}/agents`) |
 
 2026-11-03 에 노드 세 대 여행 시나리오(vLLM 임베딩 + Dify, Ollama Qwen3-VL + Open WebUI, vLLM Ministral + Langflow)를
-API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. [시험 결과](docs/api/live-test-2026-11-03.md)를 보십시오.
+API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. [시험 결과](docs/test/live-test-2026-11-03.md)를 보십시오.
 
 ## 제약
 

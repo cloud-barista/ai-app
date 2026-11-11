@@ -261,7 +261,9 @@ The documents under `docs/` are written in Korean.
 | [docs/api/etri.md](docs/api/etri.md) | Infra provider | VM requirements, tested images per CSP, deploying the three node travel scenario |
 | [docs/api/besp.md](docs/api/besp.md) | Portal developers | Screens and calls for catalog, deployment, progress and endpoints |
 | [docs/api/khu.md](docs/api/khu.md) | Recommendation implementers, AI-Ops integrators | The `internal/recommend` interface and how to register an implementation, the split of app updates and versions, call directions and contract gaps with AI-Ops |
-| [docs/api/live-test-2026-11-03.md](docs/api/live-test-2026-11-03.md) | Everyone | Results of the run on real GPU VMs |
+| [docs/api/khu-collaboration.md](docs/api/khu-collaboration.md) | Kyung Hee University, AI-App maintainers | The current code against the second workshop slides, with figures of what is still to agree on |
+| [docs/test/live-test-2026-11-03.md](docs/test/live-test-2026-11-03.md) | Everyone | Results of the run on real GPU VMs |
+| [docs/test/gpu-driver-test-2026-11-09.md](docs/test/gpu-driver-test-2026-11-09.md) | AI-App developers | GPU driver install tests on Azure AMD nodes, Secure Boot and MOK findings |
 | [docs/api/examples/](docs/api/examples) | Everyone | Runnable curl scripts `00` to `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | Maintainers | Data model and deployment design, open problems |
 | [examples/apps/](examples/apps) | App authors | Open WebUI, Langflow, Dify bundles to upload |
@@ -279,7 +281,7 @@ The documents under `docs/` are written in Korean.
 | Integrations | CB-Tumblebug 0.13.8, Semaphore UI v2.12.17, MCP (Streamable HTTP) for the 13 AI-App tools and 5 engine tools, an agent registry (`POST {registry}/agents`) for the engine card |
 
 On 2026-11-03 the three node travel scenario (vLLM embedding + Dify, Ollama Qwen3-VL + Open WebUI, vLLM Ministral + Langflow)
-was deployed with the API alone and every service answered from outside. See [the test report](docs/api/live-test-2026-11-03.md).
+was deployed with the API alone and every service answered from outside. See [the test report](docs/test/live-test-2026-11-03.md).
 
 ## Limitations
 

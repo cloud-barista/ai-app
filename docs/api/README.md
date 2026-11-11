@@ -2,7 +2,7 @@
 
 > 대상: AI-App API 를 부르는 협력 기관 개발자 (ETRI, BESP, 경희대). 2026-11-03 기준 코드(`main`)에 맞춰 썼습니다.
 > 기관별 문서: [etri.md](etri.md) (GPU VM 과 배포), [besp.md](besp.md) (AI-Web), [khu.md](khu.md) (추천 구현 자리, 응용 업데이트, AI-Ops 연동), [khu-collaboration.md](khu-collaboration.md) (경희대와의 협의 항목).
-> 실제 클라우드 시험 결과: [live-test-2026-11-03.md](live-test-2026-11-03.md) (aws·azure GPU VM 3대).
+> 실제 클라우드 시험 결과: [live-test-2026-11-03.md](../test/live-test-2026-11-03.md) (aws·azure GPU VM 3대).
 > 실행해 볼 수 있는 curl 예제: [examples/](examples/).
 
 ## 한 장 요약
@@ -20,7 +20,7 @@
 | API 는 어디로 열려 있나 | 관리 API 는 AI-App(`:8090/aiapp`, Bearer 토큰), 모델 호출(vLLM `:8000/v1`, Ollama `:11434`)과 응용 화면은 노드가 직접 엽니다. AI-App 은 중계하지 않습니다. vLLM 은 배포마다 API 키를 요구하고 그 키는 `GET /aiapp/endpoints` 의 `apiKey` 입니다. Ollama 에는 인증이 없습니다 (1-1절) |
 | 주소는 어디서 얻나 | `GET /aiapp/endpoints` 입니다. 서빙 포트는 배포가 성공하면 노드 보안 그룹에 자동으로 열립니다 (8절) |
 | 내리기는 | `DELETE /aiapp/deployments/{id}` 입니다. 노드에서 `docker compose down` 을 하고 named volume 은 남깁니다 (7절) |
-| 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](live-test-2026-11-03.md)). 각 응용에서 모델을 실제로 부른 화면은 12절입니다 |
+| 실제 VM 에서 돌려 봤나 | 2026-11-03 에 aws, azure GPU VM 3대에서 추론 3개와 응용 3개를 올리고, 고친 뒤 같은 노드로 다시 확인했습니다 ([live-test-2026-11-03.md](../test/live-test-2026-11-03.md)). 각 응용에서 모델을 실제로 부른 화면은 12절입니다 |
 
 ---
 
