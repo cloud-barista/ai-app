@@ -301,6 +301,27 @@ See the [installation and test guide](docs/api/gpu-installation.md) and [KHU imp
 
 This run did not verify live approved-revision deployment or updates, vLLM/DCGM optimization gains, external subscription or open-weights providers, a clean-host installation, or the new script's live `deploy` command. The test VM is terminated; another run requires a prepared node and updated LLM endpoint configuration.
 
+### 2026-11-11 approved deployment and inference optimization
+
+A second GPU VM ran Qwen3-1.7B in FP16 with vLLM `0.32.0` on a Tesla T4. AI-Ops submitted approved revisions through the registered AI-App MCP server; AI-App deployed the runtime, model and a proxy application through its existing deployment service and Semaphore. Runtime setting changes redeployed both services. Repeating the initial request after an engine timeout preserved its deployment ID and completed successfully.
+
+The study used four fixed, self-authored prompts, `temperature=0`, up to 64 output tokens, two offered request rates and `--max-num-seqs` values of 1 and 8. Five repetitions per combination produced 20 measurement windows, each with 120 seconds of offered load followed by request draining. The observation MCP joined actual inference/application deployments, engine runs and revisions to vLLM and DCGM metrics.
+
+| Offered requests/s | `max-num-seqs` | Mean server p95 (s) | Mean client SLO goodput (requests/s) | Mean client failure rate |
+|---|---|---|---|---|
+| 0.3 | 1 | 1.975 | 0.298 | 0% |
+| 0.3 | 8 | 1.975 | 0.296 | 0% |
+| 0.7 | 1 | 14.438 | 0.022 | 61.19% |
+| 0.7 | 8 | 1.990 | 0.678 | 0% |
+
+Server p95 comes from the vLLM histogram. Client SLO goodput counts responses completed through the application within 2.91 seconds, divided by the measurement duration including draining. Peak GPU memory was 11,932 MiB for all four combinations. These results describe this small synthetic workload.
+
+The Random Forest used repetitions 1–3 for training, 4 for validation and 5 for the final test. It did not pass the holdout gate: both final baseline windows fell outside the training bounds, and no update qualified. The low-load rejection included a floating-point boundary difference. The artifact remains in shadow mode; a qualified model proposal's live application and post-application comparison remain unverified. The measured setting change above was an explicitly approved experimental change.
+
+A fresh baseline observation produced a published `ABSTAIN` proposal. AI-Ops returned `eligible: false`, rejected its approval with HTTP `409` and created no next revision. This verified the live rejection path.
+
+The [optimization contract](docs/api/inference-optimization.md) describes training, publication and approval. The experiment driver, prompts, measurement datasets, trained artifacts and plots remain in local directories excluded from Git.
+
 ## Limitations
 
 | Limitation | Impact |
