@@ -4,6 +4,7 @@
 > 공통 내용(인증, 오류 형식)은 [README.md](README.md) 에 있습니다.
 > API 가 어디로 열려 있는지는 [README.md 1-1절](README.md#1-1-api-는-어디로-열려-있나), Semaphore 는 [3-1절](README.md#3-1-semaphore-가-무엇인가),
 > 예시 응용 셋의 동작과 실제 화면은 [12절](README.md#12-예시-응용-셋은-어떻게-동작하나) 에 있습니다.
+> 지금 형상과 2차 워크샵 발표의 대조, 협의할 항목은 [khu-collaboration.md](khu-collaboration.md) 에 있습니다.
 
 ## 0. 경희대가 맡는 것과 이 문서의 절
 
@@ -18,7 +19,8 @@ AI-App 과 AI-Ops 연동에서 경희대가 맡는 것은 셋입니다. 이노�
 이 분담은 경희대 1차년도 2차 워크숍 발표자료(2026-10-20) 31쪽의 기관별 역할 분담(경희대: 판단 모듈과 입출력 규격 제공,
 이노그리드: 응용 등록·버전 관리, 배포 실행, 응용 모니터링, 판단 모듈 호출 및 실행 결과 전달)과
 [cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) 의 `docs/roadmap.md` "기관 간 연동 과제" 절을 따랐습니다.
-**호출 방향과 업데이트 실행 주체는 아직 정해지지 않았습니다**(7-2절, 9절).
+호출 방향은 경희대 AI-Ops 가 승인한 배포를 AI-App 승인 MCP 로 넘기고 이노 엔진이 실행하는 방식으로 구현되어 있습니다(7-1절).
+이 방향의 정식 합의와 남은 협의 항목은 [khu-collaboration.md](khu-collaboration.md) 4절에 있습니다.
 
 ## 1. 이번 시험에서는
 
@@ -328,47 +330,42 @@ MCP: `http://<AI-App 호스트>:8090/aiapp/mcp` (Streamable HTTP, 같은 `Author
 
 ### 7-1. ai-ops 에 있는 것
 
-[cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) `main` 의 `4a93f06`(2026-11-04) 코드와 문서를 읽고 정리했습니다. 띄워서 불러 보지는 않았습니다.
+[cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) `main` 의 `a9bc0d2`(2026-11-11) 코드와 문서를 읽고 정리했습니다.
+`deployment_agent` 는 이 커밋에서 `app_automation_agent` 로 이름이 바뀌었습니다.
 
 | 경로 | 서비스 | 하는 일 |
 |---|---|---|
 | `POST /api/v1/application-profiles` | llmop | 자연어 또는 구조화 App Spec 을 `ApplicationProfile`(CPU·메모리·가속기·복제본·SLO)로 바꿈 |
 | `POST /api/v1/resource-recommendations` | resource_ops | `ApplicationProfile` 로 자원 후보를 걸러 점수화한 `ResourceRecommendation` |
-| `POST /api/v1/deployment-plans` | deployment_agent | 위 두 결과를 받아 `DEPLOY`/`REJECT`/`RETRY` 와 `DesiredDeploymentSpec`. **배포를 실행하지 않음** ("AppDeploy와 실제 VM은 계획 생성에 필요하지 않습니다", `deployment_agent/docs/usage.md`) |
-| `POST /api/v1/agent-control/flows/{id}/appdeploy/prepare`, `/submit` | deployment_agent | 승인된 Revision 1 을 외부 실행 모듈(AppDeployer)의 요청으로 바꿔 보냄. 실제로 배포를 넘기는 곳은 여기 |
-| `POST /api/v1/agent-control/deployment-status`, `/optimization-feedback` | deployment_agent | 배포 상태와 실측 성능을 받아 유지·확장·축소를 판단하고 Revision n+1 |
-| `GET`·`POST /api/v1/agents` | deployment_agent | 에이전트 등록. `role`, `endpoint`, `invocation_path`, `capabilities`, `bounded_actions` 가 필수 |
+| `POST /api/v1/deployment-plans` | app_automation_agent | 위 두 결과를 받아 `DEPLOY`/`REJECT`/`RETRY` 와 배포 계획. 배포를 실행하지 않음 |
+| `POST /api/v1/agent-control/flows/{id}/aiapp/prepare` | app_automation_agent | 승인된 계획을 AI-App `POST /aiapp/deployments` 본문 형식으로 바꿈 |
+| `POST .../aiapp/stage`, `.../aiapp/apply`, `GET .../aiapp/apply/{revision}` | app_automation_agent | 운영자 승인 뒤 AI-App 승인 MCP 를 불러 dry-run(stage)과 실제 적용(apply)을 요청하고 결과를 읽음 ([approved-deployment.md](approved-deployment.md)) |
+| `.../aiapp/optimizations/{proposal_id}`, `/approve`, `/compare` | app_automation_agent | AI-App 이 게시한 추론 최적화 제안을 검토·승인하고 적용 뒤 결과를 비교 ([inference-optimization.md](inference-optimization.md)) |
+| `/aiapp/partner/nl/*` | app_automation_agent | AI-App 8090 의 자연어 경로(`AIAPP_MOCK_NL_URL`)를 받는 자연어 에이전트 |
+| `POST /api/v1/integrations/ai-app/agents` | app_automation_agent | AI-App 엔진이 기동할 때 보내는 카드를 받는 등록 경로 |
+| `POST /api/v1/agent-control/deployment-status`, `/optimization-feedback` | app_automation_agent | 배포 상태와 실측 성능을 받아 유지·확장·축소를 판단 |
 
-ai-ops 에는 MCP 를 부르는 코드가 없습니다(저장소 전체 검색 0건). 외부 실행 모듈은 REST 로 부릅니다
-(`deployment_agent/go/service-control-api/internal/appdeploy/client.go`).
+경희대 자체 실행 모듈(AppDeployer)로 넘기는 예전 경로는 `AIOPS_APPDEPLOY_POC_ENABLED=true` 일 때만 쓰는 연구 PoC 로 남았습니다.
 
 ### 7-2. 호출 방향 두 가지
 
-경희대 자료 안에서도 두 방향이 다 나옵니다. 어느 쪽으로 갈지는 협의 항목입니다.
+2차 워크샵 때 경희대 자료 안에서 두 방향이 다 나왔고, 지금은 **B 가 구현되어 있습니다.** 정식 방향으로 할지는 [khu-collaboration.md](khu-collaboration.md) 4-1절에서 다룹니다.
 
-| | A. 이노그리드가 판단을 받아 실행 | B. 경희대가 판단 뒤 실행을 요청 |
+| | A. 이노그리드가 판단을 받아 실행 | B. 경희대가 판단 뒤 실행을 요청 (구현됨) |
 |---|---|---|
-| 근거 | 발표자료 31쪽: 이노그리드 연동 책임 "판단 모듈 호출 및 실행 결과 전달" | 발표자료 20쪽: prepare → submit 으로 "AppDeployer 에 실행 요청". ai-ops PoC 구현이 이 구조 |
-| 흐름 | 자동배포/자동제어 엔진이 llmop → resource_ops → `deployment-plans` 를 부르고, 판단을 AI-App 배포 요청으로 바꿔 실행한 뒤 결과를 `deployment-status`·`optimization-feedback` 로 보냄 | ai-ops 가 판단까지 하고, 실행 어댑터의 대상을 AppDeployer 에서 AI-App(REST 또는 엔진 MCP)으로 바꿔 배포를 요청 |
-| 이노그리드가 할 일 | 엔진에 판단 API 호출 단계, `DesiredDeploymentSpec` → `POST /aiapp/deployments` 변환, 결과 회신 | ai-ops 어댑터가 부를 API 를 맞춤. 성능 지표 API |
-| 경희대가 할 일 | 판단 API 와 입출력 규격 유지 | AI-App 용 실행 어댑터. 명세에 배포할 노드를 담기(7-3절) |
-| `deployment-plans` 의 자리 | 엔진이 부름 | ai-ops 안에서 씀. AI-App 과는 직접 이어지지 않음 |
-
-어느 쪽이든 AI-App MCP 를 `deployment-plans` 에 바로 붙이는 구조는 아닙니다. `deployment-plans` 는 입력으로 llmop·resource_ops 의 결과가 필요하고, 출력은 실행이 아니라 계획입니다.
+| 근거 | 발표자료 31쪽: 이노그리드 연동 책임 "판단 모듈 호출 및 실행 결과 전달" | 발표자료 20쪽: prepare → submit. 지금은 실행 대상이 AppDeployer 에서 AI-App 승인 MCP 로 바뀜 |
+| 흐름 | 자동배포/자동제어 엔진이 llmop → resource_ops → `deployment-plans` 를 부르고, 판단을 AI-App 배포 요청으로 바꿔 실행 | ai-ops 가 판단하고 운영자가 승인하면 `stage` → `apply` 로 AI-App 승인 MCP 를 부르고, 이노 엔진이 실행 |
 
 ### 7-3. 계약이 안 맞는 곳
 
-ai-ops 의 실행 모듈 계약(`internal/appdeploy/models.go`, manifest `deployment.khu.ai/v1alpha1`)과 AI-App API 의 차이입니다.
+AppDeployer 계약과 AI-App API 의 차이는 ai-ops 가 `aiapp/prepare` 에서 AI-App 요청 본문을 직접 만들면서 대부분 풀렸습니다. 남은 것입니다.
 
-| 무엇 | ai-ops 가 기대하는 것 | AI-App |
-|---|---|---|
-| 배포할 노드 | 실행 모듈이 고름. ai-ops 의 `resource_hints` 는 실행 모듈에 강제되지 않음 | 요청에 `nsId`/`infraId`/`nodeId` 가 반드시 있어야 함 ([README.md 10절](README.md#10-배포-요청-모양)). 최종 VM 형상·배치 결정은 ETRI(발표자료 31쪽) |
-| 무엇을 올리나 | `app_version_id` 하나 | 응용은 `name` + 정수 `version`, 추론 서비스는 `modelId` + `artifactId` + `runtimeId` |
-| 자원 | `resources{cpu, memory, gpu, storage}`, `accelerator` | 받지 않음. 노드가 이미 정해져 있으므로 노드 스펙을 따름 |
-| 내리기 | `POST /deployments/{id}/stop` | `DELETE /aiapp/deployments/{id}` |
-| 운영 지표 | `GET /deployments/{id}/metrics`(지연·처리량), `GET /monitoring/summary` | 없음(8절) |
-| 필드 이름 | snake_case | camelCase |
-| 에이전트 등록 | `POST /api/v1/agents` 에 `role`, `endpoint`, `invocation_path`, `capabilities`, `bounded_actions` | 엔진은 자기 카드(`name`, `displayName`, `workflows`, `mcpEndpoint` 등)를 `<registry>/agents` 로 보냄 (`internal/engine/card.go`, `internal/registration/registration.go:202`). 필드가 달라 그대로는 받아들여지지 않을 것으로 보임(보내 보지는 않음) |
+| 무엇 | 지금 |
+|---|---|
+| 배포할 노드 | AI-App 요청에는 `nsId`/`infraId`/`nodeId` 가 반드시 있어야 함. ai-ops 는 자원 후보의 `resource_id` 에 이 값을 씀. 그 노드를 누가 만드는지(경희대 추천 → ETRI VM 생성)는 협의 항목 |
+| 무엇을 올리나 | ai-ops `app_id` 에 AI-App 응용 이름, `app_version` 에 버전 숫자를 문자열로 넣음. 추론 서비스는 `model_id`·`artifact_id` 를 준비 요청에 넣음 |
+| 범위 | 승인 경로는 노드 하나, 복제본 하나만 받음 |
+| 에이전트 등록 | 엔진 카드를 `AIAPP_ENGINE_REGISTRY_URL`(ai-ops `/api/v1/integrations/ai-app`)로 보내면 받아들임 |
 
 ## 8. 운영 정보 넘기기
 
@@ -376,26 +373,26 @@ ai-ops 의 실행 모듈 계약(`internal/appdeploy/models.go`, manifest `deploy
 
 | ai-ops 가 받는 것 | AI-App 이 지금 줄 수 있는 것 | 없는 것 |
 |---|---|---|
-| 배포 상태 (`deployment-status`) | `GET /aiapp/deployments/{id}` 의 `status`·노드별 상태, `GET .../progress`, `GET .../logs`, `GET /aiapp/endpoints` 의 `nodeStatus`·`available` | 실패 원인의 분류 코드(지금은 로그 문장) |
-| 실측 성능 (`optimization-feedback`) | 없음 | 응답 지연(p95), 처리량, 오류 수, CPU·GPU 사용률 |
+| 배포 상태 | `GET /aiapp/deployments/{id}` 의 `status`·노드별 상태, `GET .../progress`, `GET .../logs`, `GET /aiapp/endpoints` 의 `nodeStatus`·`available`, 승인 경로의 `get_applied_revision` | 실패 원인의 분류 코드(지금은 로그 문장) |
+| 실측 성능 | 승인 배포의 `get_inference_observation` 이 Prometheus 의 vLLM·DCGM 지표를 Revision 별로 읽음 ([inference-observation.md](inference-observation.md)) | Prometheus 운영과 수집기 설치, 라벨 부착의 주체 |
 | 응용 정보 (발표자료 32쪽 P0 "응용 정보 연동") | `GET /aiapp/apps`(이름·버전·포트), `GET /aiapp/models`(용도·입력·크기·파라미터) | 응용의 용도·필요 자원·워크로드 특성([4절](#4-한계-추천-재료)) |
 
-추론 서비스는 vLLM `/metrics` 처럼 런타임이 지표를 내지만 AI-App 은 그것을 모으지 않습니다. 성능 지표를 어디서 모아 어떤 단위·주기로 넘길지는 협의 항목입니다.
+지표를 누가 모아 어떤 단위·주기로 둘지는 협의 항목입니다([khu-collaboration.md](khu-collaboration.md) 4-4절).
 
 ## 9. 방향과 상관없이 할 일과 협의 항목
 
-호출 방향(7-2절)이 정해지지 않아도 이노그리드가 먼저 준비할 수 있는 것입니다.
+이노그리드가 준비할 수 있는 것입니다.
 
 | 할 일 | 발표자료 32쪽 | 관련 절 |
 |---|---|---|
 | 응용 정보 제공: 응용 카탈로그에 용도·필요 자원·워크로드 특성 | P0 응용 정보 연동 | 4, 8 |
-| 성능 지표: 배포별 지연·처리량·사용률을 읽는 API | P0 모니터링·실행 피드백 | 8 |
+| 성능 지표 수집: 배포할 때 vLLM·DCGM 수집과 라벨 | P0 모니터링·실행 피드백 | 8 |
 | 버전·업데이트 기록: 교체 실패 때 앞 버전 유지, 되돌리기, 이력 | P1 자동 업데이트 연동 | 6 |
 
-기관 간에 정해야 할 것입니다.
+기관 간에 정해야 할 것은 [khu-collaboration.md](khu-collaboration.md) 4절에 그림과 함께 모았습니다. 요지입니다.
 
-- 호출 방향과 실행 주체(7-2절의 A·B, 업데이트 실행 주체)
+- 호출 방향(7-2절 B)을 정식으로 할지와 발표자료 31쪽 역할표 문구
 - 배포할 노드를 누가 정해 어떻게 넘기는지(경희대 추천 결과, ETRI 의 최종 VM 결정, AI-App `targets[]` 의 관계)
-- 식별자 대응: ai-ops `app_id`·`app_version`·`app_version_id` 와 AI-App 응용 `name`·`version`, 추론 서비스 `modelId`·`artifactId`, 흐름 ID(`correlation_id`)를 AI-App 배포 ID 와 잇는 방법
-- 인증: AI-App 은 Bearer 토큰, ai-ops 는 지금 localhost 기준
-- 에이전트 등록 형식(7-3절 마지막 줄)
+- 운영 지표의 수집·저장 주체
+- Scale in/out 에서 복제본의 뜻과 실행 주체
+- 업데이트 성공·실패 판정과 롤백 조건

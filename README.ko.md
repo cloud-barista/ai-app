@@ -279,8 +279,8 @@ API 만으로 배포했고 모든 서비스가 바깥에서 응답했습니다. 
 | 항목 | 담당 |
 |---|---|
 | `/aiapp/recommendations/*` 뒤의 모델·응용 추천 | 경희대 (`internal/recommend`) |
-| 응용 업데이트: 교체 실패 때 앞 버전 유지, 되돌리기, 순차 교체 ([khu.md 6절](docs/api/khu.md#6-응용-업데이트와-버전)) | 이노그리드 실행, 경희대 판단. 실행 주체는 협의 |
-| AI-Ops 연동: 호출 방향, 배포별 성능 지표, 응용 정보 ([khu.md 7~9절](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | 협의 |
+| 응용 업데이트: 교체 실패 때 앞 버전 유지, 되돌리기, 순차 교체 ([khu.md 6절](docs/api/khu.md#6-응용-업데이트와-버전)) | 이노그리드 실행, 경희대가 승인 MCP 로 판단·승인. 롤백 조건은 협의 ([khu-collaboration.md](docs/api/khu-collaboration.md)) |
+| AI-Ops 연동: 호출 방향, 배포별 성능 지표, 응용 정보 ([khu.md 7~9절](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | 지금은 AI-Ops 가 승인 MCP 를 부름. 지표 수집 주체, Scale, 정식 합의는 협의 ([khu-collaboration.md](docs/api/khu-collaboration.md)) |
 | 모의 구현을 대신할 실제 인프라 추천과 자연어 에이전트 (`AIAPP_PARTNER_REC_URL` / `AIAPP_MOCK_NL_URL` 을 그쪽으로) | 협력 기관 |
 | 쿠버네티스 배포 대상 (`kind: k8s`) | 3차년도 계획 |
 | 서빙 포트 출처 제한, 포트 닫기, `env` 비밀값 처리 | 미정 |

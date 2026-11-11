@@ -300,8 +300,8 @@ was deployed with the API alone and every service answered from outside. See [th
 | Item | Owner |
 |---|---|
 | Model and app recommendation behind `/aiapp/recommendations/*` | Kyung Hee University (`internal/recommend`) |
-| App updates: keep the previous version when a replacement fails, roll back, replace node by node ([khu.md section 6](docs/api/khu.md#6-응용-업데이트와-버전)) | Innogrid runs them, Kyung Hee University decides. Who triggers them is open |
-| AI-Ops integration: call direction, per-deployment performance metrics, app information ([khu.md sections 7-9](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | Open |
+| App updates: keep the previous version when a replacement fails, roll back, replace node by node ([khu.md section 6](docs/api/khu.md#6-응용-업데이트와-버전)) | AI-App runs them; Kyung Hee University decides and approves through the approval MCP. Rollback conditions are open ([khu-collaboration.md](docs/api/khu-collaboration.md)) |
+| AI-Ops integration: call direction, per-deployment performance metrics, app information ([khu.md sections 7-9](docs/api/khu.md#7-ai-ops-와-ai-app-연동)) | AI-Ops calls the approval MCP today; who collects the metrics, scaling and the formal agreement are open ([khu-collaboration.md](docs/api/khu-collaboration.md)) |
 | Real infra recommender and natural language agent replacing the mocks (point `AIAPP_PARTNER_REC_URL` / `AIAPP_MOCK_NL_URL` at them) | Partner institutions |
 | Kubernetes deployment targets (`kind: k8s`) | Planned for year 3 |
 | Restricting serving port sources, closing ports, secret handling for `env` | Open |
