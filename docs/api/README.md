@@ -176,10 +176,11 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
   같이 지우기 때문입니다.
 - **SSH 키와 inventory 는 실행마다** 등록하고, 성공·실패와 상관없이 끝나면 지웁니다. 태스크 요청에 이번 inventory 를 넣어
   template 의 빈 inventory 를 덮어씁니다. 키는 배포 기록·응답·로그에 나오지 않습니다.
-- playbook 은 넷입니다 (`deploy/ansible/`).
+- playbook 은 다섯입니다 (`deploy/ansible/`).
 
   | playbook | 하는 일 |
   |---|---|
+  | `install-gpu-driver.yml` | GPU 노드에만 먼저 돎. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깜. 다른 배포판은 메시지만 내고 건너뜀 ([시험 기록](../test/gpu-driver-test-2026-11-09.md)) |
   | `install-docker.yml` | 노드에 docker 와 compose 플러그인을 깔고 docker 서비스를 켬. GPU 노드면 NVIDIA Container Toolkit 도 깜. 이미 있으면 그대로 둠. `/etc/os-release` 를 보고 Ubuntu·Debian 은 apt, RHEL 계열·Fedora·Amazon Linux 2023 은 dnf 로 깖 |
   | `compose-up.yml` | 추론 서비스. stage 의 compose 파일을 노드로 복사하고 `docker compose up`, 노드 안에서 런타임 헬스 경로가 응답할 때까지 기다림. GPU 를 쓰면 런타임이 GPU 위에 있는지도 봄 |
   | `copy-and-run.yml` | 응용. 업로드 파일을 노드로 복사하고 이전 컨테이너를 내린 뒤 `deploy.sh` 를 실행. 이어서 응용 포트가 응답하고 컨테이너가 재시작 없이 도는지 확인 |
@@ -191,7 +192,7 @@ AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사
 - **화면 링크.** `AIAPP_SEMAPHORE_UI_URL` 을 설정하면 배포 기록의 각 단계(`nodes[].steps[]`)에 `taskUrl` 이 붙어, 그 태스크 로그를
   Semaphore 화면에서 바로 열 수 있습니다. 브라우저가 닿는 주소여야 합니다. docker compose 기본값은
   `http://127.0.0.1:3001` 이라 AI-App 을 띄운 호스트에서만 열립니다. 다른 곳에서 보려면 그 호스트 주소로 바꿉니다.
-- **연결 상태.** `GET /aiapp/status` 가 그때그때 Semaphore 에 닿는지, 로그인되는지, 버전, 프로젝트와 template 넷이 있는지,
+- **연결 상태.** `GET /aiapp/status` 가 그때그때 Semaphore 에 닿는지, 로그인되는지, 버전, 프로젝트와 template 다섯이 있는지,
   CB-Tumblebug 이 응답하는지, stage 폴더에 쓸 수 있는지를 돌려줍니다. template 이 아직 없는 것은 오류가 아닙니다(첫 배포가 만듦).
   `GET /aiapp/readyz` 는 AI-App 이 떴는지만 봅니다.
 
