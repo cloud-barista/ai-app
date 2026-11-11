@@ -328,52 +328,19 @@ MCP: `http://<AI-App 호스트>:8090/aiapp/mcp` (Streamable HTTP, 같은 `Author
 
 ## 7. AI-Ops 와 AI-App 연동
 
-### 7-1. ai-ops 에 있는 것
-
-[cloud-barista/ai-ops](https://github.com/cloud-barista/ai-ops) `main` 의 `a9bc0d2`(2026-11-11) 코드와 문서를 읽고 정리했습니다.
-`deployment_agent` 는 이 커밋에서 `app_automation_agent` 로 이름이 바뀌었습니다.
-
-| 경로 | 서비스 | 하는 일 |
-|---|---|---|
-| `POST /api/v1/application-profiles` | llmop | 자연어 또는 구조화 App Spec 을 `ApplicationProfile`(CPU·메모리·가속기·복제본·SLO)로 바꿈 |
-| `POST /api/v1/resource-recommendations` | resource_ops | `ApplicationProfile` 로 자원 후보를 걸러 점수화한 `ResourceRecommendation` |
-| `POST /api/v1/deployment-plans` | app_automation_agent | 위 두 결과를 받아 `DEPLOY`/`REJECT`/`RETRY` 와 배포 계획. 배포를 실행하지 않음 |
-| `POST /api/v1/agent-control/flows/{id}/aiapp/prepare` | app_automation_agent | 승인된 계획을 AI-App `POST /aiapp/deployments` 본문 형식으로 바꿈 |
-| `POST .../aiapp/stage`, `.../aiapp/apply`, `GET .../aiapp/apply/{revision}` | app_automation_agent | 운영자 승인 뒤 AI-App 승인 MCP 를 불러 dry-run(stage)과 실제 적용(apply)을 요청하고 결과를 읽음 ([approved-deployment.md](approved-deployment.md)) |
-| `.../aiapp/optimizations/{proposal_id}`, `/approve`, `/compare` | app_automation_agent | AI-App 이 게시한 추론 최적화 제안을 검토·승인하고 적용 뒤 결과를 비교 ([inference-optimization.md](inference-optimization.md)) |
-| `/aiapp/partner/nl/*` | app_automation_agent | AI-App 8090 의 자연어 경로(`AIAPP_MOCK_NL_URL`)를 받는 자연어 에이전트 |
-| `POST /api/v1/integrations/ai-app/agents` | app_automation_agent | AI-App 엔진이 기동할 때 보내는 카드를 받는 등록 경로 |
-| `POST /api/v1/agent-control/deployment-status`, `/optimization-feedback` | app_automation_agent | 배포 상태와 실측 성능을 받아 유지·확장·축소를 판단 |
-
-경희대 자체 실행 모듈(AppDeployer)로 넘기는 예전 경로는 `AIOPS_APPDEPLOY_POC_ENABLED=true` 일 때만 쓰는 연구 PoC 로 남았습니다.
-
-### 7-2. 호출 방향
-
-지금은 경희대 AI-Ops 가 판단하고 운영자가 승인하면 `stage` → `apply` 로 AI-App 승인 MCP 를 부르고, 이노 엔진이 실행합니다.
-경희대 발표자료 31쪽 역할표(이노가 판단 모듈을 호출)와 다른 점과 정식 합의는 [khu-collaboration.md](khu-collaboration.md) 4-1절에 있습니다.
-
-### 7-3. 계약이 안 맞는 곳
-
-AppDeployer 계약과 AI-App API 의 차이는 ai-ops 가 `aiapp/prepare` 에서 AI-App 요청 본문을 직접 만들면서 대부분 풀렸습니다. 남은 것입니다.
-
-| 무엇 | 지금 |
-|---|---|
-| 배포할 노드 | AI-App 요청에는 `nsId`/`infraId`/`nodeId` 가 반드시 있어야 함. ai-ops 는 자원 후보의 `resource_id` 에 이 값을 씀. 그 노드를 누가 만드는지(경희대 추천 → ETRI VM 생성)는 협의 항목 |
-| 무엇을 올리나 | ai-ops `app_id` 에 AI-App 응용 이름, `app_version` 에 버전 숫자를 문자열로 넣음. 추론 서비스는 `model_id`·`artifact_id` 를 준비 요청에 넣음 |
-| 범위 | 승인 경로는 노드 하나, 복제본 하나만 받음 |
-| 에이전트 등록 | 엔진 카드를 `AIAPP_ENGINE_REGISTRY_URL`(ai-ops `/api/v1/integrations/ai-app`)로 보내면 받아들임 |
+경희대 AI-Ops 가 판단하고 운영자가 승인하면 AI-App 승인 MCP(`/aiapp/engine/automation/mcp`)를 거쳐 이노 엔진이 실행합니다.
+경로, 설정, 저장소별 책임과 시험 범위는 경희대가 정리한 [khu-implementation.md](khu-implementation.md) 에 있습니다.
+계약은 [approved-deployment.md](approved-deployment.md), 정식 합의와 남은 협의는 [khu-collaboration.md](khu-collaboration.md) 4-1절입니다.
 
 ## 8. 운영 정보 넘기기
 
-경희대의 "응용 배포·운영 정보 기반 추론 최적화" 는 배포 상태와 실측 성능이 입력입니다(발표자료 20쪽, 32쪽 P0 "모니터링·실행 피드백").
-
-| ai-ops 가 받는 것 | AI-App 이 지금 줄 수 있는 것 | 없는 것 |
+| 무엇 | AI-App 이 주는 것 | 문서 |
 |---|---|---|
-| 배포 상태 | `GET /aiapp/deployments/{id}` 의 `status`·노드별 상태, `GET .../progress`, `GET .../logs`, `GET /aiapp/endpoints` 의 `nodeStatus`·`available`, 승인 경로의 `get_applied_revision` | 실패 원인의 분류 코드(지금은 로그 문장) |
-| 실측 성능 | 승인 배포의 `get_inference_observation` 이 Prometheus 의 vLLM·DCGM 지표를 Revision 별로 읽음 ([inference-observation.md](inference-observation.md)) | Prometheus 운영과 수집기 설치, 라벨 부착의 주체 |
-| 응용 정보 (발표자료 32쪽 P0 "응용 정보 연동") | `GET /aiapp/apps`(이름·버전·포트), `GET /aiapp/models`(용도·입력·크기·파라미터) | 응용의 용도·필요 자원·워크로드 특성([4절](#4-한계-추천-재료)) |
+| 배포 상태 | `GET /aiapp/deployments/{id}`, `.../progress`, `.../logs`, `GET /aiapp/endpoints`, 승인 경로의 `get_applied_revision` | [README.md](README.md) 7·9-3절 |
+| 실측 성능 | 승인 배포의 `get_inference_observation`(Prometheus 의 vLLM·DCGM 지표) | [inference-observation.md](inference-observation.md) |
+| 응용 정보 | `GET /aiapp/apps`, `GET /aiapp/models` | [README.md](README.md) 9-2절 |
 
-지표를 누가 모아 어떤 단위·주기로 둘지는 협의 항목입니다([khu-collaboration.md](khu-collaboration.md) 4-4절).
+수집기와 저장소를 누가 운영할지는 [khu-collaboration.md](khu-collaboration.md) 4-4절의 협의 항목입니다.
 
 ## 9. 할 일과 협의 항목
 
