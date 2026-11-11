@@ -19,7 +19,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ish-hcc/ai-agent-proto/internal/archive"
+	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
 	"github.com/ish-hcc/ai-agent-proto/internal/model"
+	"github.com/ish-hcc/ai-agent-proto/internal/observation"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -64,6 +66,9 @@ type AppClient interface {
 // Engine runs workflows against the AI-App service.
 type Engine struct {
 	app          AppClient
+	approvedApp  AppClient
+	telemetry    *observation.Prometheus
+	proposalDir  string
 	runs         *archive.Log[Run]
 	waitTimeout  time.Duration
 	waitInterval time.Duration
@@ -71,6 +76,11 @@ type Engine struct {
 
 // Option configures an Engine.
 type Option func(*Engine)
+
+// WithApprovedApp routes approved create calls to the dedicated AI-App MCP server.
+func WithApprovedApp(app AppClient) Option {
+	return func(e *Engine) { e.approvedApp = app }
+}
 
 // WithDeploymentWait sets how long a step waiting for a deployment to end
 // keeps asking, and how often. Values that are not positive keep the
@@ -128,6 +138,9 @@ func (e *Engine) Execute(ctx context.Context, nsID, workflow string, input json.
 		var in DeployInput
 		if err := decodeInput(input, &in); err != nil {
 			return nil, err
+		}
+		if in.Submission != nil {
+			return nil, fmt.Errorf("%w: submission IDs require the approval MCP tool", ErrInvalidInput)
 		}
 		return e.Deploy(ctx, nsID, in)
 	case WorkflowHeal:
@@ -284,12 +297,21 @@ func (r *runner) call(ctx context.Context, name, tool string, input any, out any
 	ended := time.Now().UTC()
 	step.EndedAt = &ended
 	step.Output = raw
+	request, _ := input.(DeployInput)
+	managedCreate := tool == toolCreateDeployment && request.Submission != nil
 	if err != nil {
+		if tool == toolCreateDeployment && request.RequireDryRun {
+			_, step.createRejected = errors.AsType[mcpclient.DeploymentRejectedError](err)
+		}
+		if managedCreate {
+			step.Unconfirmed = errors.Is(err, mcpclient.ErrUnavailable)
+		}
 		r.fail(step, err.Error())
 		return step, false
 	}
 	if out != nil {
 		if err := json.Unmarshal(raw, out); err != nil {
+			step.Unconfirmed = managedCreate
 			r.fail(step, fmt.Sprintf("unreadable %s result: %v", tool, err))
 			return step, false
 		}
@@ -299,6 +321,16 @@ func (r *runner) call(ctx context.Context, name, tool string, input any, out any
 
 // invoke calls one AI-App tool and returns its JSON result.
 func (r *runner) invoke(ctx context.Context, tool string, input any) (json.RawMessage, error) {
+	if request, ok := input.(DeployInput); tool == toolCreateDeployment && ok && request.Submission != nil {
+		client := r.engine.approvedApp
+		if client == nil {
+			return nil, errors.New("the approved AI-App submission client is not configured")
+		}
+		if err := client.Prepare(ctx); err != nil {
+			return nil, err
+		}
+		return callApp(ctx, client, r.nsID, tool, input)
+	}
 	return callApp(ctx, r.engine.app, r.nsID, tool, input)
 }
 

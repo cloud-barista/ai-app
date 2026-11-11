@@ -112,6 +112,8 @@ func deployRequestSchema() map[string]any {
 			"Give it to choose the user yourself"),
 	}, "kind", "nsId", "infraId", "nodeId")
 	return object(map[string]any{
+		"requireDryRun":   map[string]any{"type": "boolean", "description": "Require AI-App dry-run before staging a deployment"},
+		"placementReview": tools.PlacementReviewSchema(),
 		"type": enumProp("What to deploy; the field of the same name carries it",
 			model.NodeDeployTypeInference, model.NodeDeployTypeApp),
 		"targets": map[string]any{

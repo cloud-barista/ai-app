@@ -296,6 +296,9 @@ definitions:
         description: Tool is the AI-App MCP tool the step calls.
         example: create_deployment
         type: string
+      unconfirmed:
+        description: Unconfirmed means the create response was lost or unreadable.
+        type: boolean
     type: object
   engine.StepStatus:
     enum:
@@ -893,6 +896,17 @@ definitions:
           hold no line break and no single quote. Addresses of other nodes go
           here.
         type: object
+      envFrom:
+        additionalProperties:
+          type: string
+        description: EnvFrom maps application variables to AIAPP_DEPLOY_SECRET_* on
+          the AI-App server.
+        type: object
+      inferenceBinding:
+        allOf:
+        - $ref: '#/definitions/model.NodeInferenceBinding'
+        description: InferenceBinding resolves connection values from a running deployment
+          on the same node.
       name:
         description: Name is an uploaded application (GET /apps).
         example: open-webui
@@ -1505,6 +1519,14 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.NodeInferenceReq'
         description: Inference is required when type is inference.
+      placementReview:
+        $ref: '#/definitions/model.NodePlacementReview'
+      requireDryRun:
+        description: RequireDryRun rejects the request if the receiving AI-App could
+          run playbooks.
+        type: boolean
+      submission:
+        $ref: '#/definitions/model.NodeDeploymentSubmission'
       targets:
         description: Targets are the nodes to deploy to, at most 32, each once.
         items:
@@ -1522,6 +1544,28 @@ definitions:
     required:
     - targets
     - type
+    type: object
+  model.NodeDeploymentSubmission:
+    properties:
+      id:
+        type: string
+      previousDeploymentId:
+        description: PreviousDeploymentID is the last accepted deployment for this
+          work key, or empty for a free placement.
+        type: string
+    type: object
+  model.NodeInferenceBinding:
+    properties:
+      apiKeyEnv:
+        type: string
+      baseUrlEnv:
+        type: string
+      deploymentId:
+        type: string
+      native:
+        description: Native requests Ollama's native URL. The default is the OpenAI-compatible
+          URL.
+        type: boolean
     type: object
   model.NodeInferenceReq:
     properties:
@@ -1611,6 +1655,34 @@ definitions:
           SecurityGroupID is the CB-Tumblebug security group, in the namespace
           of the target.
         example: etri-shared-aws-ap-northeast-2
+        type: string
+    type: object
+  model.NodePlacementReview:
+    properties:
+      estimatedCost:
+        example: $0.50/hour
+        type: string
+      imageId:
+        example: aws+ap-northeast-2+ami-example
+        type: string
+      imageStatus:
+        example: Available
+        type: string
+      nsId:
+        example: etri
+        type: string
+      reviewedAt:
+        type: string
+      specId:
+        example: aws+ap-northeast-2+g4dn.xlarge
+        type: string
+      specStatus:
+        example: Available
+        type: string
+      status:
+        enum:
+        - Ready
+        - Warning
         type: string
     type: object
   model.NodeProgress:

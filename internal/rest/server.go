@@ -29,6 +29,9 @@ import (
 // BasePath is the mount point for every route of this service.
 const BasePath = "/aiapp"
 
+const approvedDeploymentPath = "/engine/automation/mcp"
+const approvedSubmissionPath = "/mcp/approval"
+
 // Server owns the Echo instance and its lifecycle.
 type Server struct {
 	echo *echo.Echo
@@ -83,7 +86,14 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 	// The engine and partner agent readiness are open here as their own are
 	// there: the console overview asks for them before anyone has entered a
 	// token.
-	e := newEcho(cfg.Auth.Token, partnerNLPrefix+"/readyz", enginePrefix+"/readyz")
+	open := []string{partnerNLPrefix + "/readyz", enginePrefix + "/readyz"}
+	if cfg.Engine.ApprovalToken != "" {
+		open = append(open, BasePath+approvedDeploymentPath)
+		if deps.NodeDeploy != nil {
+			open = append(open, BasePath+approvedSubmissionPath)
+		}
+	}
+	e := newEcho(cfg.Auth.Token, open...)
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/status", handler.RestGetStatus)
@@ -138,11 +148,19 @@ func NewAppServer(cfg *config.Config, deps AppDependencies) *Server {
 
 	// The same tools as an MCP server over Streamable HTTP.
 	g.Any("/mcp", echo.WrapHandler(mcpserver.NewHandler(deps.Tools)))
+	if token := cfg.Engine.ApprovalToken; token != "" && deps.NodeDeploy != nil {
+		approved := tools.NewApprovedNodeDeployRegistry(deps.NodeDeploy)
+		g.Any(approvedSubmissionPath, echo.WrapHandler(mcpserver.NewHandler(approved)), RequireBearer(token))
+	}
 
 	// The automation engine runs in its own process. The console and operators
 	// keep one address, so its routes are forwarded from here with their path,
 	// MCP endpoint included.
-	g.Any("/engine/*", echo.WrapHandler(newEngineProxy(cfg.Engine.URL)))
+	engineProxy := echo.WrapHandler(newEngineProxy(cfg.Engine.URL))
+	g.Any("/engine/*", engineProxy)
+	if token := cfg.Engine.ApprovalToken; token != "" {
+		g.Any(approvedDeploymentPath, engineProxy, RequireBearer(token))
+	}
 
 	// Natural language instructions are the partner institution's area. Its
 	// agent, here a mock, is reached the same way, path unchanged.
@@ -165,6 +183,8 @@ type EngineDependencies struct {
 	Card   *engine.CardBuilder
 	// Tools are the workflows as MCP tools.
 	Tools *tools.Registry
+	// ApprovedDeploymentTools are restricted to the AI-Ops approval service.
+	ApprovedDeploymentTools *tools.Registry
 }
 
 // NewEngineServer builds the automation engine service: workflows over REST and
@@ -177,7 +197,13 @@ func NewEngineServer(cfg *config.Config, deps EngineDependencies) *Server {
 
 	// The engine readiness is also served under the engine prefix, the path the
 	// AI-App service forwards unchanged.
-	e := newEcho(cfg.Auth.Token, enginePrefix+"/readyz")
+	token := cfg.Engine.ApprovalToken
+	open := []string{enginePrefix + "/readyz"}
+	approvedEnabled := token != "" && deps.ApprovedDeploymentTools != nil
+	if approvedEnabled {
+		open = append(open, BasePath+approvedDeploymentPath)
+	}
+	e := newEcho(cfg.Auth.Token, open...)
 	g := e.Group(BasePath)
 	g.GET("/readyz", RestGetReadyz)
 	g.GET("/engine/readyz", RestGetReadyz)
@@ -190,6 +216,10 @@ func NewEngineServer(cfg *config.Config, deps EngineDependencies) *Server {
 	// The workflows as MCP tools over Streamable HTTP. The namespace comes from
 	// the namespace header, as on the AI-App MCP server.
 	g.Any("/engine/mcp", echo.WrapHandler(mcpserver.NewNamedHandler(engine.MCPServerName, deps.Tools)))
+	if approvedEnabled {
+		g.Any(approvedDeploymentPath, echo.WrapHandler(mcpserver.NewNamedHandler(engine.ApprovedDeploymentServerName,
+			deps.ApprovedDeploymentTools)), RequireBearer(token))
+	}
 
 	return &Server{echo: e, port: cfg.Engine.Port}
 }

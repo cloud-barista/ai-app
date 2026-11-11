@@ -47,12 +47,16 @@ type Step struct {
 	// Output is the tool result as the AI-App service returned it.
 	Output json.RawMessage `json:"output,omitempty" swaggertype:"object"`
 	Error  string          `json:"error,omitempty"`
+	// Unconfirmed means the create response was lost or unreadable.
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
 	// Message says why a step was blocked, waits or was skipped, or what its
 	// result meant for the workflow.
 	Message string `json:"message,omitempty"`
 	// StartedAt and EndedAt are absent on a step that was not run.
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+
+	createRejected bool
 }
 
 // Run is one workflow execution and every step of it. It is what the engine

@@ -3,3 +3,15 @@ conf/setup.env
 data/
 .env
 .idea/
+
+# Local inputs and outputs from the inference optimization guide
+/.venv/
+/optimization/__pycache__/
+/artifacts/
+/observations.jsonl
+/observation.json
+/load-capture.json
+/current-sample.json
+/guard.json
+/shadow.json
+/transition.json

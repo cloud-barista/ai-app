@@ -10,6 +10,8 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/ish-hcc/ai-agent-proto/internal/config"
 	"github.com/ish-hcc/ai-agent-proto/internal/engine"
 	"github.com/ish-hcc/ai-agent-proto/internal/mcpclient"
+	"github.com/ish-hcc/ai-agent-proto/internal/observation"
 	"github.com/ish-hcc/ai-agent-proto/internal/redact"
 	"github.com/ish-hcc/ai-agent-proto/internal/registration"
 	"github.com/ish-hcc/ai-agent-proto/internal/rest"
@@ -51,7 +54,26 @@ func main() {
 	}
 
 	appClient := mcpclient.NewNamed(mcpClientName, cfg.App.MCPURL, cfg.App.Token)
-	automation := engine.New(appClient, runs, engine.WithDeploymentWait(cfg.Health.Timeout, cfg.Health.Interval))
+	options := []engine.Option{engine.WithDeploymentWait(cfg.Health.Timeout, cfg.Health.Interval)}
+	if cfg.Engine.ApprovalToken != "" {
+		approvedClient := mcpclient.NewNamed(mcpClientName, strings.TrimRight(cfg.App.MCPURL, "/")+"/approval", cfg.Engine.ApprovalToken)
+		defer func() { _ = approvedClient.Close() }()
+		options = append(options, engine.WithApprovedApp(approvedClient))
+	}
+	if cfg.Engine.ApplyEnabled {
+		if baseURL := strings.TrimSpace(os.Getenv("AIAPP_OBSERVATION_PROMETHEUS_URL")); baseURL != "" {
+			source, err := observation.NewPrometheus(baseURL, os.Getenv("AIAPP_OBSERVATION_PROMETHEUS_TOKEN"))
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to configure inference observations")
+				os.Exit(1)
+			}
+			options = append(options, engine.WithObservation(source))
+		}
+		if dir := strings.TrimSpace(os.Getenv("AIAPP_OPTIMIZATION_PROPOSAL_DIR")); dir != "" {
+			options = append(options, engine.WithOptimizationProposals(dir))
+		}
+	}
+	automation := engine.New(appClient, runs, options...)
 	registry := engine.NewRegistry(automation)
 	registrar := registration.New(cfg.Engine.RegistryURL, cfg.Engine.RegistryToken, engine.RegistryEnv)
 	card := engine.NewCardBuilder(automation, registry, registrar)
@@ -70,11 +92,25 @@ func main() {
 	}
 	cancelProbe()
 
-	server := rest.NewEngineServer(cfg, rest.EngineDependencies{
+	deps := rest.EngineDependencies{
 		Engine: automation,
 		Card:   card,
 		Tools:  registry,
-	})
+	}
+	applyCtx, stopApply := context.WithCancel(context.Background())
+	defer stopApply()
+	if cfg.Engine.ApprovalToken != "" {
+		var liveCtx context.Context
+		if cfg.Engine.ApplyEnabled {
+			liveCtx = applyCtx
+		}
+		deps.ApprovedDeploymentTools, err = engine.NewApprovedDeploymentTools(filepath.Join(cfg.Engine.ArchiveDir, "approved-deployments"), automation, liveCtx)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to open the approved deployment archive")
+			os.Exit(1)
+		}
+	}
+	server := rest.NewEngineServer(cfg, deps)
 	rest.MarkReady()
 
 	registerCtx, cancelRegister := context.WithCancel(context.Background())
@@ -100,6 +136,7 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 	cancelRegister()
+	stopApply()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

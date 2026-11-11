@@ -536,12 +536,14 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | POST | `/aiapp/deployments/{id}/control` | 배포의 노드 전부에 CB-Tumblebug 노드 제어 (`suspend`·`resume`·`reboot`·`terminate`). `terminate` 는 VM 을 지움 |
 | GET | `/aiapp/endpoints` | 지금 떠 있는 추론 서비스·응용 주소. 부를 때 CB-Tumblebug 에서 노드를 읽어 `nodeStatus` 를 붙이고, `Running` 이면 지금 IP 로 주소를 만듦(`available: true`). vLLM 이면 `apiKey`. 필터 `nsId`, `infraId`, `nodeId`, `type`, `available`. 페이지 (9-0) |
 
-### 9-4. 추천 (자리만)
+### 9-4. 추천
 
 | 메서드 | 경로 | 하는 일 |
 |---|---|---|
 | POST | `/aiapp/recommendations/models` | 요구에 맞는 모델 후보. 구현이 없어 지금은 `501` ([khu.md](khu.md)) |
 | POST | `/aiapp/recommendations/apps` | 요구에 맞는 응용 후보. 지금은 `501` |
+| POST | `/aiapp/partner/rec/recommendations/specs` | 설정한 추천 서비스에 스펙 후보를 요청. [경희대 추천 연동](infra-recommendation.md) |
+| POST | `/aiapp/partner/rec/recommendations/image` | 설정한 추천 서비스에 선택한 스펙의 이미지를 요청. [경희대 추천 연동](infra-recommendation.md) |
 
 ### 9-5. 그 밖 (운영·도구)
 
@@ -554,8 +556,11 @@ AI-App 은 기동할 때 한 번, 그 뒤 하루마다(설정 `AIAPP_CATALOG_SYN
 | GET | `/aiapp/archive` | 배포·제어 아카이브 목록 (최신순). 페이지 (9-0) |
 | GET | `/aiapp/archive/{runId}` | 아카이브 한 건 |
 | (any) | `/aiapp/engine/*` | 자동화 엔진으로 넘김 |
+| MCP | `/aiapp/engine/automation/mcp` | 승인된 dry-run·적용과 Revision별 운영 지표 조회. [승인 계약](approved-deployment.md) · [관측 계약](inference-observation.md) |
 | (any) | `/aiapp/partner/nl/*` | 자연어 에이전트(모의)로 넘김 |
-| (any) | `/aiapp/partner/rec/*` | 인프라 추천 API(모의)로 넘김 |
+| (any) | `/aiapp/partner/rec/*` | `AIAPP_PARTNER_REC_URL`의 추천 API로 전달. 기본은 8092 모의 추천기 |
+
+승인 Revision의 운영 지표로 vLLM 설정을 비교하는 학습·Shadow 명령은 별도 가이드를 따른다. [추론 최적화](inference-optimization.md)
 
 ## 10. 배포 요청 모양
 

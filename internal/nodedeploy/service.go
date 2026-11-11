@@ -33,6 +33,7 @@
 package nodedeploy
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -199,22 +200,51 @@ type plan struct {
 // Otherwise the record is returned pending and the deployment goes on in the
 // background.
 func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*model.NodeDeployment, error) {
+	return s.create(ctx, req, false)
+}
+
+// CreateApproved accepts only requests from the authenticated submission tools.
+func (s *Service) CreateApproved(ctx context.Context, req model.NodeDeploymentReq) (*model.NodeDeployment, error) {
+	return s.create(ctx, req, true)
+}
+
+func (s *Service) create(ctx context.Context, req model.NodeDeploymentReq, approved bool) (*model.NodeDeployment, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
+	}
+	bound := req.App != nil && (req.App.InferenceBinding != nil || len(req.App.EnvFrom) > 0)
+	if approved != (req.Submission != nil) || (bound && !approved) {
+		return nil, &model.ValidationError{Message: "submission IDs and server-side bindings require the approval MCP tool"}
+	}
+	if req.RequireDryRun && !s.opts.DryRun {
+		return nil, &model.ValidationError{Message: "this deployment request requires the AI-App dry-run gate"}
+	}
+	if req.Submission != nil {
+		if !req.RequireDryRun && (s.opts.DryRun || s.store.path == "") {
+			return nil, &model.ValidationError{Message: "a live submission requires dry-run off and persistent deployment storage"}
+		}
+		if d, err := s.existingSubmission(req); d != nil || err != nil {
+			return d, err
+		}
 	}
 	p, err := s.resolve(ctx, &req)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkTargets(ctx, req.Targets); err != nil {
+	if err := s.checkTargets(ctx, req.Targets, req.PlacementReview); err != nil {
 		return nil, err
 	}
 	if err := s.assignAPIKeys(&req, p); err != nil {
 		return nil, err
 	}
-	id, err := newUUID()
-	if err != nil {
-		return nil, err
+	var id string
+	if req.Submission != nil {
+		id = req.Submission.ID
+	} else {
+		id, err = NewDeploymentID()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	d := model.NodeDeployment{
@@ -229,6 +259,11 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 		}
 	}
 	if err := s.store.Create(d); err != nil {
+		if req.Submission != nil {
+			if existing, replayErr := s.existingSubmission(req); existing != nil || replayErr != nil {
+				return existing, replayErr
+			}
+		}
 		return nil, err
 	}
 	log.Info().Str("deploymentId", id).Str("type", req.Type).Int("targets", len(req.Targets)).
@@ -247,14 +282,37 @@ func (s *Service) Create(ctx context.Context, req model.NodeDeploymentReq) (*mod
 	return s.Get(ctx, id)
 }
 
+func (s *Service) existingSubmission(req model.NodeDeploymentReq) (*model.NodeDeployment, error) {
+	d, exists := s.store.Get(req.Submission.ID)
+	if !exists {
+		return nil, nil
+	}
+	stored, err := json.Marshal(d.Request)
+	if err != nil {
+		return nil, err
+	}
+	proposed, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(stored, proposed) {
+		return nil, &model.ValidationError{Message: "submission ID is bound to a different deployment request"}
+	}
+	withoutOutput(d)
+	return d, nil
+}
+
 // checkTargets reads every target node from CB-Tumblebug, one after another.
 //
 // The error names the target, and never carries the upstream text: that may
 // hold the CB-Tumblebug address. The upstream error is logged instead.
-func (s *Service) checkTargets(ctx context.Context, targets []model.NodeDeployTarget) error {
+func (s *Service) checkTargets(ctx context.Context, targets []model.NodeDeployTarget, review *model.NodePlacementReview) error {
 	for _, t := range targets {
-		_, err := s.tb.GetNode(ctx, t.NsID, t.InfraID, t.NodeID)
+		node, err := s.tb.GetNode(ctx, t.NsID, t.InfraID, t.NodeID)
 		if err == nil {
+			if err := checkPlacementReview(node, review); err != nil {
+				return err
+			}
 			continue
 		}
 		name := t.NsID + "/" + t.InfraID + "/" + t.NodeID
@@ -487,6 +545,10 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		fail(err)
 		return
 	}
+	if err := checkPlacementReview(node, req.PlacementReview); err != nil {
+		fail(err)
+		return
+	}
 	if node.SSHKeyID == "" {
 		fail(fmt.Errorf("node %q of infra %q has no ssh key", target.NodeID, target.InfraID))
 		return
@@ -511,7 +573,13 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		return
 	}
 
-	gpu, source, note := s.decideGPU(ctx, req, node)
+	gpu, source, note, spec := s.decideGPU(ctx, req, node)
+	if gpu && req.Inference != nil && (req.RequireDryRun || req.Submission != nil) {
+		if err := s.checkApprovedGPUVendor(ctx, node.SpecID, spec); err != nil {
+			fail(err)
+			return
+		}
+	}
 	ports := servedPorts(req, p)
 	sshUser, sshUserSource := firstNonEmpty(target.SSHUser, access.User), sshUserSourceOf(target)
 	s.updateNode(id, idx, func(n *model.NodeDeployResult) {
@@ -530,7 +598,15 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		setPhase(n, PhaseStaging, time.Now().UTC())
 	})
 
-	rendered, err := s.stage(id, dir, req, p, gpu, nodeAPIKey(p, idx))
+	if req.App != nil && req.App.InferenceBinding != nil {
+		unlock, err := s.lockInferenceBinding(ctx, target, req.App.InferenceBinding.DeploymentID)
+		if err != nil {
+			fail(err)
+			return
+		}
+		defer unlock()
+	}
+	rendered, err := s.stage(ctx, id, dir, target, req, p, gpu, nodeAPIKey(p, idx))
 	if err != nil {
 		fail(err)
 		return
@@ -596,6 +672,10 @@ func (s *Service) deployNode(ctx context.Context, id string, idx int, req *model
 		return
 	}
 	defer unlock()
+	if req.Submission != nil && !s.store.currentSubmission(req) {
+		fail(errors.New("the placement changed after the deployment was approved"))
+		return
+	}
 	for _, spec := range steps {
 		if err := s.runStep(ctx, id, idx, spec); err != nil {
 			fail(err)
@@ -744,25 +824,25 @@ func (s *Service) runStep(ctx context.Context, id string, idx int, spec semaphor
 
 // decideGPU takes the request's gpu when given, and otherwise asks the node
 // spec whether its accelerator is a GPU. A spec that cannot be read means no
-// GPU, and the returned note says why.
-func (s *Service) decideGPU(ctx context.Context, req *model.NodeDeploymentReq, node *tumblebug.Node) (bool, string, string) {
+// GPU, and the returned note says why. A spec that was read can be reused by the caller.
+func (s *Service) decideGPU(ctx context.Context, req *model.NodeDeploymentReq, node *tumblebug.Node) (bool, string, string, *tumblebug.SpecInfo) {
 	if req.Inference != nil && req.Inference.GPU != nil {
-		return *req.Inference.GPU, gpuFromRequest, ""
+		return *req.Inference.GPU, gpuFromRequest, "", nil
 	}
 	if node.SpecID == "" {
-		return false, gpuFromDefault, "gpu taken as false: the node has no specId"
+		return false, gpuFromDefault, "gpu taken as false: the node has no specId", nil
 	}
 	spec, err := s.tb.GetSpec(ctx, s.opts.SpecNamespace, node.SpecID)
 	if err != nil {
-		return false, gpuFromDefault, fmt.Sprintf("gpu taken as false: spec %q could not be read: %s", node.SpecID, err)
+		return false, gpuFromDefault, fmt.Sprintf("gpu taken as false: spec %q could not be read: %s", node.SpecID, err), nil
 	}
 	gpu := strings.EqualFold(spec.AcceleratorType, "gpu")
-	return gpu, gpuFromSpec, ""
+	return gpu, gpuFromSpec, "", spec
 }
 
 // stage places the files of one node and returns the rendered compose file of
 // an inference service.
-func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, gpu bool, apiKey string) (string, error) {
+func (s *Service) stage(ctx context.Context, id, dir string, target model.NodeDeployTarget, req *model.NodeDeploymentReq, p *plan, gpu bool, apiKey string) (string, error) {
 	if !filepath.IsAbs(s.opts.StageRoot) {
 		return "", fmt.Errorf("stage root %q is not an absolute path", s.opts.StageRoot)
 	}
@@ -774,10 +854,14 @@ func (s *Service) stage(id, dir string, req *model.NodeDeploymentReq, p *plan, g
 	}
 
 	if req.Type == model.NodeDeployTypeApp {
+		env, err := s.applicationEnv(ctx, target, req.App)
+		if err != nil {
+			return "", err
+		}
 		if err := stageApp(p.appDir, dir); err != nil {
 			return "", err
 		}
-		if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, req.App.Env), stageFilePerm); err != nil {
+		if err := writeStageFile(filepath.Join(dir, EnvFile), envFileContent(id, env), stageFilePerm); err != nil {
 			return "", err
 		}
 		return "", writeManifest(dir)
@@ -1010,6 +1094,10 @@ func (s *Service) Logs(ctx context.Context, id string) (*model.NodeDeploymentLog
 
 func withoutOutput(d *model.NodeDeployment) {
 	for i := range d.Nodes {
+		if d.Request.Submission != nil {
+			d.Nodes[i].APIKey = ""
+			d.Nodes[i].Compose = ""
+		}
 		for j := range d.Nodes[i].Steps {
 			d.Nodes[i].Steps[j].Output = nil
 		}
@@ -1146,8 +1234,8 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 }
 
-// newUUID returns a random (version 4) UUID.
-func newUUID() (string, error) {
+// NewDeploymentID returns a random (version 4) UUID.
+func NewDeploymentID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate a deployment id: %w", err)

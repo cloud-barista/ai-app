@@ -68,10 +68,6 @@ type ServerConfig struct {
 }
 
 // TumblebugConfig holds CB-Tumblebug connection settings.
-//
-// ImageNamespace and DefaultOSType are read only by the partner recommender
-// mock, which searches the image catalog; the AI-App service deploys onto nodes
-// that already run and picks no image.
 type TumblebugConfig struct {
 	BaseURL          string
 	Username         string
@@ -111,6 +107,10 @@ type EngineConfig struct {
 	RegistryURL string
 	// RegistryToken is sent to the registry as a bearer token when set.
 	RegistryToken string
+	// ApprovalToken authenticates the AI-Ops approval service on its own MCP path.
+	ApprovalToken string
+	// ApplyEnabled exposes the live revision tools to the approval service.
+	ApplyEnabled bool
 }
 
 // PartnerNLConfig holds where the AI-App service forwards /aiapp/partner/nl/*:
@@ -323,6 +323,8 @@ func Load() (*Config, error) {
 		"engine.archive_dir",
 		"engine.registry_url",
 		"engine.registry_token",
+		"engine.approval_token",
+		"engine.apply_enabled",
 		"mock_nl.url",
 		"partner_rec.url",
 		"app.mcp_url",
@@ -382,6 +384,8 @@ func Load() (*Config, error) {
 			ArchiveDir:    v.GetString("engine.archive_dir"),
 			RegistryURL:   strings.TrimRight(v.GetString("engine.registry_url"), "/"),
 			RegistryToken: v.GetString("engine.registry_token"),
+			ApprovalToken: strings.TrimSpace(v.GetString("engine.approval_token")),
+			ApplyEnabled:  v.GetBool("engine.apply_enabled"),
 		},
 		PartnerNL: PartnerNLConfig{
 			URL: strings.TrimRight(v.GetString("mock_nl.url"), "/"),
@@ -473,6 +477,13 @@ func (c *Config) validate() error {
 	}
 	if c.Engine.ArchiveDir == "" {
 		return fmt.Errorf("%s_ENGINE_ARCHIVE_DIR is required", envPrefix)
+	}
+	if token := c.Engine.ApprovalToken; token != "" && (c.Auth.Token == "" ||
+		token == c.Auth.Token || token == c.App.Token || token == c.Engine.RegistryToken) {
+		return fmt.Errorf("%s_ENGINE_APPROVAL_TOKEN requires AI-App authentication and a distinct token", envPrefix)
+	}
+	if c.Engine.ApplyEnabled && c.Engine.ApprovalToken == "" {
+		return fmt.Errorf("%s_ENGINE_APPLY_ENABLED requires an approval token", envPrefix)
 	}
 	if c.PartnerNL.URL == "" {
 		return fmt.Errorf("%s_MOCK_NL_URL is required", envPrefix)

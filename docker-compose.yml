@@ -59,7 +59,7 @@ services:
 
       # Where partner natural language agent routes (/aiapp/partner/nl/*) are
       # forwarded, path unchanged. Here the mock of that agent.
-      AIAPP_MOCK_NL_URL: "http://mock-partner-nl-agent:8093"
+      AIAPP_MOCK_NL_URL: "${AIAPP_MOCK_NL_URL:-http://mock-partner-nl-agent:8093}"
 
       # Where partner recommendation API routes (/aiapp/partner/rec/*) are
       # forwarded, with /aiapp/partner/rec taken off the path. AI-App does not
@@ -70,6 +70,7 @@ services:
       # same token because forwarded routes carry the caller's Authorization
       # header unchanged.
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_ENGINE_APPROVAL_TOKEN: "${AIAPP_ENGINE_APPROVAL_TOKEN:-}"
       AIAPP_ARCHIVE_DIR: "/app/data/archive"
 
       # Semaphore runs the deployment playbooks on a node. A token, when set,
@@ -95,6 +96,8 @@ services:
       AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
       # Records of deployments onto nodes, kept on the archive volume.
       AIAPP_DEPLOYMENT_STORE_FILE: "/app/data/archive/node-deployments.json"
+      # Resolved by the deployment service when Langflow's app.envFrom names it.
+      AIAPP_DEPLOY_SECRET_LANGFLOW_PASSWORD: "${AIAPP_DEPLOY_SECRET_LANGFLOW_PASSWORD:-}"
       # Once its playbooks succeed, a deployment opens the ports it serves over
       # TCP inbound from 0.0.0.0/0 in the CB-Tumblebug security groups of the
       # node. false records the ports and leaves them for an operator to open.
@@ -156,6 +159,11 @@ services:
       # The same token as the AI-App service, both to accept and to send.
       AIAPP_AUTH_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
       AIAPP_APP_TOKEN: "${AIAPP_AUTH_TOKEN:-}"
+      AIAPP_ENGINE_APPROVAL_TOKEN: "${AIAPP_ENGINE_APPROVAL_TOKEN:-}"
+      AIAPP_ENGINE_APPLY_ENABLED: "${AIAPP_ENGINE_APPLY_ENABLED:-false}"
+      AIAPP_OBSERVATION_PROMETHEUS_URL: "${AIAPP_OBSERVATION_PROMETHEUS_URL:-}"
+      AIAPP_OBSERVATION_PROMETHEUS_TOKEN: "${AIAPP_OBSERVATION_PROMETHEUS_TOKEN:-}"
+      AIAPP_OPTIMIZATION_PROPOSAL_DIR: "${AIAPP_OPTIMIZATION_PROPOSAL_DIR:-}"
 
       # How long a workflow step waiting for a deployment to end keeps asking,
       # and how often.
@@ -170,6 +178,10 @@ services:
 
     volumes:
       - engine-archive:/app/data/engine-archive
+
+    # A registry or Prometheus on the host can use the same name as the gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8091/aiapp/readyz"]
