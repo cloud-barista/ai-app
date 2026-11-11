@@ -335,7 +335,11 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := wait(1, "succeeded")
-	want := []string{nodedeploy.PlaybookInstallDocker, nodedeploy.PlaybookComposeUp, nodedeploy.PlaybookInstallDocker, nodedeploy.PlaybookCopyAndRun}
+	// The node has a GPU spec, so each deployment installs the GPU driver first.
+	want := []string{
+		nodedeploy.PlaybookInstallGPUDriver, nodedeploy.PlaybookInstallDocker, nodedeploy.PlaybookComposeUp,
+		nodedeploy.PlaybookInstallGPUDriver, nodedeploy.PlaybookInstallDocker, nodedeploy.PlaybookCopyAndRun,
+	}
 	if !slices.Equal(runner.runs(), want) || first.Inference.DeploymentID == "" || first.Application.DeploymentID == "" {
 		t.Fatalf("first apply = %+v, playbooks %v", first, runner.runs())
 	}
@@ -373,7 +377,7 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := wait(2, "failed")
-	if failed.Inference != first.Inference || failed.Application.DeploymentID == "" || len(runner.runs()) != 6 {
+	if failed.Inference != first.Inference || failed.Application.DeploymentID == "" || len(runner.runs()) != 9 {
 		t.Fatalf("version update did not preserve inference: %+v, playbooks %v", failed, runner.runs())
 	}
 	if _, err := submit(3); err != nil {
@@ -381,7 +385,7 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 	}
 	repaired := wait(3, "succeeded")
 	if repaired.Inference != first.Inference || repaired.Application.DeploymentID == failed.Application.DeploymentID ||
-		len(runner.runs()) != 8 {
+		len(runner.runs()) != 12 {
 		t.Fatalf("repair did not resume from the application: %+v, playbooks %v", repaired, runner.runs())
 	}
 	inference.Inference.Args = []string{"--max-num-seqs", "16"}
@@ -424,7 +428,7 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := wait(4, "confirmation_pending")
-	if pending.Inference.DeploymentID != id || pending.Application.DeploymentID != "" || len(runner.runs()) != 10 {
+	if pending.Inference.DeploymentID != id || pending.Application.DeploymentID != "" || len(runner.runs()) != 15 {
 		t.Fatalf("unconfirmed status read repeated a deployment: %+v, playbooks %v", pending, runner.runs())
 	}
 	dropRead.Store(false)
@@ -433,14 +437,14 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	tuned := wait(4, "succeeded")
-	if tuned.Inference.DeploymentID != id || id == repaired.Inference.DeploymentID || len(runner.runs()) != 12 {
+	if tuned.Inference.DeploymentID != id || id == repaired.Inference.DeploymentID || len(runner.runs()) != 18 {
 		t.Fatalf("runtime update = %+v, playbooks %v", tuned, runner.runs())
 	}
 	updated, err := svc.Get(ctx, tuned.Inference.DeploymentID)
 	if err != nil || !slices.Equal(updated.Request.Inference.Args, inference.Inference.Args) {
 		t.Fatal("the runtime update did not persist the approved argument")
 	}
-	if _, err := submit(3); err == nil || len(runner.runs()) != 12 {
+	if _, err := submit(3); err == nil || len(runner.runs()) != 18 {
 		t.Fatal("a stale revision reached the deployment engine")
 	}
 
@@ -452,7 +456,7 @@ func TestKHUApprovedApplyThroughAIAppPreservesPlacement(t *testing.T) {
 	incompatible := wait(5, "failed")
 	rejectedDeployment, err := svc.Get(ctx, incompatible.Inference.DeploymentID)
 	if err != nil || rejectedDeployment.Nodes[0].StageDir != "" ||
-		incompatible.Application.DeploymentID != "" || len(runner.runs()) != 12 {
+		incompatible.Application.DeploymentID != "" || len(runner.runs()) != 18 {
 		t.Fatalf("incompatible revision reached staging or execution: %+v, %v", incompatible, err)
 	}
 	var inferenceServing, appServing bool
