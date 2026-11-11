@@ -107,6 +107,7 @@ func newNodeDeployServer(t *testing.T, dryRun bool) (*Server, *countingRunner, *
 	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
 
 	registry := tools.NewRegistry(dryRun)
+	tools.RegisterModels(registry, models)
 	tools.RegisterNodeDeploy(registry, svc)
 	cfg := &config.Config{
 		Engine:    config.EngineConfig{URL: "http://127.0.0.1:1"},

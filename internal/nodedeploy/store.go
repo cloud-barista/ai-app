@@ -174,12 +174,64 @@ func (s *Store) Create(d model.NodeDeployment) error {
 	if _, ok := s.records[d.ID]; ok {
 		return fmt.Errorf("deployment %s already exists", d.ID)
 	}
+	if submission := d.Request.Submission; submission != nil && !d.DryRun {
+		previous := s.latestPlacement(&d.Request)
+		var previousID string
+		if previous != nil && previous.Status != model.NodeDeployRemoved {
+			switch previous.Status {
+			case model.NodeDeployPending, model.NodeDeployDeploying, model.NodeDeployRemoving:
+				return &model.ValidationError{Message: "the placement is still changing"}
+			}
+			previousID = previous.ID
+		}
+		if submission.PreviousDeploymentID != previousID {
+			return &model.ValidationError{Message: "the approved deployment does not match the current placement revision"}
+		}
+	}
 	s.records[d.ID] = copied
 	if err := s.save(); err != nil {
 		delete(s.records, d.ID)
 		return err
 	}
 	return nil
+}
+
+// latestPlacement returns the last accepted live request for the work key.
+// The caller holds the store lock.
+func (s *Store) latestPlacement(req *model.NodeDeploymentReq) *model.NodeDeployment {
+	place, err := placementFor(req)
+	if err != nil {
+		return nil
+	}
+	target := req.Targets[0].Key()
+	var latest *model.NodeDeployment
+	for _, other := range s.records {
+		if other.DryRun || other.Type != req.Type {
+			continue
+		}
+		if (other.Request.Type == model.NodeDeployTypeInference && other.Request.Inference == nil) ||
+			(other.Request.Type == model.NodeDeployTypeApp && other.Request.App == nil) {
+			continue
+		}
+		otherPlace, err := placementFor(&other.Request)
+		if err != nil || otherPlace.WorkKey != place.WorkKey {
+			continue
+		}
+		for _, node := range other.Nodes {
+			if node.Target.Key() == target && (latest == nil || other.CreatedAt.After(latest.CreatedAt) ||
+				(other.CreatedAt.Equal(latest.CreatedAt) && other.ID > latest.ID)) {
+				latest = other
+			}
+		}
+	}
+	return latest
+}
+
+func (s *Store) currentSubmission(req *model.NodeDeploymentReq) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	latest := s.latestPlacement(req)
+	return latest != nil && latest.ID == req.Submission.ID
 }
 
 // Update changes one record with change and writes the store. The record is

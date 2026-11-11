@@ -33,6 +33,20 @@ func envProp(description string) map[string]any {
 	}
 }
 
+// PlacementReviewSchema describes the review evidence accepted with a deployment.
+func PlacementReviewSchema() map[string]any {
+	return object(map[string]any{
+		"nsId":          stringProp("Namespace used for the CB-Tumblebug review"),
+		"specId":        stringProp("Reviewed CB-Tumblebug spec ID"),
+		"imageId":       stringProp("Reviewed CB-Tumblebug image ID"),
+		"status":        enumProp("Selected node group's review status", "Ready", "Warning"),
+		"specStatus":    stringProp("Spec availability status from specValidation"),
+		"imageStatus":   stringProp("Image availability status from imageValidation"),
+		"estimatedCost": stringProp("Estimated cost from the selected node group's review"),
+		"reviewedAt":    map[string]any{"type": "string", "format": "date-time"},
+	}, "nsId", "specId", "imageId", "status", "specStatus", "imageStatus", "reviewedAt")
+}
+
 func createDeploymentTool(svc *nodedeploy.Service) Tool {
 	target := object(map[string]any{
 		"kind":    enumProp("node; k8s is reserved and refused", model.NodeTargetKindNode, model.NodeTargetKindK8s),
@@ -56,7 +70,9 @@ func createDeploymentTool(svc *nodedeploy.Service) Tool {
 			"get_deployment until it is running, failed or partial, and read the task output with get_deployment_logs. " +
 			"With dry run on, only the files are placed, nothing runs, and the record comes back with status dry-run.",
 		InputSchema: object(map[string]any{
-			"type": enumProp("What to deploy", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
+			"type":            enumProp("What to deploy", model.NodeDeployTypeInference, model.NodeDeployTypeApp),
+			"requireDryRun":   map[string]any{"type": "boolean", "description": "Require AI-App dry-run before staging a deployment"},
+			"placementReview": PlacementReviewSchema(),
 			"targets": map[string]any{
 				"type": "array", "description": "Nodes to deploy to, each once, at most 32", "items": target,
 			},

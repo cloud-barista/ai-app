@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,5 +93,87 @@ func TestEngineProxyKeepsThePath(t *testing.T) {
 	s.echo.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/aiapp/engine/card", nil))
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "Automation engine is not reachable") {
 		t.Errorf("engine down: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestApprovedDeploymentMCPStagesThroughAIAppGateway(t *testing.T) {
+	const approvalToken = "approval-test-only"
+	ctx := context.Background()
+	app, runner, controls := newNodeDeployServer(t, true)
+	appHTTP := httptest.NewServer(app.echo)
+	t.Cleanup(appHTTP.Close)
+	appMCP := mcpclient.New(appHTTP.URL+BasePath+"/mcp", "")
+	t.Cleanup(func() { _ = appMCP.Close() })
+
+	runs, err := archive.NewLog[engine.Run](t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	automation := engine.New(appMCP, runs)
+	approved, err := engine.NewApprovedDeploymentTools(t.TempDir(), automation, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Auth:   config.AuthConfig{Token: testToken},
+		Engine: config.EngineConfig{ApprovalToken: approvalToken},
+	}
+	engineServer := NewEngineServer(cfg, EngineDependencies{
+		Engine: automation, Tools: engine.NewRegistry(automation), ApprovedDeploymentTools: approved,
+	})
+	engineHTTP := httptest.NewServer(engineServer.echo)
+	t.Cleanup(engineHTTP.Close)
+	cfg.Engine.URL = engineHTTP.URL
+	gateway := NewAppServer(cfg, AppDependencies{Tools: tools.NewRegistry(true)})
+	gatewayHTTP := httptest.NewServer(gateway.echo)
+	t.Cleanup(gatewayHTTP.Close)
+
+	path := BasePath + approvedDeploymentPath
+	for _, server := range []*Server{gateway, engineServer} {
+		if rec := do(server, http.MethodPost, path, "Bearer "+testToken); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("regular bearer reached approval tool, status = %d", rec.Code)
+		}
+		if rec := do(server, http.MethodPost, BasePath+"/engine/mcp", "Bearer "+approvalToken); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("approval bearer reached general engine tools, status = %d", rec.Code)
+		}
+	}
+
+	client := mcpclient.New(gatewayHTTP.URL+path, approvalToken)
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Call(ctx, "etri", "stage_approved_deployment", json.RawMessage(`{
+		"correlationId":"approval-gateway-test","revision":1,
+		"deployment":{
+			"type":"inference",
+			"targets":[{"kind":"node","nsId":"etri","infraId":"travel","nodeId":"vm1"}],
+			"inference":{"modelId":"qwen3-vl-8b","artifactId":"ollama-gguf","runtimeId":"ollama","gpu":true}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt struct {
+		Status       string `json:"status"`
+		RunID        string `json:"engineRunId"`
+		DeploymentID string `json:"deploymentId"`
+	}
+	if err := json.Unmarshal(result.(json.RawMessage), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Status != "blocked" || receipt.RunID == "" || receipt.DeploymentID == "" {
+		t.Fatalf("approval receipt = %+v", receipt)
+	}
+	run, err := automation.GetRun(receipt.RunID)
+	if err != nil || !run.DryRun || run.Status != engine.RunBlocked {
+		t.Fatalf("engine run = %+v, %v", run, err)
+	}
+	deploy := do(app, http.MethodGet, BasePath+"/deployments/"+receipt.DeploymentID, "")
+	if deploy.Code != http.StatusOK || !strings.Contains(deploy.Body.String(), `"status":"dry-run"`) {
+		t.Fatalf("dry-run deployment = %d %s", deploy.Code, deploy.Body)
+	}
+	if runner.count() != 0 || len(*controls) != 0 {
+		t.Fatal("dry-run called a playbook or VM control")
 	}
 }

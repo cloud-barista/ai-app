@@ -32,6 +32,12 @@ func (e *Engine) Deploy(ctx context.Context, nsID string, in DeployInput) (*Run,
 	if err != nil {
 		return nil, err
 	}
+	if in.RequireDryRun && !r.run.DryRun {
+		return nil, fmt.Errorf("%w: this deployment requires AI-App dry-run", ErrInvalidInput)
+	}
+	if in.Submission != nil && !in.RequireDryRun && r.run.DryRun {
+		return nil, fmt.Errorf("%w: a live submission requires AI-App dry-run off", ErrInvalidInput)
+	}
 
 	if !r.readTarget(ctx, in) {
 		r.add("create the deployment", toolCreateDeployment, in, StepSkipped, r.skipMessage())

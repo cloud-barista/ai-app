@@ -171,6 +171,26 @@ type NodeAppReq struct {
 	// CB-Tumblebug security groups, each from 1 to 65535, at most 16.
 	// Omitted takes the version's ports.
 	Ports []int `json:"ports,omitempty" example:"3000"`
+	// InferenceBinding resolves connection values from a running deployment on the same node.
+	InferenceBinding *NodeInferenceBinding `json:"inferenceBinding,omitempty"`
+	// EnvFrom maps application variables to AIAPP_DEPLOY_SECRET_* on the AI-App server.
+	EnvFrom map[string]string `json:"envFrom,omitempty"`
+}
+
+// NodeInferenceBinding names the runtime deployment and the app's connection variables.
+type NodeInferenceBinding struct {
+	DeploymentID string `json:"deploymentId"`
+	BaseURLEnv   string `json:"baseUrlEnv"`
+	APIKeyEnv    string `json:"apiKeyEnv,omitempty"`
+	// Native requests Ollama's native URL. The default is the OpenAI-compatible URL.
+	Native bool `json:"native,omitempty"`
+}
+
+// NodeDeploymentSubmission identifies an approved request and its live placement revision.
+type NodeDeploymentSubmission struct {
+	ID string `json:"id"`
+	// PreviousDeploymentID is the last accepted deployment for this work key, or empty for a free placement.
+	PreviousDeploymentID string `json:"previousDeploymentId,omitempty"`
 }
 
 // NodeDeploymentReq deploys an inference service or an application onto
@@ -185,6 +205,10 @@ type NodeDeploymentReq struct {
 	Inference *NodeInferenceReq `json:"inference,omitempty"`
 	// App is required when type is app.
 	App *NodeAppReq `json:"app,omitempty"`
+	// RequireDryRun rejects the request if the receiving AI-App could run playbooks.
+	RequireDryRun   bool                      `json:"requireDryRun,omitempty"`
+	Submission      *NodeDeploymentSubmission `json:"submission,omitempty"`
+	PlacementReview *NodePlacementReview      `json:"placementReview,omitempty"`
 }
 
 // Validate reports why a request cannot be deployed. A k8s target fails with
@@ -233,6 +257,9 @@ func (r *NodeDeploymentReq) Validate() error {
 		if err := ValidateAppPorts("app.ports", r.App.Ports); err != nil {
 			return err
 		}
+		if err := r.App.validateBinding(); err != nil {
+			return err
+		}
 	case "":
 		return errRequired("type")
 	default:
@@ -244,6 +271,28 @@ func (r *NodeDeploymentReq) Validate() error {
 	}
 	if len(r.Targets) > MaxNodeDeployTargets {
 		return errInvalid("targets", fmt.Sprintf("must hold at most %d targets", MaxNodeDeployTargets))
+	}
+	if r.PlacementReview != nil {
+		if err := r.PlacementReview.validate(r.Targets); err != nil {
+			return err
+		}
+	}
+	if s := r.Submission; s != nil {
+		if !ValidDeploymentID(s.ID) || s.ID == s.PreviousDeploymentID ||
+			(s.PreviousDeploymentID != "" && !ValidDeploymentID(s.PreviousDeploymentID)) {
+			return errInvalid("submission", "supply distinct deployment UUIDs")
+		}
+		if len(r.Targets) != 1 ||
+			(r.Inference != nil && r.Inference.RuntimeID == "") || (r.App != nil && r.App.Version == 0) {
+			return errInvalid("submission", "requires one node and a pinned runtime or app version")
+		}
+		if r.RequireDryRun && (r.Inference == nil || s.PreviousDeploymentID != "") {
+			return errInvalid("submission", "dry run requires an initial inference deployment")
+		}
+		if (r.Inference != nil && (len(r.Inference.Env) != 0 || r.Inference.APIKey != "")) ||
+			(r.App != nil && len(r.App.Env) != 0) {
+			return errInvalid("submission", "use server-side secret references and inference bindings for approved deployments")
+		}
 	}
 	seen := make(map[string]bool, len(r.Targets))
 	for i := range r.Targets {
@@ -277,6 +326,39 @@ func (r *NodeDeploymentReq) Validate() error {
 		seen[t.Key()] = true
 	}
 	return nil
+}
+
+func (a *NodeAppReq) validateBinding() error {
+	if len(a.EnvFrom) == 0 && a.InferenceBinding == nil {
+		return nil
+	}
+	variables := make(map[string]string, len(a.EnvFrom)+2)
+	for name, ref := range a.EnvFrom {
+		if !strings.HasPrefix(ref, "AIAPP_DEPLOY_SECRET_") || !envNamePattern.MatchString(ref) {
+			return errInvalid("app.envFrom", "references must name AIAPP_DEPLOY_SECRET_* variables")
+		}
+		variables[name] = ""
+	}
+	if b := a.InferenceBinding; b != nil {
+		if !ValidDeploymentID(b.DeploymentID) || b.BaseURLEnv == "" || b.BaseURLEnv == b.APIKeyEnv {
+			return errInvalid("app.inferenceBinding", "requires an inference deployment ID and distinct connection variable names")
+		}
+		for _, name := range []string{b.BaseURLEnv, b.APIKeyEnv} {
+			if name == "" {
+				continue
+			}
+			if _, exists := variables[name]; exists {
+				return errInvalid("app.inferenceBinding", "connection variables must not overlap app.envFrom")
+			}
+			variables[name] = ""
+		}
+	}
+	for name := range variables {
+		if _, exists := a.Env[name]; exists {
+			return errInvalid("app.env", "explicit values must not override connection variables or secret references")
+		}
+	}
+	return ValidateDeployEnv("app", variables)
 }
 
 // ValidateDeployEnv reports why env cannot be written to a .env file. The file

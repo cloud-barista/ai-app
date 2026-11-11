@@ -74,6 +74,10 @@ func (e *Engine) Heal(ctx context.Context, nsID string, in HealInput) (*Run, err
 		return r.finish(), nil
 	}
 	step.Message = outcome(&d)
+	if d.Request.Submission != nil {
+		r.fail(step, "this deployment is managed by an approval revision")
+		return r.finish(), nil
+	}
 	switch d.Status {
 	case model.NodeDeployRunning:
 		r.message = fmt.Sprintf("deployment %s is running on every node; nothing to heal", d.ID)

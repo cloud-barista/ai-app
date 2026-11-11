@@ -745,6 +745,11 @@ func TestDryRunPlacesFilesAndNeverRuns(t *testing.T) {
 
 func TestRequestsRefusedBeforeAnythingRuns(t *testing.T) {
 	f := newFixture(t, false)
+	dryRun := modelReq("vm1")
+	dryRun.RequireDryRun = true
+	if _, err := f.svc.Create(context.Background(), dryRun); err == nil || !strings.Contains(err.Error(), "requires the AI-App dry-run gate") {
+		t.Errorf("dry-run-only request against a live service = %v", err)
+	}
 	k8s := modelReq("vm1")
 	k8s.Targets[0].Kind = model.NodeTargetKindK8s
 	if _, err := f.svc.Create(context.Background(), k8s); !errors.Is(err, model.ErrUnsupportedTarget) {

@@ -9,11 +9,13 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ish-hcc/ai-agent-proto/internal/model"
 	"github.com/ish-hcc/ai-agent-proto/internal/tools"
 )
 
@@ -30,6 +32,8 @@ const (
 	MetaGuardedByDryRun = "ai-mcmp/guardedByDryRun"
 	// MetaDryRun is the initialize result _meta key holding the dry-run state.
 	MetaDryRun = "ai-mcmp/dryRun"
+	// MetaDeploymentRejected marks a create_deployment validation failure before admission.
+	MetaDeploymentRejected = "ai-mcmp/deploymentRejected"
 
 	serverName    = "ai-mcmp-ai-app"
 	serverVersion = "0.1.0"
@@ -105,6 +109,9 @@ func callHandler(registry *tools.Registry, name string) mcp.ToolHandler {
 		if err != nil {
 			result := &mcp.CallToolResult{}
 			result.SetError(err)
+			if name == "create_deployment" && errors.Is(err, model.ErrValidation) {
+				result.Meta = mcp.Meta{MetaDeploymentRejected: true}
+			}
 			return result, nil
 		}
 		body, err := json.Marshal(out)

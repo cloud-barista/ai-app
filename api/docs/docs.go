@@ -2111,6 +2111,10 @@ const docTemplate = `{
                     "description": "Tool is the AI-App MCP tool the step calls.",
                     "type": "string",
                     "example": "create_deployment"
+                },
+                "unconfirmed": {
+                    "description": "Unconfirmed means the create response was lost or unreadable.",
+                    "type": "boolean"
                 }
             }
         },
@@ -2761,6 +2765,21 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "envFrom": {
+                    "description": "EnvFrom maps application variables to AIAPP_DEPLOY_SECRET_* on the AI-App server.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "inferenceBinding": {
+                    "description": "InferenceBinding resolves connection values from a running deployment on the same node.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.NodeInferenceBinding"
+                        }
+                    ]
                 },
                 "name": {
                     "description": "Name is an uploaded application (GET /apps).",
@@ -3415,6 +3434,16 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "placementReview": {
+                    "$ref": "#/definitions/model.NodePlacementReview"
+                },
+                "requireDryRun": {
+                    "description": "RequireDryRun rejects the request if the receiving AI-App could run playbooks.",
+                    "type": "boolean"
+                },
+                "submission": {
+                    "$ref": "#/definitions/model.NodeDeploymentSubmission"
+                },
                 "targets": {
                     "description": "Targets are the nodes to deploy to, at most 32, each once.",
                     "type": "array",
@@ -3430,6 +3459,36 @@ const docTemplate = `{
                         "app"
                     ],
                     "example": "inference"
+                }
+            }
+        },
+        "model.NodeDeploymentSubmission": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "previousDeploymentId": {
+                    "description": "PreviousDeploymentID is the last accepted deployment for this work key, or empty for a free placement.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.NodeInferenceBinding": {
+            "type": "object",
+            "properties": {
+                "apiKeyEnv": {
+                    "type": "string"
+                },
+                "baseUrlEnv": {
+                    "type": "string"
+                },
+                "deploymentId": {
+                    "type": "string"
+                },
+                "native": {
+                    "description": "Native requests Ollama's native URL. The default is the OpenAI-compatible URL.",
+                    "type": "boolean"
                 }
             }
         },
@@ -3511,6 +3570,45 @@ const docTemplate = `{
                     "description": "SecurityGroupID is the CB-Tumblebug security group, in the namespace\nof the target.",
                     "type": "string",
                     "example": "etri-shared-aws-ap-northeast-2"
+                }
+            }
+        },
+        "model.NodePlacementReview": {
+            "type": "object",
+            "properties": {
+                "estimatedCost": {
+                    "type": "string",
+                    "example": "$0.50/hour"
+                },
+                "imageId": {
+                    "type": "string",
+                    "example": "aws+ap-northeast-2+ami-example"
+                },
+                "imageStatus": {
+                    "type": "string",
+                    "example": "Available"
+                },
+                "nsId": {
+                    "type": "string",
+                    "example": "etri"
+                },
+                "reviewedAt": {
+                    "type": "string"
+                },
+                "specId": {
+                    "type": "string",
+                    "example": "aws+ap-northeast-2+g4dn.xlarge"
+                },
+                "specStatus": {
+                    "type": "string",
+                    "example": "Available"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "Ready",
+                        "Warning"
+                    ]
                 }
             }
         },

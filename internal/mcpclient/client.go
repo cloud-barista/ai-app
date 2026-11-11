@@ -36,6 +36,11 @@ const (
 // ErrUnavailable is returned when the MCP server cannot be reached.
 var ErrUnavailable = errors.New("MCP tool server is unavailable")
 
+// DeploymentRejectedError is a confirmed validation failure before deployment admission.
+type DeploymentRejectedError string
+
+func (e DeploymentRejectedError) Error() string { return string(e) }
+
 type namespaceKey struct{}
 
 // WithNamespace returns a context whose MCP requests carry nsID in the
@@ -191,6 +196,9 @@ func (c *Client) Call(ctx context.Context, nsID, name string, input json.RawMess
 
 	text := textOf(result)
 	if result.IsError {
+		if rejected, _ := result.Meta[mcpserver.MetaDeploymentRejected].(bool); name == "create_deployment" && rejected {
+			return nil, DeploymentRejectedError(text)
+		}
 		return nil, errors.New(text)
 	}
 	return json.RawMessage(text), nil
