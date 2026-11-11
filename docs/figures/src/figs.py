@@ -109,7 +109,7 @@ msg(440, 1, 2, "노드 정보 (IP · 사용자 · sshKeyId · specId · 보안 �
 msg(500, 1, 3, "파일 배치 (추론: compose 생성 / 응용: 업로드 파일 + script)", "green", n=5)
 note(1250, 470, 300, 60, ["dry-run 이면 여기서 끝", "(Semaphore · 보안 그룹은 안 건드림)"], "warn")
 f.rect(280, 540, 1260, 380, "relay", rx=14, sw=1.5, dash="6 5", fill="#fffbf5")
-label(f, 300, 566, "playbook 마다 반복: install-docker → compose-up (추론) 또는 copy-and-run (응용)", "#9a3412", 15, 700, "start")
+label(f, 300, 566, "playbook 마다 반복: (GPU 노드면 install-gpu-driver →) install-docker → compose-up (추론) 또는 copy-and-run (응용)", "#9a3412", 15, 700, "start")
 msg(610, 1, 4, "SSH 키 · inventory 등록, 태스크 실행 (고정 template)", "orange", n=6)
 msg(660, 4, 3, "배치된 파일 읽기", "green")
 msg(710, 4, 5, "SSH 로 playbook 실행", "orange", n=7)
@@ -137,8 +137,8 @@ f.box(680, 245, 250, 80, "environment", ["aiapp-empty"], "white", tsize=17, ssiz
 f.box(415, 340, 515, 70, "inventory aiapp-no-hosts", ["template 에 묶어 두는 빈 자리"], "white", tsize=17, ssize=13)
 f.rect(415, 430, 515, 250, "relay", rx=12, sw=1.5)
 label(f, 435, 458, "template (고정, 지우지 않음)", "#9a3412", 16, 700, "start")
-for i, t in enumerate(["aiapp-install-docker", "aiapp-compose-up", "aiapp-copy-and-run", "aiapp-compose-down"]):
-    f.box(440 + (i % 2) * 245, 480 + (i // 2) * 95, 225, 75, t, [["install-docker.yml", "compose-up.yml", "copy-and-run.yml", "compose-down.yml"][i]], "white", tsize=15, ssize=13)
+for i, t in enumerate(["aiapp-install-gpu-driver", "aiapp-install-docker", "aiapp-compose-up", "aiapp-copy-and-run", "aiapp-compose-down"]):
+    f.box(440 + (i % 2) * 245, 472 + (i // 2) * 68, 225, 60, t, [["install-gpu-driver.yml", "install-docker.yml", "compose-up.yml", "copy-and-run.yml", "compose-down.yml"][i]], "white", tsize=15, ssize=13)
 f.rect(990, 190, 540, 280, "warn", rx=16, sw=1.5, dash="8 6")
 label(f, 1010, 222, "실행마다 등록 → 끝나면 삭제", "#92400e", 17, 700, "start")
 f.box(1015, 245, 490, 80, "SSH 키", ["aiapp-<배포>-<csp>-<node>-<난수>"], "white", tsize=17, ssize=13)
@@ -508,14 +508,14 @@ def lane(y, title, steps):
         x += w + 20
     return x
 end = lane(170, "추론 서비스 (Semaphore 템플릿 compose-up)", [
-    ("docker 준비", ["install-docker", "GPU 면 nvidia toolkit"], "white", True),
+    ("노드 준비", ["GPU 면 드라이버 먼저", "docker · nvidia toolkit"], "white", True),
     ("파일 놓기 · 기동", ["compose up", "모델 받기 (처음은 수십 분)"], "white", True),
     ("헬스 응답", ["vLLM /health", "Ollama /"], "node", True),
     ("GPU 위인가", ["vLLM: nvidia-smi 프로세스", "Ollama: 로그의 library"], "gpu", True),
     ("playbook 성공", ["gpuCheck 에 근거 줄"], "store", False),
 ])
 lane(440, "응용 (Semaphore 템플릿 copy-and-run)", [
-    ("docker 준비", ["install-docker"], "white", True),
+    ("노드 준비", ["GPU 면 드라이버 먼저", "install-docker"], "white", True),
     ("파일 놓기", ["/opt/aiapp/app-<이름>", "이전 컨테이너 내림"], "white", False),
     ("스크립트 실행", ["deploy.sh 가 0 으로", "끝나야 함"], "white", True),
     ("포트 응답", ["curl 127.0.0.1:<port>/", "10초 간격 60번까지"], "node", True),

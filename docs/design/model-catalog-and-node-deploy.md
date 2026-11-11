@@ -14,8 +14,8 @@
 | 모델과 런타임의 관계는 | 모델은 아티팩트(어디에 어떤 형식으로 있나)를 갖고, 아티팩트는 자신을 띄울 수 있는 런타임과 그 런타임에 필요한 인자를 적는다. 배포는 아티팩트 + 런타임 한 쌍이다 (3.1, 3.2) |
 | 노드에는 어떻게 올리나 | AI-App 이 파일을 공유 저장소에 놓고, Semaphore 가 SSH 로 playbook 을 돌린다. template 은 고정, SSH 키와 inventory 는 실행마다 만들고 지운다 (4.3, 4.4) |
 | 노드 위에서 겹치면 | 작업 키(`ms-<runtimeId>`, `app-<name>`)가 같으면 앞의 배포를 바꾼다. 노드 하나에 추론 서비스는 런타임당 하나, 응용은 이름당 하나다 (4.5) |
-| 추천은 | 이 repo 의 담당이 아니다. AI-App 은 판단 재료(정밀도 · 크기 · 형식)를 원래 값 그대로 내주고, 경희대가 구현할 자리(`/aiapp/recommendations/*`)만 둔다 (2절, [khu.md](../api/khu.md)) |
-| 배포는 언제 끝나나 | 노드마다 `docker 준비 → 파일 놓기·기동 → 헬스(응용은 포트 응답) → GPU(응용은 컨테이너 안정)` 를 확인해야 `running` 이다. 그 뒤 AI-App 이 보안 그룹에 포트를 연다 (4.4) |
+| 추천은 | 배포 경로가 부르지 않는다. AI-App 은 판단 재료(정밀도 · 크기 · 형식)를 원래 값 그대로 내준다. 경희대 인프라 추천기(`cmd/khu-infra-recommender`)는 이 repo 에 있고 `/aiapp/partner/rec/*` 로 넘긴다. 모델·응용 추천 자리(`/aiapp/recommendations/*`)는 비어 있다 (2절, [khu.md](../api/khu.md), [infra-recommendation.md](../api/infra-recommendation.md)) |
+| 배포는 언제 끝나나 | 노드마다 `(GPU 노드면 드라이버) → docker 준비 → 파일 놓기·기동 → 헬스(응용은 포트 응답) → GPU(응용은 컨테이너 안정)` 를 확인해야 `running` 이다. 그 뒤 AI-App 이 보안 그룹에 포트를 연다 (4.4) |
 | 부르는 쪽은 어디로 가나 | 관리 요청은 AI-App(`:8090/aiapp`), 모델 호출과 응용 화면은 노드로 바로 간다. 주소는 `GET /aiapp/endpoints` 가 준다 (5절) |
 | 지금의 API 계약은 | 이 문서가 아니라 [docs/api/](../api/README.md) 에 있다. 이 문서는 왜 이렇게 나눴는지의 기록이다 |
 
@@ -37,8 +37,10 @@
 - **AI-App 은 VM 을 만들지 않는다.** CB-Tumblebug 이 만든 노드를 받아 그 위에 배포한다.
   VM 생성은 인프라 추천 쪽(cm-beetle 은 추천 결과를 그대로 `POST /migration/ns/{nsId}/infra` 로 넘겨 Tumblebug 을 직접
   부른다)이나 운영자가 한다. 노드 제어(정지·재개·재부팅·종료)는 AI-App 이 계속 Tumblebug 으로 한다.
-- 모델 추천(정밀도·크기로 필요 자원을 계산하는 것)과 인프라 추천은 이 repo 의 담당이 아니다. AI-App 은 판단 재료가 되는
-  메타데이터를 **원래 값 그대로** 내준다.
+- 모델 추천(정밀도·크기로 필요 자원을 계산하는 것)과 인프라 추천은 경희대 몫이다. AI-App 은 판단 재료가 되는
+  메타데이터를 **원래 값 그대로** 내준다. 경희대 인프라 추천기는 이 repo 안(`cmd/khu-infra-recommender`)에 있지만 배포 경로와는
+  이어지지 않는다. 추천 결과로 VM 을 만드는 것은 경희대와 ETRI 사이의 일이다.
+- 경희대 AI-Ops 는 판단과 운영자 승인을 거친 배포를 승인 배포 MCP 로 넘기고, 자동화 엔진이 이 문서의 배포 경로로 실행한다(6.1).
 
 ## 3. 데이터 모델
 
@@ -174,6 +176,17 @@ CB-Tumblebug 구조 그대로 받는다.
 
 응답은 배포 ID(uuid)와 노드별 상태다. 노드 결과에는 접속한 SSH 사용자(`nodes[].sshUser`)와 그 출처(`nodes[].sshUserSource`)가 같이 남는다.
 
+그 밖의 필드다. 자세한 형식은 [approved-deployment.md](../api/approved-deployment.md) 와 Swagger 에 있다.
+
+| 필드 | 뜻 |
+|------|----|
+| `inference.args` | 런타임 기동 인자(예 vLLM `--max-num-seqs`) |
+| `inference.apiKey` | vLLM 의 API 키. 비면 만들어 넣는다. `/v1` 은 `Authorization: Bearer` 를 요구하고 `/health` 는 열어 둔다. Ollama 는 키를 거절한다 |
+| `app.inferenceBinding` | 같은 노드의 추론 배포 주소·키를 응용 `.env` 의 지정한 변수 이름으로 넣는다 |
+| `app.envFrom` | 응용 환경변수 값을 AI-App 서버의 `AIAPP_DEPLOY_SECRET_*` 에서 가져온다. 배포 기록에는 이름만 남는다 |
+| `placementReview` | CB-Tumblebug 사전 검토 결과(`specId`, `imageId`, 상태, 비용). 접수할 때와 실행 직전에 노드와 대조해 다르면 거절한다 |
+| `submission`, `requireDryRun` | 승인 배포 전용. 예약한 배포 ID 로 한 번만 받는다. 일반 REST 로 보내면 거절한다 |
+
 ### 4.3 공유 저장소
 
 ```
@@ -193,7 +206,7 @@ AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로�
 | 1 | Tumblebug 에서 노드 정보와 SSH 키(`GET /ns/{nsId}/resources/sshKey/{sshKeyId}` 의 `privateKey`) 조회 | 공인 IP 가 없으면 사설 IP |
 | 2 | 공유 저장소에 파일 배치 | 추론 서비스는 compose 를 만들어 넣는다 |
 | 3 | Semaphore 에 그 노드의 key(ssh)와 inventory 등록 | 배포마다 만들고 끝나면 지운다. template 은 playbook 마다 하나씩 고정으로 둔다 |
-| 4 | 태스크 실행: `install-docker` → `compose-up`(추론 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드면 nvidia-container-toolkit 도 설치 |
+| 4 | 태스크 실행: (GPU 노드면 `install-gpu-driver` →) `install-docker` → `compose-up`(추론 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드는 노드 스펙으로 가린다. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깐다. 그다음 docker 와 nvidia-container-toolkit. 시험 결과는 [gpu-driver-test](../test/gpu-driver-test-2026-11-09.md) |
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
 | 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
@@ -273,6 +286,9 @@ dry-run 이면 1·2 까지만 한다(조회와 파일 배치). Semaphore 에 아
 | 노드 제어 | `POST /aiapp/deployments/{id}/control` | Tumblebug 노드 제어 |
 | 상태 | `GET /aiapp/status` | Semaphore·CB-Tumblebug·stage 연결 상태 |
 | 추천 | `POST /aiapp/recommendations/models`, `/apps` | 자리만 있고 `501` |
+| 인프라 추천 중계 | `/aiapp/partner/rec/*` | `AIAPP_PARTNER_REC_URL` 로 넘김. 경희대 추천기 또는 모의 |
+| 자연어 중계 | `/aiapp/partner/nl/*` | `AIAPP_MOCK_NL_URL` 로 넘김. 경희대 자연어 에이전트 또는 모의 |
+| 승인 배포 | MCP `/aiapp/engine/automation/mcp`, `/aiapp/mcp/approval` | 승인 전용 토큰(`AIAPP_ENGINE_APPROVAL_TOKEN`)만 받음 (6.1) |
 
 전체 목록은 [docs/api/README.md](../api/README.md) 9절에 있다.
 
@@ -304,6 +320,20 @@ MCP 도구도 같은 리소스 단위로 다시 묶는다. 등급(read·review·
 - 대기 단계는 `AIAPP_HEALTH_INTERVAL`(20초) 간격으로 `AIAPP_HEALTH_TIMEOUT`(15분)까지 묻는다. 넘으면 단계가 실패하고 배포는
   AI-App 에서 계속 돈다(8절).
 - `list_applications` 는 모델(아티팩트·런타임 포함)과 업로드한 응용의 요약을 돌려준다.
+
+### 6.1 승인 배포 (경희대 AI-Ops 연동)
+
+경희대가 넣은 경로다. AI-Ops 가 판단하고 운영자가 승인한 배포를 엔진이 받아 위 배포 경로로 실행한다.
+
+| 도구 | 하는 일 |
+|------|---------|
+| `stage_approved_deployment`, `get_approved_deployment` | Revision 1 을 dry-run 으로 받아 파일만 준비한다 |
+| `apply_approved_revision`, `get_applied_revision` | 추론 서비스를 먼저, 그다음 응용을 적용한다. 다음 Revision(응용 버전, vLLM 인자)도 같은 경로다. `AIAPP_ENGINE_APPLY_ENABLED=true` 일 때만 열린다 |
+| `get_inference_observation` | Revision 의 vLLM·DCGM 지표를 Prometheus(`AIAPP_OBSERVATION_PROMETHEUS_URL`)에서 읽는다 |
+
+- 엔진은 AI-App 의 `/aiapp/mcp/approval` 로 제출하고, 승인 기록은 엔진 아카이브의 `approved-deployments/` 에 남는다.
+- 노드 하나, 복제본 하나만 받는다. GPU 추론은 NVIDIA 만 받는다.
+- 자세한 계약은 [approved-deployment.md](../api/approved-deployment.md), 남은 협의는 [khu-collaboration.md](../api/khu-collaboration.md).
 
 ## 7. ETRI 시나리오 (시드)
 
@@ -337,10 +367,10 @@ Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8
 | vm1 에 글을 생성하는 LLM 이 없다 | 임베딩 모델은 검색용 벡터만 만든다. "관광지·맛집 정보 추출" 은 생성 LLM 이 필요하다. vm1 에 생성 모델을 더 두거나 vm2 를 불러야 한다 |
 | vm2 의 이미지 생성 | Qwen3-VL 은 이미지를 읽고 글을 쓰는 모델이라 이미지를 만들지 못한다. 이미지 생성 모델(예: Stable Diffusion·FLUX + ComfyUI)이 따로 필요하다 |
 | vm3 모델의 입력 | ETRI 는 "LLM" 으로 소개했지만 HF 아키텍처가 `Mistral3ForConditionalGeneration` 이라 이미지 입력도 받는 것으로 보인다. 시드에는 `text`, `image` 로 넣고 확인이 필요하다고 남긴다 |
-| 서빙 포트의 출처 제한이 없다 | AI-App 은 배포가 성공하면 노드 보안 그룹에 서빙 포트를 `0.0.0.0/0` 으로 열고, 내릴 때 닫지 않는다. 추론 서비스에는 인증도 없다 |
+| 서빙 포트의 출처 제한이 없다 | AI-App 은 배포가 성공하면 노드 보안 그룹에 서빙 포트를 `0.0.0.0/0` 으로 열고, 내릴 때 닫지 않는다. vLLM 은 API 키로 `/v1` 을 막지만 Ollama 와 응용은 인증이 없다 |
 | Semaphore 는 깨진 키에 panic 한다 | Semaphore v2.12.17 은 형식이 깨진 SSH 키를 등록할 때 거절하지 않고, 그 키를 쓰는 태스크에서 프로세스 전체가 panic("close of nil channel", `pkg/ssh/agent.go`)으로 죽는다. 우리는 PEM 개인키 블록인지 먼저 검사해 막는다(`internal/semaphore/run.go` `CheckPrivateKey`). PEM 블록 안의 키 내용까지는 검사하지 않는다 |
 | 큰 모델은 시간 상한에 걸릴 수 있다 | 태스크 하나의 상한이 `AIAPP_SEMAPHORE_TIMEOUT` 기본 30분이고, Ollama 모델 pull 대기 `wait_timeout` 기본 1800초도 30분이다. vLLM 은 `/health` 가 가중치를 다 받은 뒤 응답하는데 `compose-up` 의 헬스 대기는 10초 간격 60번(약 10분)이다. 큰 모델을 처음 받는 노드는 이 상한들에 걸릴 수 있다 |
-| compose env 가 평문으로 남는다 | 배포 요청의 `env`(예 `HF_TOKEN`)가 배포 기록(`AIAPP_DEPLOYMENT_STORE_FILE`), 배포·제어 아카이브, 공유 저장소의 `.env`, 노드의 `.env` 에 평문으로 남는다. 비밀값을 가리거나 따로 넘기는 경로가 없다 |
+| compose env 가 평문으로 남는다 | 배포 요청의 `env`(예 `HF_TOKEN`)와 vLLM API 키가 배포 기록(`AIAPP_DEPLOYMENT_STORE_FILE`), 배포·제어 아카이브, 공유 저장소의 `.env`, 노드의 `.env` 에 평문으로 남는다. `app.envFrom` 을 쓰면 배포 기록에는 이름만 남지만 `.env` 에는 값이 들어간다 |
 | 실측하지 못한 경로 | `install-docker` 가 docker 를 처음부터 까는 분기는 RHEL 9·Amazon Linux 2023(aws)과 AlmaLinux 9(azure) 실제 VM 에서 확인했고, Ubuntu·Debian·Fedora·Oracle Linux·CentOS Stream 은 실제 VM 에서 돌지 않았다(Ubuntu·Debian 은 컨테이너로만 확인) |
 | CB-Tumblebug 이 만든 aws RHEL 계열 VM 에 `cb-user` 가 없다 | cb-spider 의 사용자 생성이 `useradd -G sudo` 라 `sudo` 그룹이 없는 이미지에서 실패한다. AI-App 은 노드가 `cb-user` 를 거절하면 이미지 기본 사용자를 찾아 써서 피해 간다(4.1). 이미지 OS 가 표에 없거나 기본 사용자가 표와 다르면 `targets[].sshUser` 로 줘야 한다. 고칠 곳은 cb-spider 다 |
 | 엔진 대기 상한이 AI-App 쪽 상한보다 짧다 | 엔진의 대기 단계는 `AIAPP_HEALTH_TIMEOUT` 기본 15분에서 멈추는데, AI-App 은 노드마다 `install-docker` 와 `compose-up` 을 각각 최대 30분(`AIAPP_SEMAPHORE_TIMEOUT`)까지 돌린다. 엔진 실행은 실패로 끝났는데 배포는 나중에 성공하는 일이 생긴다 |
@@ -348,5 +378,5 @@ Qwen3-VL-8B-Instruct `image-text-to-text` BF16, Ministral-3-8B-Instruct-2512 FP8
 
 ## 9. 하지 않는 것
 
-- 모델 추천과 인프라 추천 로직(경희대·협력 기관 몫), 모델 파일 저장(노드에서 엔진이 출처에서 직접 받는다).
+- 모델 추천과 인프라 추천 로직(경희대 몫. 경희대 인프라 추천기는 이 repo 의 `cmd/khu-infra-recommender` 에 있다), 모델 파일 저장(노드에서 엔진이 출처에서 직접 받는다).
 - k8s 대상 배포(자리만 정함), Windows 노드, 포털 배포.
