@@ -165,6 +165,75 @@
 - 11월 2차 통합 시험은 VM 을 ETRI 가 만들고 배포할 런타임·모델·응용이 이미 정해져 있어(ETRI 2차 발표 13~15쪽), 추천(4-2) 없이 할 수 있다고 봅니다. 경희대 확인이 필요합니다.
 - 그래서 호출 방향(4-1), 응용 정보(4-3), 운영 지표(4-4) 규격부터 정하고, 추천(4-2)은 ETRI 와 함께 이어서 정합니다.
 
+아래는 두 기관이 맞추려는 흐름입니다. 노란 칸이 맞춰야 하는 곳이고, 칸의 글자는 이 문서의 안건과 이렇게 이어집니다.
+A 응용·모델 정보는 4-3, B VM 생성 요청은 4-2, C 승인 배포·재시도는 4-1, D 운영 지표는 4-4, E 새 Revision 적용은 4-5·4-6 입니다.
+
+```mermaid
+sequenceDiagram
+    actor U as 운영자
+    box rgb(237,231,246) 경희대
+        participant K1 as AI LLM 운영 관리
+        participant K2 as 응용 요구 분석<br/>및 인프라 추천
+        participant K3 as 응용 배포 자동화<br/>및 업데이트 (판단)
+        participant K4 as 응용 배포/운영 정보<br/>기반 추론 최적화
+    end
+    box rgb(253,236,234) 이노그리드
+        participant I1 as 자동배포/자동제어<br/>엔진
+        participant I0 as AI-App<br/>배포 실행
+        participant I2 as 응용 등록<br/>및 버전 관리
+    end
+    participant E as AI-Infra (ETRI)
+    participant N as 노드(VM)
+
+    rect rgb(255,243,191)
+        I2->>K2: A 응용·모델 정보
+    end
+    U->>K1: 자연어 요청
+    K1->>K2: Application Profile
+    rect rgb(255,243,191)
+        K2-->>E: B VM 생성 요청 (요청 주체 미정)
+    end
+    E->>N: VM 생성
+    K2->>K3: 추천 후보 (만들어진 노드)
+    Note over K3: 배포 판단 DEPLOY / REJECT / RETRY
+
+    alt DEPLOY
+        K3->>U: 배포 계획 승인 요청
+        U-->>K3: 승인
+        rect rgb(255,243,191)
+            K3->>I1: C 승인 배포 (승인 MCP)
+        end
+        I1-->>K3: 접수 (queued)
+        I1->>I0: 배포 요청
+        I0->>N: 추론 서비스·응용 배포
+        K3->>I1: 결과 조회
+        I1-->>K3: 결과 (성공·실패)
+        opt 실패한 경우
+            rect rgb(255,243,191)
+                Note over K3,I1: C 운영자가 새 Revision으로 재승인해 재적용 (자동 재시도 미정)
+            end
+        end
+    else REJECT 또는 RETRY
+        Note over K3: RETRY는 추천 수정 요청, REJECT는 배포 안 함
+    end
+
+    loop 운영 중
+        rect rgb(255,243,191)
+            K4->>I1: D 최적화 제안 조회·비교
+            I1-->>K4: 결과 (엔진이 Prometheus 지표로 대조, 수집기 운영 주체 미정)
+        end
+        K4->>K3: 예측·최적화 제안
+        K3->>U: 변경 승인 요청
+        U-->>K3: 승인
+        rect rgb(255,243,191)
+            K3->>I1: E 새 Revision 적용 (응용 버전·vLLM 설정)
+        end
+        I1->>I0: 다시 배포
+    end
+```
+
+그림은 흐름을 줄여 그렸습니다. 지금 코드와 다른 점이 둘 있습니다. 운영자 승인은 dry-run(`stage`)과 적용(`apply`) 두 번입니다. 적용 전후 비교(`KEEP`·`ROLLBACK_REVIEW`)는 E 로 새 Revision 을 적용한 뒤에 합니다(1-2절).
+
 각 안건은 **근거(발표) / 지금 코드 / 그림 / 같이 정할 것 / 이노 안** 순서로 씁니다. 이노 안은 협의 때 낼 안이고, 결정은 협의에서 합니다.
 
 ### 4-1. 호출 방향과 31쪽 역할표 (P0 추천·배포 실행 연계)
