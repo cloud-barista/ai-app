@@ -4,10 +4,13 @@ data/
 .env
 .idea/
 
-# Local inputs and outputs from the inference optimization guide
+# Local load-test inputs, benchmark scripts/results and optimization artifacts
 /.venv/
 /optimization/__pycache__/
 /artifacts/
+/workload.json
+/load.json
+/prepared.json
 /observations.jsonl
 /observation.json
 /load-capture.json

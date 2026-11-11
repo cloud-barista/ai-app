@@ -5,6 +5,10 @@
 > 실제 클라우드 시험 결과: [live-test-2026-11-03.md](../test/live-test-2026-11-03.md) (aws·azure GPU VM 3대).
 > 실행해 볼 수 있는 curl 예제: [examples/](examples/).
 
+관리 호스트 준비부터 Tumblebug 초기화, GPU VM 생성, 추론·응용 배포, AI-Ops 연결과 종료까지의 절차는 [GPU 설치·시험 가이드](gpu-installation.md)에 있습니다. 자동 시험은 `scripts/gpu-test.sh`를 사용합니다.
+
+경희대가 추가한 요구 분석·인프라 추천, 승인 배포·업데이트 연결, 운영 지표 연결과 학습 기반 추론 최적화는 [추가 구현과 저장소별 역할](khu-implementation.md)에 정리했습니다. 기존 AI-App 기능을 사용하는 지점과 AI-Ops의 LLM·에이전트·등록·승인 역할을 구분합니다.
+
 ## 한 장 요약
 
 ![AI-App 전체 구조](../figures/01-overview.svg)
@@ -12,7 +16,7 @@
 | 질문 | 답 |
 |---|---|
 | AI-App 은 무엇을 하나 | CB-Tumblebug 이 이미 만든 VM(노드)에 **추론 서비스(런타임 + 모델)와 AI 응용을 올리고 내리는 API** 입니다. VM 은 만들지 않습니다 (1절) |
-| 기관마다 무엇을 하나 | ETRI 는 Tumblebug API 로 GPU VM 을 만듭니다([etri.md](etri.md)). BESP AI-Web 은 카탈로그를 읽고 배포를 요청하고 주소를 읽습니다([besp.md](besp.md)). 경희대는 인프라 추천기([infra-recommendation.md](infra-recommendation.md))와 AI-Ops 승인 배포 경로([approved-deployment.md](approved-deployment.md))를 이 repo 에 넣었습니다. 모델·응용 추천 자리는 아직 `501` 입니다. 남은 협의 항목은 [khu-collaboration.md](khu-collaboration.md) 에 있습니다 |
+| 기관마다 무엇을 하나 | ETRI 는 Tumblebug API 로 GPU VM 을 만듭니다([etri.md](etri.md)). BESP AI-Web 은 카탈로그를 읽고 배포를 요청하고 주소를 읽습니다([besp.md](besp.md)). 경희대 추가 구현은 [인프라 추천·승인 배포·관측·최적화](khu-implementation.md)와 AI-Ops 연동입니다. 별도의 모델·응용 추천 확장점은 구현 등록 전 `501` 입니다([khu.md](khu.md)). 남은 협의 항목은 [khu-collaboration.md](khu-collaboration.md) 에 있습니다 |
 | 무엇을 올릴 수 있나 | 런타임은 `vllm`, `ollama` 입니다. 모델은 모델 카탈로그(`GET /aiapp/models`)의 아티팩트 단위로 올립니다(`type: inference`). 응용은 응용 카탈로그(`GET /aiapp/apps`)에 먼저 올린 파일 묶음과 `deploy.sh` 이고(`type: app`, 10절), Dify, Open WebUI, Langflow 예시가 있습니다. 셋이 각각 모델에 어떻게 붙는지와 실제 화면은 12절입니다 |
 | 런타임과 모델은 따로 고르나 | 한 쌍으로 고릅니다. 아티팩트가 자신을 띄울 수 있는 런타임(`runtimes[]`)과 그 런타임에 필요한 인자(`runtimes[].args`)를 적어 두므로, 부르는 쪽은 `modelId` 와 `artifactId` 만 주면 됩니다 |
 | 배포는 어떻게 진행되나 | `POST /aiapp/deployments` 가 대상 노드를 확인하고 `202` 를 돌려줍니다. 그 뒤 노드마다 Semaphore 가 SSH 로 docker 를 깔고, 추론 서비스는 `docker compose up`, 응용은 `deploy.sh` 를 실행합니다 (2, 3절). Semaphore 는 Ansible playbook 을 웹 화면·API 로 돌려 주는 서버이고, 노드에서 무슨 일이 있었는지 화면으로 볼 수 있습니다 (3-1절) |
@@ -169,6 +173,10 @@ AI-App 은 노드에 직접 SSH 하지 않고 Semaphore 에 맡깁니다. 그래
 Semaphore 에 관리자 계정이 있고(docker compose 의 `deploy` 프로필이 `AIAPP_SEMAPHORE_USERNAME`·`AIAPP_SEMAPHORE_PASSWORD` 로 만듦)
 AI-App 이 그것으로 로그인할 수 있으면(`AIAPP_SEMAPHORE_URL` 과 사용자·비밀번호 또는 `AIAPP_SEMAPHORE_TOKEN`), 나머지는 AI-App 이
 첫 배포 때 스스로 만듭니다. Semaphore 화면에서 미리 만들 것은 없습니다. 이것은 AI-App 운영자(이노그리드)가 맞추는 부분입니다.
+
+Compose의 Semaphore는 `ANSIBLE_STDOUT_CALLBACK=ansible.builtin.default`와 `ANSIBLE_CALLBACK_RESULT_FORMAT=yaml`을 사용합니다.
+`community.general` 12.0.0부터 기존 `yaml` 출력 플러그인이 제거되어, 작업 환경의 collection이 업데이트되면 playbook 실행 전에 실패할 수 있습니다.
+이 설정은 Ansible 기본 플러그인으로 YAML 형식의 출력을 유지합니다. [Ansible 출력 설정](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/default_callback.html)
 
 ![Semaphore 안에 무엇이 있나](../figures/03-semaphore.svg)
 
