@@ -1,5 +1,5 @@
-# Runs the AI-App service, the AI application automation engine and two partner
-# institution mocks: the recommender and the natural language agent.
+# Runs the AI-App service, the AI application automation engine, Semaphore and
+# two partner institution mocks: the recommender and the natural language agent.
 #
 # All services come from one image and differ only in the command. The
 # mock-partner-* services stand in for the partner institution's infrastructure
@@ -11,17 +11,16 @@
 #
 # CB-Tumblebug is deliberately not a service here. It brings cb-spider and a
 # database with it, and including them would turn "bring this prototype up" into
-# "bring a multi-cloud platform up". Point AIAPP_TUMBLEBUG_BASE_URL at an
-# existing one when the deployment path is needed; without it everything that
-# does not touch a cloud still works.
+# "bring a multi-cloud platform up". The defaults reach one running on this
+# host at port 1323 with its stock account (default / default); without it
+# everything that does not touch a cloud still works.
 #
-#   docker compose up -d        # starts with built-in defaults, no .env needed
-#   cp .env.example .env        # only to point at a real CB-Tumblebug
+#   docker compose up -d        # starts everything with built-in defaults, no .env needed
+#   cp .env.example .env        # to point at another CB-Tumblebug or change a password
 #
-# Semaphore, which runs the deployment playbooks on a node, is in the deploy
-# profile and needs AIAPP_SEMAPHORE_PASSWORD in .env:
-#
-#   docker compose --profile deploy up -d
+# The defaults are for a development host on a trusted network: the Semaphore
+# admin password is a known one and its UI is published on every interface.
+# Set AIAPP_SEMAPHORE_PASSWORD in .env anywhere else.
 services:
   # Data lives in ./container-volume on the host. Docker creates a bind-mounted
   # folder that does not exist yet as root, and the services run as other users
@@ -76,8 +75,9 @@ services:
       # the default reaches a CB-Tumblebug running on the developer's own machine
       # rather than to the container's own loopback, where nothing is listening.
       AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
-      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
-      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
+      # The account a stock CB-Tumblebug starts with.
+      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-default}"
+      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-default}"  # hook:allow
       AIAPP_TUMBLEBUG_TIMEOUT: "${AIAPP_TUMBLEBUG_TIMEOUT:-20m}"
       AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
 
@@ -110,7 +110,7 @@ services:
       AIAPP_SEMAPHORE_URL: "${AIAPP_SEMAPHORE_URL:-http://semaphore:3000}"
       AIAPP_SEMAPHORE_TOKEN: "${AIAPP_SEMAPHORE_TOKEN:-}"
       AIAPP_SEMAPHORE_USERNAME: "${AIAPP_SEMAPHORE_USERNAME:-admin}"
-      AIAPP_SEMAPHORE_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-}"
+      AIAPP_SEMAPHORE_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-default}"  # hook:allow
       AIAPP_SEMAPHORE_PROJECT: "${AIAPP_SEMAPHORE_PROJECT:-aiapp}"
       AIAPP_SEMAPHORE_POLL_INTERVAL: "${AIAPP_SEMAPHORE_POLL_INTERVAL:-5s}"
       AIAPP_SEMAPHORE_TIMEOUT: "${AIAPP_SEMAPHORE_TIMEOUT:-30m}"
@@ -118,9 +118,10 @@ services:
       AIAPP_SEMAPHORE_PLAYBOOK_DIR: "/ansible"
       # The Semaphore web UI as a browser reaches it. Every playbook run in a
       # deployment record links to its task page there (taskUrl). The default
-      # is the port the semaphore service publishes, so the links open on this
-      # host only; set the host address to open them elsewhere, or set it
-      # empty to leave the links out.
+      # is the port the semaphore service publishes on this host. The console
+      # opens such a loopback link on the host name it was itself opened with,
+      # so it works from another machine too; other readers of the API need
+      # the host address set here. Empty leaves the links out.
       AIAPP_SEMAPHORE_UI_URL: "${AIAPP_SEMAPHORE_UI_URL-http://127.0.0.1:${AIAPP_SEMAPHORE_PORT:-3001}}"
 
       # Deployment files are placed here and read by Semaphore at the same
@@ -294,8 +295,8 @@ services:
       AIAPP_MOCK_RECOMMENDER_TOKEN: "${AIAPP_MOCK_RECOMMENDER_TOKEN:-${AIAPP_AUTH_TOKEN:-}}"
 
       AIAPP_TUMBLEBUG_BASE_URL: "${AIAPP_TUMBLEBUG_BASE_URL:-http://host.docker.internal:1323/tumblebug}"
-      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-}"
-      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-}"
+      AIAPP_TUMBLEBUG_USERNAME: "${AIAPP_TUMBLEBUG_USERNAME:-default}"
+      AIAPP_TUMBLEBUG_PASSWORD: "${AIAPP_TUMBLEBUG_PASSWORD:-default}"  # hook:allow
       AIAPP_TUMBLEBUG_IMAGE_NAMESPACE: "${AIAPP_TUMBLEBUG_IMAGE_NAMESPACE:-system}"
       AIAPP_TUMBLEBUG_SPEC_NAMESPACE: "${AIAPP_TUMBLEBUG_SPEC_NAMESPACE:-system}"
       AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE: "${AIAPP_TUMBLEBUG_DEFAULT_OS_TYPE:-ubuntu 22.04}"
@@ -307,18 +308,15 @@ services:
   # The AI-App service keeps one template per playbook, registers a key and an
   # inventory for each run, and deletes the key and the inventory afterwards.
   #
-  # It is in the deploy profile because it needs an admin password set, and Semaphore
-  # accepts an empty one and then logs anyone in with it, so the command below
-  # refuses to start without AIAPP_SEMAPHORE_PASSWORD. The UI is published on
-  # the loopback address only.
+  # The admin is created on the first start with AIAPP_SEMAPHORE_USERNAME and
+  # AIAPP_SEMAPHORE_PASSWORD (admin / default). Semaphore accepts an empty
+  # password and then logs anyone in with it, so an unset or empty value falls
+  # back to the default instead. The UI is published on every interface, which
+  # together with the known default password suits a trusted network only:
+  # whoever logs in can run playbooks on the nodes being deployed to.
   semaphore:
     image: semaphoreui/semaphore:v2.12.17
     container_name: aiapp-semaphore
-    profiles: ["deploy"]
-    command:
-      - /bin/sh
-      - -c
-      - '[ -n "$$SEMAPHORE_ADMIN_PASSWORD" ] || { echo "AIAPP_SEMAPHORE_PASSWORD is not set" >&2; exit 1; }; exec /usr/local/bin/server-wrapper'
     restart: on-failure:5
     # Its config and data folders have to belong to the Semaphore user before
     # it starts.
@@ -326,13 +324,13 @@ services:
       volume-init:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:${AIAPP_SEMAPHORE_PORT:-3001}:3000"
+      - "${AIAPP_SEMAPHORE_PORT:-3001}:3000"
     environment:
       SEMAPHORE_DB_DIALECT: bolt
       ANSIBLE_STDOUT_CALLBACK: ansible.builtin.default
       ANSIBLE_CALLBACK_RESULT_FORMAT: yaml
       SEMAPHORE_ADMIN: "${AIAPP_SEMAPHORE_USERNAME:-admin}"
-      SEMAPHORE_ADMIN_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-}"
+      SEMAPHORE_ADMIN_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-default}"  # hook:allow
       SEMAPHORE_ADMIN_NAME: "AI-App"
       SEMAPHORE_ADMIN_EMAIL: "admin@localhost"
     volumes:

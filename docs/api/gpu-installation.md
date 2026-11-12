@@ -255,7 +255,7 @@ export AIAPP_AUTH_TOKEN="$(docker compose config --format json \
 `.env`의 설정을 `AIAPP_TUMBLEBUG_DRY_RUN=false`로 바꾸고 반영한다.
 
 ```bash
-docker compose --profile deploy up -d ai-app-server semaphore
+docker compose up -d ai-app-server semaphore
 ./scripts/gpu-test.sh status
 ./scripts/gpu-test.sh deploy "$NS_ID" "$INFRA_ID" "$NODE_ID"
 ```
@@ -370,7 +370,7 @@ AIAPP_ENGINE_REGISTRY_TOKEN='<엔진 등록 공통 토큰>'
 
 ```bash
 cd ~/ai-mcmp/ai-app
-docker compose --profile deploy up -d ai-app-server ai-automation-engine
+docker compose up -d ai-app-server ai-automation-engine
 curl -sS http://localhost:18110/healthz | jq
 curl -sS http://localhost:18131/healthz | jq
 curl -sS http://localhost:8090/aiapp/partner/nl/readyz | jq
@@ -408,7 +408,7 @@ docker compose logs --tail 100 ai-app-server semaphore
 | `initialized=false` | 초기화 선택·진행 확인과 마지막 성공 메시지를 확인하고 Tumblebug 연결·카탈로그를 조회한다. |
 | Tumblebug 인증 실패 | Tumblebug `.env`의 API 계정과 AI-App의 대응 값을 맞추고 해당 컨테이너에 반영한다. |
 | 컨테이너에서 Tumblebug 접속 실패 | 같은 호스트라면 `AIAPP_TUMBLEBUG_BASE_URL`에 `host.docker.internal` 주소를 사용한다. |
-| `community.general.yaml has been removed` | Compose의 Semaphore 출력 설정을 확인하고 `docker compose --profile deploy up -d --no-deps semaphore`로 반영한다. |
+| `community.general.yaml has been removed` | Compose의 Semaphore 출력 설정을 확인하고 `docker compose up -d --no-deps semaphore`로 반영한다. |
 | SSH 접속 실패 | Semaphore에서 노드의 SSH 포트에 접근 가능한지 확인한다. 이미지 사용자 자동 선택 결과는 `nodes[].sshUser`, `sshUserSource`, `notes`에 기록된다. |
 | GPU 확인 실패 | 드라이버 버전, NVIDIA Container Toolkit과 `gpuCheck` 로그를 확인한다. |
 | 배포는 실행 중인데 스크립트 대기 종료 | 출력된 배포 ID의 `/progress`와 로그를 조회한다. `POLL_MAX`와 `POLL_INTERVAL`로 대기 범위를 설정할 수 있다. |
@@ -438,7 +438,7 @@ CSP 콘솔에서도 VM 종료와 남은 디스크·네트워크 자원을 확인
 
 ```bash
 cd ~/ai-mcmp/ai-app
-docker compose --profile deploy down
+docker compose down
 cd ~/ai-mcmp/cb-tumblebug
 make down
 ```

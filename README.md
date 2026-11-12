@@ -73,7 +73,7 @@ What AI-App does **not** do:
 |---|---|---|
 | `ai-app-server` (`cmd/ai-app-server`) | `8090` | The API, the MCP server of 13 tools (`/aiapp/mcp`), the operator console (`/aiapp/ui`), Swagger (`/aiapp/api/index.html`) |
 | `ai-automation-engine` (`cmd/ai-automation-engine`) | `8091` | Fixed workflows that call AI-App tools over MCP. Its own MCP server (`/aiapp/engine/mcp`) exposes 5 tools. AI-App forwards `/aiapp/engine/*` to it, so clients need only port `8090` |
-| Semaphore UI `v2.12.17` (external, optional) | `3001` | Runs the Ansible playbooks in [`deploy/ansible`](deploy/ansible) on the nodes. Needed only for real deployments |
+| Semaphore UI `v2.12.17` (external) | `3001` | Runs the Ansible playbooks in [`deploy/ansible`](deploy/ansible) on the nodes. Needed only for real deployments; docker compose starts it with the rest |
 | `mock-partner-recommender`, `mock-partner-nl-agent` (`mock/partner/`) | `8092`, `8093` | **Mock implementations** of partner owned parts (infra recommendation, natural language agent), kept to test the integration contracts. Not part of AI-App |
 
 **Safety by default:** `AIAPP_TUMBLEBUG_DRY_RUN=true` is the default. A deployment then reads the node and stages its files but
@@ -114,13 +114,20 @@ Without a reachable CB-Tumblebug a deployment request answers `502` (`CB-Tumbleb
 ### 2. Run it with Docker
 
 ```sh
-make docker-up      # docker compose up -d --build: AI-App, engine and the two mocks
+make docker-up      # docker compose up -d --build: AI-App, engine, Semaphore and the two mocks
 make docker-logs
 make docker-down
 ```
 
 Catalog, uploaded apps, deployment records and archives live in `./container-volume/` on the host (git-ignored) and survive container rebuilds.
-CB-Tumblebug is **not** included in the compose file; the containers look for it at `http://host.docker.internal:1323/tumblebug`.
+CB-Tumblebug is **not** included in the compose file; the containers look for it on this host, at
+`http://host.docker.internal:1323/tumblebug` with its stock account (`default` / `default`). With one running there, `docker compose up -d`
+alone gives a working setup: `curl localhost:8090/aiapp/status` shows CB-Tumblebug and Semaphore connected.
+
+The defaults suit a development host on a trusted network. Semaphore is published on every interface at port `3001` with the
+admin `admin` / `default`, and whoever logs in can run playbooks on the nodes being deployed to. Set `AIAPP_SEMAPHORE_PASSWORD` in `.env`
+before the first start anywhere else. The console links each playbook run to its Semaphore task on the host name the console
+was opened with, so no address has to be configured.
 
 ### 3. Deploy to real nodes
 
@@ -130,12 +137,14 @@ CB-Tumblebug is **not** included in the compose file; the containers look for it
    ```sh
    cp .env.example .env
    # in .env set at least:
+   #   AIAPP_TUMBLEBUG_DRY_RUN=false        # this makes deployments change real nodes
+   # and, unless CB-Tumblebug runs on this host with its stock account:
    #   AIAPP_TUMBLEBUG_BASE_URL=http://<tumblebug-host>:1323/tumblebug
    #   AIAPP_TUMBLEBUG_USERNAME=... / AIAPP_TUMBLEBUG_PASSWORD=...
-   #   AIAPP_SEMAPHORE_PASSWORD=<any password for the bundled Semaphore admin>
-   #   AIAPP_TUMBLEBUG_DRY_RUN=false        # this makes deployments change real nodes
-   #   AIAPP_AUTH_TOKEN=<token>             # recommended once the port is reachable by others
-   docker compose --profile deploy up -d
+   # recommended once the ports are reachable by others:
+   #   AIAPP_SEMAPHORE_PASSWORD=<own>       # admin password of the bundled Semaphore, before its first start
+   #   AIAPP_AUTH_TOKEN=<token>
+   docker compose up -d
    curl localhost:8090/aiapp/status         # Semaphore, CB-Tumblebug, stage folder, dry run
    ```
 
@@ -164,7 +173,7 @@ CB-Tumblebug is **not** included in the compose file; the containers look for it
    ```
 
 Running without Docker is also possible (`cp conf/template-setup.env conf/setup.env`, then `make run-app`), but then Semaphore
-must see `deploy/ansible` and the same stage directory (`AIAPP_STAGE_ROOT`) as AI-App. The `deploy` compose profile sets this up for you.
+must see `deploy/ansible` and the same stage directory (`AIAPP_STAGE_ROOT`) as AI-App. The compose file sets this up for you.
 
 ## Using it with CB-Tumblebug
 

@@ -54,7 +54,7 @@ AI-App 이 **하지 않는** 것:
 |---|---|---|
 | `ai-app-server` (`cmd/ai-app-server`) | `8090` | API, 도구 13개의 MCP 서버(`/aiapp/mcp`), 운영자 콘솔(`/aiapp/ui`), Swagger(`/aiapp/api/index.html`) |
 | `ai-automation-engine` (`cmd/ai-automation-engine`) | `8091` | AI-App 도구를 MCP 로 부르는 정해진 워크플로. 자기 MCP 서버(`/aiapp/engine/mcp`)로 도구 5개를 엶. AI-App 이 `/aiapp/engine/*` 을 넘겨 주므로 클라이언트는 `8090` 만 알면 됨 |
-| Semaphore UI `v2.12.17` (외부, 선택) | `3001` | [`deploy/ansible`](deploy/ansible) 의 Ansible playbook 을 노드에 돌림. 실제 배포에만 필요 |
+| Semaphore UI `v2.12.17` (외부) | `3001` | [`deploy/ansible`](deploy/ansible) 의 Ansible playbook 을 노드에 돌림. 실제 배포에만 필요하고, docker compose 는 나머지와 같이 띄움 |
 | `mock-partner-recommender`, `mock-partner-nl-agent` (`mock/partner/`) | `8092`, `8093` | 협력 기관 담당 영역(인프라 추천, 자연어 에이전트)의 **모의 구현**. 연동 계약을 시험하려고 둔 것이고 AI-App 에 들지 않음 |
 
 **기본이 안전한 쪽입니다.** `AIAPP_TUMBLEBUG_DRY_RUN=true` 가 기본값입니다. 이때 배포는 노드를 읽고 파일을 배치하는 데서 멈추고
@@ -95,13 +95,20 @@ CB-Tumblebug 에 닿지 않으면 배포 요청은 `502`(`CB-Tumblebug could not
 ### 2. Docker 로 띄우기
 
 ```sh
-make docker-up      # docker compose up -d --build: AI-App, 엔진, 모의 둘
+make docker-up      # docker compose up -d --build: AI-App, 엔진, Semaphore, 모의 둘
 make docker-logs
 make docker-down
 ```
 
 카탈로그, 업로드한 응용, 배포 기록, 아카이브는 호스트의 `./container-volume/`(git 에서 제외) 아래에 있어 컨테이너를 다시 만들어도 남습니다.
-compose 에 CB-Tumblebug 은 **들어 있지 않습니다.** 컨테이너는 `http://host.docker.internal:1323/tumblebug` 에서 찾습니다.
+compose 에 CB-Tumblebug 은 **들어 있지 않습니다.** 컨테이너는 이 호스트의 `http://host.docker.internal:1323/tumblebug` 에서
+기본 계정(`default` / `default`)으로 찾습니다. 거기에 CB-Tumblebug 이 떠 있으면 `docker compose up -d` 만으로 다 연결됩니다.
+`curl localhost:8090/aiapp/status` 에 CB-Tumblebug 과 Semaphore 가 연결된 것으로 나옵니다.
+
+기본값은 믿을 수 있는 네트워크 안의 개발 호스트용입니다. Semaphore 는 `3001` 포트로 모든 인터페이스에 열리고 관리자는
+`admin` / `default` 입니다. 로그인한 사람은 배포 대상 노드에 playbook 을 돌릴 수 있으므로, 그 밖의 환경에서는 처음 띄우기 전에
+`.env` 에 `AIAPP_SEMAPHORE_PASSWORD` 를 넣습니다. 콘솔은 playbook 실행마다 붙는 Semaphore 링크를 콘솔을 연 호스트 이름으로
+열기 때문에 주소를 따로 설정할 필요가 없습니다.
 
 ### 3. 실제 노드에 배포하기
 
@@ -111,12 +118,14 @@ compose 에 CB-Tumblebug 은 **들어 있지 않습니다.** 컨테이너는 `ht
    ```sh
    cp .env.example .env
    # .env 에 적어도 아래를 넣는다
+   #   AIAPP_TUMBLEBUG_DRY_RUN=false        # 이러면 배포가 실제 노드를 바꿈
+   # CB-Tumblebug 이 이 호스트에 기본 계정으로 떠 있지 않으면
    #   AIAPP_TUMBLEBUG_BASE_URL=http://<tumblebug 호스트>:1323/tumblebug
    #   AIAPP_TUMBLEBUG_USERNAME=... / AIAPP_TUMBLEBUG_PASSWORD=...
-   #   AIAPP_SEMAPHORE_PASSWORD=<같이 뜨는 Semaphore 관리자 비밀번호, 아무 값>
-   #   AIAPP_TUMBLEBUG_DRY_RUN=false        # 이러면 배포가 실제 노드를 바꿈
-   #   AIAPP_AUTH_TOKEN=<토큰>              # 다른 사람이 포트에 닿을 수 있으면 권장
-   docker compose --profile deploy up -d
+   # 다른 사람이 포트에 닿을 수 있으면 권장
+   #   AIAPP_SEMAPHORE_PASSWORD=<같이 뜨는 Semaphore 관리자 비밀번호, 처음 띄우기 전에>
+   #   AIAPP_AUTH_TOKEN=<토큰>
+   docker compose up -d
    curl localhost:8090/aiapp/status         # Semaphore, CB-Tumblebug, stage 폴더, dry-run
    ```
 
@@ -145,7 +154,7 @@ compose 에 CB-Tumblebug 은 **들어 있지 않습니다.** 컨테이너는 `ht
    ```
 
 Docker 없이도 띄울 수 있습니다(`cp conf/template-setup.env conf/setup.env` 후 `make run-app`). 이때는 Semaphore 가
-`deploy/ansible` 과 AI-App 과 같은 stage 폴더(`AIAPP_STAGE_ROOT`)를 같은 절대경로로 봐야 합니다. compose 의 `deploy` 프로필이 이것을 맞춰 줍니다.
+`deploy/ansible` 과 AI-App 과 같은 stage 폴더(`AIAPP_STAGE_ROOT`)를 같은 절대경로로 봐야 합니다. compose 파일이 이것을 맞춰 줍니다.
 
 ## CB-Tumblebug 과 함께 쓰기
 

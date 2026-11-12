@@ -55,8 +55,9 @@ verify: fmt build test lint
 docker-build:
 	docker build -t $(IMAGE) .
 
-# Also needs no configuration. Copy .env.example to .env only to point at a real
-# CB-Tumblebug or to supply a planning model.
+# Also needs no configuration: it starts everything, Semaphore included, and
+# looks for CB-Tumblebug on this host. Copy .env.example to .env to point at
+# another CB-Tumblebug, change a password or supply a planning model.
 docker-up:
 	docker compose up -d --build
 

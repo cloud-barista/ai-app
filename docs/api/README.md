@@ -199,7 +199,8 @@ Compose의 Semaphore는 `ANSIBLE_STDOUT_CALLBACK=ansible.builtin.default`와 `AN
   추론 서비스는 런타임당 하나, 응용은 이름당 하나입니다.
 - **화면 링크.** `AIAPP_SEMAPHORE_UI_URL` 을 설정하면 배포 기록의 각 단계(`nodes[].steps[]`)에 `taskUrl` 이 붙어, 그 태스크 로그를
   Semaphore 화면에서 바로 열 수 있습니다. 브라우저가 닿는 주소여야 합니다. docker compose 기본값은
-  `http://127.0.0.1:3001` 이라 AI-App 을 띄운 호스트에서만 열립니다. 다른 곳에서 보려면 그 호스트 주소로 바꿉니다.
+  `http://127.0.0.1:3001` 입니다. 운영자 콘솔은 이런 loopback 링크를 콘솔을 연 호스트 이름으로 바꿔 열어서 다른 PC 에서도 열립니다.
+  API 응답의 `taskUrl` 은 그대로이므로, 응답을 직접 읽는 쪽이 쓰려면 그 호스트 주소로 설정합니다.
 - **연결 상태.** `GET /aiapp/status` 가 그때그때 Semaphore 에 닿는지, 로그인되는지, 버전, 프로젝트와 template 다섯이 있는지,
   CB-Tumblebug 이 응답하는지, stage 폴더에 쓸 수 있는지를 돌려줍니다. template 이 아직 없는 것은 오류가 아닙니다(첫 배포가 만듦).
   `GET /aiapp/readyz` 는 AI-App 이 떴는지만 봅니다.

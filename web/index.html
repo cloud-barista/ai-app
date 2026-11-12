@@ -2025,13 +2025,27 @@ function openedPortsCell(n) {
       ? ' <span class="b b-mut">이미 열림</span>' : ''}`).join(', ')}</div>`).join('') + err;
 }
 
+/* taskHref is where a task link opens. A loopback address in taskUrl means the
+   host AI-App runs on (the docker compose default), which is this browser's
+   own machine only when the console was opened there, so the host name the
+   console was opened with takes its place. Any other address is kept. */
+function taskHref(taskUrl) {
+  try {
+    const u = new URL(taskUrl);
+    if (['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) u.hostname = location.hostname;
+    return u.href;
+  } catch (e) {
+    return taskUrl;
+  }
+}
+
 /* taskCell shows the Semaphore task of a step, linked to its page in the
    Semaphore UI when the record carries one (AIAPP_SEMAPHORE_UI_URL). */
 function taskCell(s) {
   if (!s.taskId) return '-';
   const label = '#' + esc(s.taskId);
   return /^https?:\/\//i.test(s.taskUrl || '')
-    ? `<a class="link" href="${esc(s.taskUrl)}" target="_blank" rel="noopener" title="Semaphore 에서 태스크와 로그 보기">${label}</a>`
+    ? `<a class="link" href="${esc(taskHref(s.taskUrl))}" target="_blank" rel="noopener" title="Semaphore 에서 태스크와 로그 보기">${label}</a>`
     : label;
 }
 
