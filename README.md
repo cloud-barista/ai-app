@@ -119,7 +119,7 @@ make docker-logs
 make docker-down
 ```
 
-Catalog, uploaded apps, deployment records and archives live in named volumes and survive container rebuilds.
+Catalog, uploaded apps, deployment records and archives live in `./container-volume/` on the host (git-ignored) and survive container rebuilds.
 CB-Tumblebug is **not** included in the compose file; the containers look for it at `http://host.docker.internal:1323/tumblebug`.
 
 ### 3. Deploy to real nodes
@@ -431,7 +431,7 @@ From a build before 2026-11-03:
 
 | Left over | Symptom | Fix |
 |---|---|---|
-| Model catalog file written before runtimes were named (`AIAPP_MODEL_STORE_FILE`, compose volume `catalog`, `/app/data/catalog/models.json`) | Startup fails: `model catalog ... is in the format before runtimes` | Delete the file; the 3 built-in models come back. Register your own models again with `runtimes[].runtimeId` |
+| Model catalog file written before runtimes were named (`AIAPP_MODEL_STORE_FILE`, in compose `./container-volume/catalog/models.json`) | Startup fails: `model catalog ... is in the format before runtimes` | Delete the file; the 3 built-in models come back. Register your own models again with `runtimes[].runtimeId` |
 | Deployment records with `type: model-service` | Listed, but missing from `?type=inference` and `GET /aiapp/endpoints` | Deploy again with `type: inference` to the same node and runtime; it replaces the old containers |
 | Deployment record file without `version` (`running` meant in progress, `succeeded` meant done) | Converted on read: `running` to `deploying` (then `interrupted`), `succeeded` to `running` | Filter with `?status=running` instead of `?status=succeeded` |
 

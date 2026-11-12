@@ -647,8 +647,8 @@ dry-run 에서는 SSH 인증을 시도하지 않습니다. 같은 배포를 내�
 - `install-docker` 는 docker 와 compose 플러그인만 깝니다. 예시 응용이 노드에서 쓰는 도구는 이미지에 있어야 합니다. Dify 는 `git`(`openssl` 은 없으면 `/dev/urandom` 으로 대신함), Langflow 는 `MODEL_BASE_URL` 이나 `MODEL_API_KEY` 를 줄 때 `python3` 입니다.
 - 주소(`url`, `urls`)는 `GET /aiapp/endpoints` 를 부를 때 CB-Tumblebug 에서 읽은 노드의 지금 공인 IP 로 만듭니다. 공인 IP 가 없으면 사설 IP 입니다. 노드가 `Running` 이 아니면 주소가 없습니다(1-1절).
 - 한 런타임(Ollama 포함)에 모델은 하나입니다. 같은 노드에 같은 런타임으로 다른 모델을 배포하면 앞의 모델을 바꿉니다.
-- 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 의 named volume
-  `catalog`, `/app/data/catalog/models.json`)은 아티팩트 필드가 `engines` 라 새 코드가 읽지 못해 기동이 실패합니다. 그 파일을 지우면 기본
+- 이전 버전에서 올라오는 경우(2026-11-03 이전 코드로 띄운 AI-App): 저장해 둔 모델 카탈로그 파일(docker compose 에서는
+  `./container-volume/catalog/models.json`)은 아티팩트 필드가 `engines` 라 새 코드가 읽지 못해 기동이 실패합니다. 그 파일을 지우면 기본
   모델 3개로 다시 시작합니다. 옛 배포 기록의 `type: model-service` 는 `inference` 로 읽히지 않습니다(목록에는 남지만 필터와 주소 조회에서 빠짐).
   자세한 것은 저장소 [README.ko.md 의 "업그레이드" 절](../../README.ko.md#업그레이드).
 

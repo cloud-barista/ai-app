@@ -100,7 +100,7 @@ make docker-logs
 make docker-down
 ```
 
-카탈로그, 업로드한 응용, 배포 기록, 아카이브는 named volume 에 있어 컨테이너를 다시 만들어도 남습니다.
+카탈로그, 업로드한 응용, 배포 기록, 아카이브는 호스트의 `./container-volume/`(git 에서 제외) 아래에 있어 컨테이너를 다시 만들어도 남습니다.
 compose 에 CB-Tumblebug 은 **들어 있지 않습니다.** 컨테이너는 `http://host.docker.internal:1323/tumblebug` 에서 찾습니다.
 
 ### 3. 실제 노드에 배포하기
@@ -407,7 +407,7 @@ App = `ai-app-server`, Engine = `ai-automation-engine`, Rec = `mock-partner-reco
 
 | 남은 것 | 증상 | 할 일 |
 |---|---|---|
-| 런타임 이름을 쓰기 전 형식의 모델 카탈로그 파일 (`AIAPP_MODEL_STORE_FILE`, compose volume `catalog` 의 `/app/data/catalog/models.json`) | 기동 실패: `model catalog ... is in the format before runtimes` | 파일을 지움. 기본 모델 3개가 다시 들어옴. 직접 등록한 모델은 `runtimes[].runtimeId` 형식으로 다시 등록 |
+| 런타임 이름을 쓰기 전 형식의 모델 카탈로그 파일 (`AIAPP_MODEL_STORE_FILE`, compose 에서는 `./container-volume/catalog/models.json`) | 기동 실패: `model catalog ... is in the format before runtimes` | 파일을 지움. 기본 모델 3개가 다시 들어옴. 직접 등록한 모델은 `runtimes[].runtimeId` 형식으로 다시 등록 |
 | `type: model-service` 배포 기록 | 목록에는 있지만 `?type=inference` 와 `GET /aiapp/endpoints` 에서 빠짐 | 같은 노드·런타임에 `type: inference` 로 다시 배포하면 옛 컨테이너를 바꿈 |
 | `version` 이 없는 배포 기록 파일 (`running` 이 진행 중, `succeeded` 가 완료이던 형식) | 읽을 때 `running` 은 `deploying`(그 뒤 `interrupted`), `succeeded` 는 `running` 으로 바뀜 | `?status=succeeded` 대신 `?status=running` 으로 거름 |
 

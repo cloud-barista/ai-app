@@ -42,8 +42,10 @@ test:
 swag:
 	$(GOBIN)/swag init -g cmd/$(APP)/main.go -o api/docs --parseInternal
 
+# go fmt rather than gofmt -w . because gofmt walks every folder, and the
+# container data in ./container-volume holds folders this user cannot read.
 fmt:
-	gofmt -w .
+	go fmt ./...
 
 lint:
 	$(GOBIN)/golangci-lint run

@@ -23,6 +23,35 @@
 #
 #   docker compose --profile deploy up -d
 services:
+  # Data lives in ./container-volume on the host. Docker creates a bind-mounted
+  # folder that does not exist yet as root, and the services run as other users
+  # (the AI-App image as 10001, Semaphore as 1001), so this one-shot service
+  # creates the folders and gives each to the user that writes to it. The
+  # services that mount them wait for it to finish.
+  #
+  # The host user cannot read some of those folders, and the Go tools stop at a
+  # folder they cannot read (go test ./...). The go.mod it writes makes them
+  # treat ./container-volume as another module and skip it.
+  volume-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-proto:local
+    container_name: aiapp-volume-init
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cd /container-volume
+        mkdir -p archive catalog engine-archive partner-nl-archive stage semaphore-config semaphore-data
+        [ -f go.mod ] || printf 'module container-volume\n' > go.mod
+        chown 10001:10001 archive catalog engine-archive partner-nl-archive stage
+        chown 1001:0 semaphore-config semaphore-data
+    volumes:
+      - ./container-volume:/container-volume
+
   ai-app-server:
     build:
       context: .
@@ -35,6 +64,9 @@ services:
     # the SSH keys they registered, which may take up to 70 seconds; the
     # default 10 seconds would kill the process with a key still stored.
     stop_grace_period: 80s
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
     ports:
       - "${AIAPP_SERVER_PORT:-8090}:8090"
     environment:
@@ -94,7 +126,7 @@ services:
       # Deployment files are placed here and read by Semaphore at the same
       # path, so this must match the stage mount of both services.
       AIAPP_STAGE_ROOT: "/var/lib/aiapp/stage"
-      # Records of deployments onto nodes, kept on the archive volume.
+      # Records of deployments onto nodes, kept in the archive folder.
       AIAPP_DEPLOYMENT_STORE_FILE: "/app/data/archive/node-deployments.json"
       # Resolved by the deployment service when Langflow's app.envFrom names it.
       AIAPP_DEPLOY_SECRET_LANGFLOW_PASSWORD: "${AIAPP_DEPLOY_SECRET_LANGFLOW_PASSWORD:-}"
@@ -109,7 +141,7 @@ services:
       # service at startup.
       AIAPP_RECOMMENDER_MODEL: "${AIAPP_RECOMMENDER_MODEL:-}"
       AIAPP_RECOMMENDER_APP: "${AIAPP_RECOMMENDER_APP:-}"
-      # Registered models and uploaded applications, kept on the catalog volume
+      # Registered models and uploaded applications, kept in the catalog folder
       # so that recreating the container does not lose them.
       AIAPP_MODEL_STORE_FILE: "/app/data/catalog/models.json"
       AIAPP_APP_STORE_DIR: "/app/data/catalog/apps"
@@ -117,9 +149,9 @@ services:
     # The archive is the first-year deliverable and the second-year input, so it
     # outlives the container it was written by.
     volumes:
-      - archive:/app/data/archive
-      - catalog:/app/data/catalog
-      - stage:/var/lib/aiapp/stage
+      - ./container-volume/archive:/app/data/archive
+      - ./container-volume/catalog:/app/data/catalog
+      - ./container-volume/stage:/var/lib/aiapp/stage
 
     # host.docker.internal is native on Docker Desktop and has to be added on
     # Linux, where the default bridge does not provide it.
@@ -148,6 +180,8 @@ services:
     depends_on:
       ai-app-server:
         condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
     ports:
       - "${AIAPP_ENGINE_PORT:-8091}:8091"
     environment:
@@ -177,7 +211,7 @@ services:
       AIAPP_ENGINE_REGISTRY_TOKEN: "${AIAPP_ENGINE_REGISTRY_TOKEN:-}"
 
     volumes:
-      - engine-archive:/app/data/engine-archive
+      - ./container-volume/engine-archive:/app/data/engine-archive
 
     # A registry or Prometheus on the host can use the same name as the gateway.
     extra_hosts:
@@ -204,6 +238,8 @@ services:
     depends_on:
       ai-automation-engine:
         condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
     ports:
       - "${AIAPP_MOCK_NL_PORT:-8093}:8093"
     environment:
@@ -228,7 +264,7 @@ services:
       AIAPP_MOCK_NL_REGISTRY_TOKEN: "${AIAPP_MOCK_NL_REGISTRY_TOKEN:-}"
 
     volumes:
-      - partner-nl-archive:/app/data/partner-nl-archive
+      - ./container-volume/partner-nl-archive:/app/data/partner-nl-archive
 
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8093/aiapp/partner/nl/readyz"]
@@ -284,11 +320,11 @@ services:
       - -c
       - '[ -n "$$SEMAPHORE_ADMIN_PASSWORD" ] || { echo "AIAPP_SEMAPHORE_PASSWORD is not set" >&2; exit 1; }; exec /usr/local/bin/server-wrapper'
     restart: on-failure:5
-    # The AI-App container creates the stage volume first, so the volume takes
-    # the ownership of its image directory and the service can write to it.
+    # Its config and data folders have to belong to the Semaphore user before
+    # it starts.
     depends_on:
-      ai-app-server:
-        condition: service_started
+      volume-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${AIAPP_SEMAPHORE_PORT:-3001}:3000"
     environment:
@@ -301,18 +337,9 @@ services:
       SEMAPHORE_ADMIN_EMAIL: "admin@localhost"
     volumes:
       - ./deploy/ansible:/ansible:ro
-      - stage:/var/lib/aiapp/stage:ro
+      # Deployment files shared by the AI-App service and Semaphore.
+      - ./container-volume/stage:/var/lib/aiapp/stage:ro
       # The generated config.json holds the key that encrypts stored keys, so
       # it is kept with the database.
-      - semaphore-config:/etc/semaphore
-      - semaphore-data:/var/lib/semaphore
-
-volumes:
-  archive:
-  catalog:
-  engine-archive:
-  partner-nl-archive:
-  # Deployment files shared by the AI-App service and Semaphore.
-  stage:
-  semaphore-config:
-  semaphore-data:
+      - ./container-volume/semaphore-config:/etc/semaphore
+      - ./container-volume/semaphore-data:/var/lib/semaphore
