@@ -259,6 +259,9 @@ The documents under `docs/` are written in Korean.
 | [docs/api/README.md](docs/api/README.md) | Developers calling the API | Call order, auth, errors, async deployment and progress, ports, full API list, request shapes, example apps with screenshots |
 | [docs/api/khu-implementation.md](docs/api/khu-implementation.md) | Maintainers and partner developers | KHU additions, existing Innogrid features reused, AI-App/AI-Ops responsibilities, integration paths and verification scope |
 | [docs/api/gpu-installation.md](docs/api/gpu-installation.md) | Operators | Host setup, GPU deployment, AI-Ops integration, test scripts and cleanup |
+| [docs/api/inference-optimization-v3.md](docs/api/inference-optimization-v3.md) | Optimization developers | Candidate predictions using operational context, grouped chronological evaluation and the existing MCP approval path |
+| [docs/api/inference-optimization-v4.md](docs/api/inference-optimization-v4.md) | Optimization developers | Validation policy outcomes for RF/GP and input selection, qualification and live comparison |
+| [docs/api/inference-optimization-v5.md](docs/api/inference-optimization-v5.md) | Optimization developers | Measured-point KNN as a validation candidate, preserved guards and fresh verification scope |
 | [docs/api/etri.md](docs/api/etri.md) | Infra provider | VM requirements, tested images per CSP, deploying the three node travel scenario |
 | [docs/api/besp.md](docs/api/besp.md) | Portal developers | Screens and calls for catalog, deployment, progress and endpoints |
 | [docs/api/khu.md](docs/api/khu.md) | Recommendation implementers | The `internal/recommend` interface and how to register an implementation |
@@ -320,7 +323,76 @@ The Random Forest used repetitions 1–3 for training, 4 for validation and 5 fo
 
 A fresh baseline observation produced a published `ABSTAIN` proposal. AI-Ops returned `eligible: false`, rejected its approval with HTTP `409` and created no next revision. This verified the live rejection path.
 
+Both test deployments reached `removed`. AWS instance termination, root EBS deletion and CB-Tumblebug Infra removal were verified. The test Prometheus container and SSH tunnel were stopped.
+
 The [optimization contract](docs/api/inference-optimization.md) describes training, publication and approval. The experiment driver, prompts, measurement datasets, trained artifacts and plots remain in local directories excluded from Git.
+
+### 2026-11-11 inference optimization v3 measurements
+
+The expanded study used the same T4, Qwen3-1.7B FP16 and vLLM 0.32.0. It measured 18 conditions over five chronological repetitions, for 90 windows. Each window offered requests for 120 seconds and then drained outstanding requests. Setting order alternated between repetitions. Inputs came from eight author-written topics.
+
+| Input and load | Input tokens | Output limit | Mean requests/s | `max-num-seqs` |
+|---|---|---|---|---|
+| Short, steady | 28–30 | 64 | 0.4, 1.2 | 2, 4, 8 |
+| Medium, steady | 235–237 | 48 | 0.8, 1.2 | 2, 8 |
+| Long, steady | 439–441 | 64 | 0.4, 1.2 | 2, 8 |
+| Medium, bursty | 235–237 | 48 | 0.8, 1.2 | 2, 8 |
+
+Bursty load sent requests at twice the mean rate for ten seconds, followed by ten idle seconds. All windows passed deployment, engine Run, Revision, node, GPU UUID and metric checks, including measured KV cache usage. Repetitions 1–3 supplied 54 training windows and 30 paired candidate rows; repetition 4 supplied 18 validation windows. Validation selected the input set containing token lengths, queue, GPU utilization, free VRAM and KV cache usage. Repetition 5 supplied 18 final test windows. Model source and operational limits were frozen before collection. [v3 implementation and commands](docs/api/inference-optimization-v3.md)
+
+The following is an offline policy evaluation on measured data. Each of eight workload/rate contexts starts from setting 2 over a one-hour decision horizon, with a 300-second downtime budget deducted for each update. This also charges the fixed-setting policy separately in every context.
+
+| Policy | Mean downtime-adjusted goodput, requests/s | UPDATE | ABSTAIN | Operational-limit violations |
+|---|---|---|---|---|
+| Keep baseline | 0.49099 | 0 | 0 | 4 |
+| Measured lookup | 0.84951 | 3 | 1 | 1 |
+| Random Forest v3 | 0.84951 | 3 | 2 | 1 |
+| Fixed setting 8, selected on training data | 0.81313 | 8 | 0 | 0 |
+
+The RF passed the holdout gate, with zero unsafe or weak updates among its three updates. Adjusted goodput was 73.02% above keeping the baseline and equal to measured lookup; the study did not establish an advantage over lookup. Limits were a 2.91-second server latency estimate, 2% errors and 14,592 MiB VRAM. One violation remained under the RF policy, while fixed setting 8 had none. Both throughput and limit compliance matter when interpreting the comparison.
+
+The remaining violation occurred in an unchanged baseline. Abstention keeps that setting, so abstention and operational-limit compliance need separate checks.
+
+The published UPDATE received `eligible: true` and `nextRevision` through the real AI-Ops principal and registered MCP path. The private test driver read this field as `next`, failed before posting approval and entered error cleanup. **Live approval, application and post-application comparison of the model proposal remain unverified.** The driver mismatch was reproduced against the actual response and corrected. After target removal, approval returned HTTP `409`; Revision 13 was not created.
+
+Once the same proposal's observation was over 30 minutes old, review returned `observation_expired` and approval returned HTTP `409`.
+
+Independent AWS, CB-Tumblebug, Docker and process queries confirmed VM termination, root EBS deletion, Infra removal and shutdown of the owned Prometheus and SSH tunnel. Raw load tools, data, model artifacts and plots remain in ignored local storage. Validation is limited to the measured node, GPU, model, runtime, workloads and request rates; a new GPU node requires its own measured validation.
+
+### 2026-11-12 inference optimization v3 repeat trial
+
+A fresh T4 VM ran the same 18 conditions over five repetitions, producing 90 new windows. Policy source, operational limits and downtime budget stayed frozen; data from the previous GPU were kept separate. The 54 training, 18 validation and 18 final-test windows passed condition, ordering, metric-quality, deployment, Run and GPU-binding checks. Read-only container inspection confirmed the pinned model revision, FP16, 2,048-token context limit and runtime image digest.
+
+Validation selected the 13-feature input set, but **the RF failed this trial's holdout gate**. The table reports the eight final contexts under the same accounting as the preceding trial: each starts at setting 2 with a one-hour horizon, charging a 300-second budget for every change.
+
+| Policy | Mean adjusted goodput (requests/s) | Updates | Abstentions | Operational-limit breaches |
+| --- | ---: | ---: | ---: | ---: |
+| Keep setting 2 | 0.49273 | 0 | 0 | 4 |
+| Training-selected fixed setting 8 | 0.81313 | 8 | 0 | 0 |
+| Measured lookup | 0.85126 | 3 | 1 | 1 |
+| Random Forest v3 | 0.62516 | 1 | 3 | 3 |
+
+RF adjusted goodput was 26.88% above keeping the baseline and 26.56% below measured lookup. Its one offline update met the operational and minimum-gain limits. Small p95 support-range overruns caused RF to abstain on long and bursty workloads at 1.2 requests/s, where lookup selected updates. KV cache usage exceeded support at bursty 0.8 requests/s; both policies abstained there. Support bounds were not widened using the final test.
+
+The published proposal was `ABSTAIN` with `holdout_gate_failed`. Actual AI-Ops MCP review returned `eligible: false`, approval returned HTTP `409`, and Revision 13 returned `404`. **Live approval, application and post-application comparison of a learned proposal remain incomplete.** The earlier passing result did not reproduce, so this model lacks sufficient evidence for operational use. Raw load tools, measurements, models, plots and private drivers remain ignored. [Implementation and validation scope](docs/api/inference-optimization-v3.md)
+
+Independent queries at 03:23 UTC on 2026-11-12 confirmed instance termination, root EBS deletion, Infra removal, and shutdown of the owned Prometheus, SSH tunnel, workers and watchdog. Cleanup completed within the approved additional five-hour VM limit.
+
+### 2026-11-12 v4 policy selection
+
+The added `optimization/selection_policy.py` compares RF and GP using validation policy outcomes: unsafe or insufficient-gain updates, downtime-adjusted goodput, operational breaches and abstentions, then input count and prediction error. Support calibration uses training and validation only. When candidate error bands overlap, the policy prefers the smaller concurrency setting that still passes every existing guard. Original policies and the measured-lookup reference remain reproducible.
+
+The fresh 90-window v4 trial selected RF with six inputs but failed qualification: adjusted goodput was 0.72311 requests/s, versus 0.49151 for keep and 0.84910 for the unchanged lookup. A higher final baseline goodput exceeded a zero-variation support interval. Actual MCP review returned ineligible, approval returned409, and an authorized read confirmed that Revision13 was absent. VM, root EBS, Infra, owned collectors and tunnels were removed within the approved limit. **The v4 trial did not apply or compare a qualified learned proposal live.** [Conditions, calculation assumptions and failure](docs/api/inference-optimization-v4.md)
+
+### 2026-11-12 v5 measured-point KNN candidate
+
+The added `optimization/neighbor_policy.py` compares workload-specific KNN with the unchanged RF/GP validation winner. Python tests (25) and the four Go packages pass. A fresh T4 with Qwen3-1.7B FP16 and vLLM 0.32.0 completed 18 conditions across five repetitions, 90 windows total. The 54/18/18 chronological split selected KNN with two inputs and passed qualification. Final downtime-adjusted goodput was 0.85004 requests/s versus 0.49151 for keep, a 72.94% increase that matched the lookup reference. Unsafe and insufficient-gain updates were zero; one operational breach remained in an unchanged setting.
+
+Actual MCP review returned `eligible: true`, approval returned 202, and Revision 13 applied the 2→8 setting change. In two subsequent medium-input bursty windows at 1.2 RPS, server histogram p95 fell from 9.458 s to 1.606 s and 1.475 s; client SLO goodput rose from 0.298 to 1.174 and 1.190 requests/s. Both comparisons returned `KEEP` after accounting for the 173.982 s application response gap, with zero failed requests. Independent checks covered model, dataset and proposal hashes, actual runtime arguments, GPU, deployments, runs and arithmetic. [Conditions, policy comparison, actual application and limits](docs/api/inference-optimization-v5.md)
+
+Fresh AWS, CB-Tumblebug, Docker and process queries confirmed VM termination, root EBS deletion, Infra removal, and shutdown of the owned collector, tunnel, workers and watchdog within the approved five-hour limit.
+
+Our Prometheus collects development and experiment metrics; deployment environments use Innogrid monitoring. A separate POC ExtraTrees development replay matched v5 and lookup goodput and was not added to this GPU trial. Multi-node scaling is KHU's responsibility and remains unimplemented. Raw loads, data, models and plots stay excluded from Git. [POC reuse](docs/api/poc-optimization-reuse.md) · [Partner questions and preparation](docs/api/khu-collaboration-khu-response.md)
 
 ## Limitations
 

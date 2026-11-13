@@ -80,6 +80,7 @@ func (p *Prometheus) Read(ctx context.Context, target Placement, window Window) 
 	for _, device := range out.GPUs {
 		out.Complete = out.Complete && allMeasured(device)
 	}
+	p.addKVCache(ctx, labels, window, &out)
 	return out
 }
 

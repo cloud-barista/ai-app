@@ -18,3 +18,13 @@ data/
 /guard.json
 /shadow.json
 /transition.json
+
+# Internal documentation and experiment records
+/docs/
+/output/
+/outputs/
+/plan.md
+/mincheol/
+/poc/**/data/
+/poc/**/artifacts/
+/poc/**/reports/

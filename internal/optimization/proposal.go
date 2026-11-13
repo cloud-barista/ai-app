@@ -20,6 +20,9 @@ import (
 const (
 	SchemaVersion      = "khu-inference-optimization/v1"
 	modelVersion       = "khu-vllm-max-num-seqs/v2"
+	contextVersion     = "khu-vllm-max-num-seqs/v3"
+	selectionVersion   = "khu-vllm-max-num-seqs/v4"
+	neighborVersion    = "khu-vllm-max-num-seqs/v5"
 	legacyModelVersion = "khu-vllm-max-num-seqs/v1"
 	maxProposal        = 128 << 10
 )
@@ -130,7 +133,7 @@ func ReadProposal(dir, id string) (Proposal, error) {
 	if id != hex.EncodeToString(sum[:]) || dec.Decode(&p) != nil || dec.Decode(new(any)) != io.EOF ||
 		p.SchemaVersion != SchemaVersion || !digestPattern.MatchString(p.Observation.ObservationID) ||
 		p.Observation.CorrelationID == "" || p.Observation.Revision < 1 || p.Observation.Placement.Namespace == "" ||
-		p.Decision.Mode != "shadow" || (p.Decision.ModelVersion != modelVersion && p.Decision.ModelVersion != legacyModelVersion) ||
+		p.Decision.Mode != "shadow" || (p.Decision.ModelVersion != modelVersion && p.Decision.ModelVersion != legacyModelVersion && p.Decision.ModelVersion != contextVersion && p.Decision.ModelVersion != selectionVersion && p.Decision.ModelVersion != neighborVersion) ||
 		!digestPattern.MatchString(p.Decision.ArtifactSHA256) || !digestPattern.MatchString(p.Decision.DatasetSHA256) ||
 		(p.Decision.DataKind != "measurement" && p.Decision.DataKind != "fixture") ||
 		(p.Decision.Action != "KEEP" && p.Decision.Action != "UPDATE" && p.Decision.Action != "ABSTAIN") {
