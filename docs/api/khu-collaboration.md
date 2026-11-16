@@ -250,6 +250,18 @@ sequenceDiagram
   - 승인 경로 배포가 실패했을 때 자동 재시도를 둘지. 지금은 heal 대상이 아니고, 운영자가 새 Revision 으로 다시 승인해 재적용합니다.
 - **이노 안:** 지금 방향을 정식으로 합니다. 판단·승인은 경희대, 실행·결과는 이노입니다.
 
+**dry-run 과 실제 적용은 어디서 정하나** (코드 기준)
+
+| 정하는 곳 | 무엇 | 근거 |
+|---|---|---|
+| 운영자가 부르는 ai-ops 경로 | `/aiapp/stage` 면 요청에 "dry-run 이어야 함"(`requireDryRun`)이 붙고, `/aiapp/apply` 면 실제 적용 요청 | `internal/engine/approved_deployment.go` |
+| AI-App 서버 설정 `AIAPP_TUMBLEBUG_DRY_RUN` | stage 요청은 dry-run 켜짐일 때만, apply 요청은 dry-run 꺼짐이고 배포 기록 파일이 있을 때만 받음. 안 맞으면 거절 | `internal/nodedeploy/service.go` 의 `RequireDryRun`·`Submission` 검사 |
+| 엔진 설정 `AIAPP_ENGINE_APPLY_ENABLED` | 꺼져 있으면 적용 도구(`apply_approved_revision` 등)가 열리지 않음 | `cmd/ai-automation-engine/main.go` |
+
+요청하는 쪽이 dry-run 여부를 바꿀 수는 없습니다. 다만 dry-run 이 AI-App **서버 전체** 설정이라, AI-App 한 대로는 stage 와 apply 를 같은 설정으로 이어서 할 수 없습니다. [approved-deployment.md](approved-deployment.md) 의 절차도 "dry-run 켜고 stage → 기록을 유지한 채 dry-run 끄고 재기동 → apply" 입니다.
+
+- **같이 정할 것(추가):** 운영 중 stage 와 apply 사이에 AI-App 을 재기동할지, dry-run 용 AI-App 을 따로 둘지, dry-run 을 요청 단위로 고르게 바꿀지.
+
 ### 4-2. 인프라 추천과 실행 형상 (P0 인프라 정보 연동)
 
 - **근거:** 경희대 5~6·17~18쪽(형상 추천), 31쪽 ETRI "최종 VM 형상·배치 결정", ETRI 9·11쪽 "최적 GPU 탐색 및 선정: AI-Meta 또는 AI-Infra".
@@ -270,6 +282,39 @@ sequenceDiagram
   - AI-App 은 "만들어진 노드 + `placementReview` " 를 받는 지금 계약을 유지합니다.
   - 실행 형상은 런타임 인자(`args`)로 받습니다. vLLM 이 인자로 표현하지 못하는 것(affinity 등)이 있으면 그 목록을 받아 필드 추가를 검토합니다.
   - 모델·응용 추천 자리는 경희대가 쓰지 않을 거면 지웁니다.
+
+**경희대가 만든 추천과 빠진 것**
+
+| 추천 | 무엇을 추천하나 | 어디에 | 상태 |
+|---|---|---|---|
+| 인프라 추천기 | GPU VM 스펙과 호환 이미지 | AI-App `cmd/khu-infra-recommender` | 구현됨 |
+| Resource Ops | 이미 있는 자원 가운데 후보의 점수·순위. 배포 판단의 입력 | ai-ops `resource_ops` | 구현됨(PoC) |
+| vLLM 설정 추천 | 띄운 추론 서비스의 설정값(`--max-num-seqs`) | AI-App `optimization/` | 구현됨. KNN 판은 khu 브랜치 `bcdab9b` 에만 있음 |
+| 실행 형상 추천 (Extra Trees) | 정해진 모델의 GPU 프로세스 수·CPU affinity | ai-ops `poc/optimization_research` | 연구 단계, AI-App 과 연결 안 됨 |
+| **모델·아티팩트·런타임 선택** | 이 요구에 어떤 모델을 어떤 형식으로 어떤 런타임(vLLM·Ollama)에 띄울지 | 없음 | **비어 있음.** AI-App `/aiapp/recommendations/models` 도 구현이 등록되지 않아 `501` |
+
+**지금 배포 요청의 값은 어디서 오나**
+
+| 값 | 어디서 | 근거 (ai-ops) |
+|---|---|---|
+| 노드 | 판단 단계에서 고른 자원 후보 ID(`nsId/infraId/nodeId`) | `aiapp_prepare.go` |
+| 응용 이름·버전 | ApplicationProfile 의 `app_id`·`app_version` | 같은 파일 |
+| 런타임 | 판단 요청의 `runtime_id`, 비우면 vllm | `focused_planning_api.go` |
+| **모델·아티팩트** | **운영자가 `aiapp/prepare` 요청에 직접 넣음.** ai-ops 는 ID 모양만 검사 | `aiapp_prepare.go`, `model/aiapp.go` |
+
+ai-ops 에는 AI-App 카탈로그(`/aiapp/models`, MCP `list_models`)를 읽는 코드가 없습니다. 카탈로그를 보는 길은 자연어 조회 때 쓰는 엔진 도구 `list_applications` 뿐입니다. 고른 모델이 카탈로그에 있는지, 런타임과 맞는지는 AI-App 이 배포를 받을 때 확인하고 안 맞으면 거절합니다.
+
+모델 선택을 자동으로 하려면 카탈로그를 읽어야 하고, 방법은 둘입니다. 어느 쪽이든 AI-App API 는 이미 있습니다.
+
+| 모델 추천을 어디서 | 카탈로그 읽는 법 | 이노가 할 일 |
+|---|---|---|
+| ① ai-ops 안 | `GET /aiapp/models`·`/runtimes`·`/apps` 또는 AI-App MCP `list_models`·`get_model`·`list_runtimes` 를 경희대가 부름 | 없음 |
+| ② AI-App 추천 자리 `/aiapp/recommendations/models` | 구현이 AI-App 안에서 `Catalog` 로 바로 읽음([khu.md](khu.md) 3절) | 없음. 받는 형식과 후보 검증은 이미 있음 |
+
+- **같이 정할 것(추가):**
+  - 모델·아티팩트·런타임 선택을 경희대 추천 범위에 넣을지. 넣는다면 ①과 ② 가운데 어디서 할지.
+  - 판단 때 카탈로그를 매번 읽을지, 경희대가 따로 받아 둘지. AI-App 카탈로그는 기동할 때와 24시간마다 새로 모읍니다.
+  - 모델 선택과 VM 스펙 추천의 순서. 모델이 정해져야 필요한 GPU 메모리가 나옵니다.
 
 ### 4-3. 응용 정보 (P0 응용 정보 연동)
 
@@ -292,6 +337,18 @@ sequenceDiagram
   - 필요한 GPU 메모리를 모델 기준으로 누가 추정할지.
   - 경희대 요구 분석이 실제로 쓰는 항목 목록(용도, 최소 자원, 요청 크기·빈도 등).
 - **이노 안:** AI-App 응용 등록에 선택 필드(용도, 최소 CPU·메모리·GPU, 워크로드 종류)를 추가하고, 경희대가 그 필드를 읽습니다.
+
+**응용 요구 분석의 지금 상태** (담당 그림에서 "응용 요구 분석 및 인프라 추천" 은 경희대 칸)
+
+| 부분 | 상태 | 근거 |
+|---|---|---|
+| 자연어·구조화 입력 → ApplicationProfile | 구현됨 | ai-ops `llmop`, 경희대 13~16쪽 |
+| 응용 요구 → VM 스펙 조건 정규화(단위 변환, GPU 장치당 메모리, 비용 상한) | 구현됨 | AI-App `internal/infrarec/app.go` |
+| 실제 배포 흐름에 연결 | 약함. 경희대 문서가 ApplicationProfile 생성 API 를 "연구·호환 기능으로 남아 있으며 현재 자연어 작업 분류와 구분" 한다고 적음 | [ai-ops docs/khu-implementation.md](https://github.com/cloud-barista/ai-ops/blob/main/docs/khu-implementation.md) |
+| 모델·응용에서 필요 자원 끌어내기 | 없음. `accelerator_memory_mib` 는 운영자 입력 | 경희대 15쪽 |
+| 워크로드 특성(요청량, 지연 목표) | Profile 에 칸은 있으나 운영자 입력 | [infra-recommendation.md](infra-recommendation.md) |
+
+정리하면 **요구 분석 → 모델·런타임 선택 → 인프라 추천 → 배포 판단을 자동으로 잇는 것은 경희대 몫이고, 이노는 그 재료(모델 카탈로그, 응용 정보)를 냅니다.** 지금 비어 있는 곳은 "모델·응용에서 필요 자원을 끌어내는 부분" 과 "모델·런타임 선택" 입니다(4-2).
 
 ### 4-4. 운영 지표 (P0 모니터링·실행 피드백, 이노 34~38쪽)
 
@@ -418,8 +475,8 @@ sequenceDiagram
 이 절만 잘라 보내도 읽히도록 썼습니다.
 
 1. khu 브랜치의 작업 커밋(`77824d8`)을 AI-App main 에 반영했습니다(저자 그대로, `580239f`). khu 브랜치는 지워 주시고, 다음부터는 main 에서 갈라진 브랜치로 PR 을 올려 주시기 바랍니다. 반영하면서 GPU 드라이버 설치 단계가 추가된 것에 맞춰 승인 적용 테스트의 기대값을 고쳤습니다. 린트(errcheck) 3건과 repo 밖을 가리키는 문서 링크 2곳은 확인을 부탁드립니다.
-2. **호출 방향:** "AI-Ops 판단 → 운영자 승인 → AI-App 승인 MCP → 이노 엔진 실행" 을 정식 방향으로 하고, 발표 31쪽 역할표의 이노 칸을 이 구조로 고쳤으면 합니다. 승인 배포가 실패했을 때 자동 재시도를 둘지도 정했으면 합니다.
-3. **인프라 추천:** 추천 결과가 ETRI 의 VM 생성으로 이어지는 방식은 ETRI 와 함께 정해 주시기 바랍니다. AI-App 은 만들어진 노드와 사전 검토 결과(`placementReview`)를 받습니다. 실행 형상(프로세스 수, affinity)을 AI-App 에 넘길 방법과, 모델·응용 추천 자리를 쓸지 정했으면 합니다.
+2. **호출 방향:** "AI-Ops 판단 → 운영자 승인 → AI-App 승인 MCP → 이노 엔진 실행" 을 정식 방향으로 하고, 발표 31쪽 역할표의 이노 칸을 이 구조로 고쳤으면 합니다. dry-run 이 AI-App 서버 전체 설정이라 stage 와 apply 사이에 재기동이 필요한 점을 어떻게 할지도 정했으면 합니다. 승인 배포가 실패했을 때 자동 재시도를 둘지도 정했으면 합니다.
+3. **인프라 추천과 모델 선택:** 지금은 운영자가 `aiapp/prepare` 에 모델·아티팩트를 직접 넣습니다. 요구 분석에서 모델·런타임 선택까지 경희대가 자동으로 이어 주고, 그때 AI-App 카탈로그를 어디서 읽을지(ai-ops 에서 API 로, 또는 AI-App 추천 자리에서) 정했으면 합니다. 추천 결과가 ETRI 의 VM 생성으로 이어지는 방식은 ETRI 와 함께 정해 주시기 바랍니다. AI-App 은 만들어진 노드와 사전 검토 결과(`placementReview`)를 받습니다. 실행 형상(프로세스 수, affinity)을 AI-App 에 넘길 방법과, 모델·응용 추천 자리를 쓸지 정했으면 합니다.
 4. **응용 정보:** AI-App 응용 등록에 용도·최소 자원·워크로드 종류를 넣으려 합니다. 필요한 항목과, 모델 기준으로 필요한 GPU 메모리를 누가 추정할지 알려 주시기 바랍니다.
 5. **운영 지표:** vLLM·DCGM 수집과 저장은 이노 응용 모니터링이 맡고, 관측 코드는 그것을 읽는 구조를 제안합니다. 예측 연구에 필요한 지표 목록을 주시기 바랍니다.
 6. **Scale in/out:** 복제본을 노드 수로 보고 "노드 추가 ETRI, 배포 이노, 판단 경희대" 로 나누는 안을 제안합니다.
