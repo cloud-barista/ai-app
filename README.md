@@ -243,6 +243,7 @@ Two API layers, two kinds of callers:
 ## API
 
 All paths are under `/aiapp`. Field level documentation is in Swagger (`/aiapp/api/index.html`, file [`api/docs/swagger.yaml`](api/docs/swagger.yaml)).
+To read it without running the server, open the [online Swagger viewer](https://cloud-barista.github.io/api/?url=https://raw.githubusercontent.com/cloud-barista/ai-app/main/api/docs/swagger.yaml), which renders `api/docs/swagger.yaml` from the `main` branch.
 
 | Area | Routes |
 |---|---|
@@ -280,7 +281,7 @@ The documents under `docs/` are written in Korean.
 | [docs/api/examples/](docs/api/examples) | Everyone | Runnable curl scripts `00` to `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | Maintainers | Data model and deployment design, open problems |
 | [examples/apps/](examples/apps) | App authors | Open WebUI, Langflow, Dify bundles to upload |
-| Swagger (`/aiapp/api/index.html`) | Developers | Every route and field |
+| Swagger (`/aiapp/api/index.html`, [online viewer](https://cloud-barista.github.io/api/?url=https://raw.githubusercontent.com/cloud-barista/ai-app/main/api/docs/swagger.yaml)) | Developers | Every route and field |
 
 ## What works today
 

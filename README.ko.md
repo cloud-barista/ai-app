@@ -223,6 +223,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 ## API
 
 모든 경로는 `/aiapp` 아래입니다. 필드 설명은 Swagger(`/aiapp/api/index.html`, 파일은 [`api/docs/swagger.yaml`](api/docs/swagger.yaml))에 있습니다.
+서버를 띄우지 않고 보려면 [온라인 Swagger 뷰어](https://cloud-barista.github.io/api/?url=https://raw.githubusercontent.com/cloud-barista/ai-app/main/api/docs/swagger.yaml)를 엽니다. `main` 브랜치의 `api/docs/swagger.yaml` 을 보여 줍니다.
 
 | 분류 | 경로 |
 |---|---|
@@ -256,7 +257,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | [docs/api/examples/](docs/api/examples) | 모두 | 바로 돌려 볼 수 있는 curl 스크립트 `00` ~ `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | 유지보수자 | 데이터 모델과 배포 설계, 열린 문제 |
 | [examples/apps/](examples/apps) | 응용 작성자 | 업로드용 Open WebUI, Langflow, Dify 묶음 |
-| Swagger (`/aiapp/api/index.html`) | 개발자 | 모든 경로와 필드 |
+| Swagger (`/aiapp/api/index.html`, [온라인 뷰어](https://cloud-barista.github.io/api/?url=https://raw.githubusercontent.com/cloud-barista/ai-app/main/api/docs/swagger.yaml)) | 개발자 | 모든 경로와 필드 |
 
 ## 지금 되는 것
 
