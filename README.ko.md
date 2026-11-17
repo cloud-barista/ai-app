@@ -254,6 +254,7 @@ API 는 두 층이고 부르는 쪽이 다릅니다.
 | [docs/api/khu-collaboration.md](docs/api/khu-collaboration.md) | 경희대, 이노그리드 | 지금 코드와 2차 워크샵 발표의 대조, 같이 정할 것을 그림과 함께 |
 | [docs/test/live-test-2026-11-03.md](docs/test/live-test-2026-11-03.md) | 모두 | 실제 GPU VM 에서 돌린 결과 |
 | [docs/test/gpu-driver-test-2026-11-09.md](docs/test/gpu-driver-test-2026-11-09.md) | AI-App 개발자 | Azure AMD 노드의 GPU 드라이버 설치 시험, Secure Boot·MOK 관련 확인 |
+| [docs/test/etri-env-test-2026-11-18.md](docs/test/etri-env-test-2026-11-18.md) | ETRI, 모두 | ETRI 호스트에서 AWS·Azure·GCP GPU VM 에 올린 결과와 예제 스크립트별 API 호출 구조 |
 | [docs/api/examples/](docs/api/examples) | 모두 | 바로 돌려 볼 수 있는 curl 스크립트 `00` ~ `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | 유지보수자 | 데이터 모델과 배포 설계, 열린 문제 |
 | [examples/apps/](examples/apps) | 응용 작성자 | 업로드용 Open WebUI, Langflow, Dify 묶음 |

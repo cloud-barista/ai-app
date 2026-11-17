@@ -278,6 +278,7 @@ The documents under `docs/` are written in Korean.
 | [docs/api/khu-collaboration.md](docs/api/khu-collaboration.md) | Kyung Hee University, AI-App maintainers | The current code against the second workshop slides, with figures of what is still to agree on |
 | [docs/test/live-test-2026-11-03.md](docs/test/live-test-2026-11-03.md) | Everyone | Results of the run on real GPU VMs |
 | [docs/test/gpu-driver-test-2026-11-09.md](docs/test/gpu-driver-test-2026-11-09.md) | AI-App developers | GPU driver install tests on Azure AMD nodes, Secure Boot and MOK findings |
+| [docs/test/etri-env-test-2026-11-18.md](docs/test/etri-env-test-2026-11-18.md) | ETRI, everyone | Run on the ETRI host against AWS, Azure and GCP GPU VMs, with the API each example script calls |
 | [docs/api/examples/](docs/api/examples) | Everyone | Runnable curl scripts `00` to `07` |
 | [docs/design/model-catalog-and-node-deploy.md](docs/design/model-catalog-and-node-deploy.md) | Maintainers | Data model and deployment design, open problems |
 | [examples/apps/](examples/apps) | App authors | Open WebUI, Langflow, Dify bundles to upload |
