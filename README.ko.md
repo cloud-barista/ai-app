@@ -191,7 +191,7 @@ AI-App 이 CB-Tumblebug 에서 부르는 것:
 |---|---|
 | CB-Tumblebug 이 만든 노드 | AI-App 은 노드를 `nsId` / `infraId` / `nodeId` 로 가리키고 CB-Tumblebug 이 가진 SSH 키를 씀 |
 | 리눅스 배포판 | Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Oracle Linux, Fedora, Amazon Linux 2023. docker 와 compose 플러그인이 없으면 깖 |
-| GPU | 모델 실행은 NVIDIA 만. **드라이버가 550 이상**이어야 함(Ollama 0.40.13 요구). Ubuntu 면 드라이버가 응답하지 않을 때 `install-gpu-driver` 가 apt 로 깔고(`ubuntu-drivers install --gpgpu`, 커널에 맞는 Canonical 서명 모듈이 있으면 그것. Azure NVads A10 v5 노드는 Microsoft 가 배포하는 GRID 드라이버이며 Secure Boot 가 꺼져 있어야 함) 노드를 재부팅함. 다른 배포판은 이미지에 들어 있어야 함. AI-App 이 NVIDIA Container Toolkit 을 깖. GPU 배포인데 런타임이 CPU 로 돌면 실패로 처리 |
+| GPU | 모델 실행은 NVIDIA 만. **드라이버가 550 이상**이어야 함(Ollama 0.40.13 요구). Ubuntu 면 드라이버가 응답하지 않을 때 `install-gpu-driver` 가 apt 로 깔고(`ubuntu-drivers install --gpgpu`, 커널에 맞는 Canonical 서명 모듈이 있으면 그것. NVIDIA GPU 가 붙은 Azure NV 계열 노드(M60, NVads A10 v5)는 Microsoft 가 배포하는 GRID 드라이버이며 Secure Boot 가 꺼져 있어야 함) 노드를 재부팅함. 다른 배포판은 이미지에 들어 있어야 함. AI-App 이 NVIDIA Container Toolkit 을 깖. GPU 배포인데 런타임이 CPU 로 돌면 실패로 처리 |
 | AMD GPU (Ubuntu) | `install-gpu-driver` 가 DKMS 없이 GPU 를 살림(커널 기본 `amdgpu`, AMD 최신 GPU 릴리스의 펌웨어 패키지 `amdgpu-dkms-firmware`, `amd-smi`). 그래서 Secure Boot 가 켜져 있어도 MOK 등록이 필요 없음. 그 위에서 모델을 돌리는 것은 아직 안 됨(제약 참고). |
 | 보안 그룹 | 노드 정보에 `securityGroupIds` 가 있어야 포트를 엶 (없어도 배포는 성공) |
 | 바깥 인터넷 | 노드가 Docker Hub, ghcr.io, Hugging Face, Ollama 레지스트리, GitHub 에서 이미지와 모델을 직접 받음 |

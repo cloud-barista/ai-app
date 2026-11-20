@@ -11,10 +11,12 @@
 #                 package Canonical builds and signs (linux-modules-nvidia-*).
 #                 A node left with a DKMS module while Secure Boot is on fails
 #                 with a message, because that module would need MOK.
-#                 An Azure NVads A10 v5 node (its vmSize from the Azure
-#                 instance metadata) gets the GRID driver instead: its A10 is
-#                 a vGPU that the server driver does not drive, and Microsoft
-#                 ships that driver only as a .run installer
+#                 An Azure NV-series node with an NVIDIA GPU (its vmSize from
+#                 the Azure instance metadata starts with Standard_NV: the M60
+#                 sizes and NVads A10 v5) gets the GRID driver instead, the
+#                 driver Microsoft supports there (the A10 of NVads A10 v5 is a
+#                 vGPU the server driver does not drive). Microsoft ships it
+#                 only as a .run installer
 #                 (go.microsoft.com/fwlink/?linkid=874272), installed here
 #                 with DKMS and gridd.conf set for Azure licensing. Its module
 #                 is unsigned, so such a node with Secure Boot on fails with a
@@ -327,6 +329,7 @@
 
         # Only Azure answers this path with a bare value; other clouds answer
         # with an error or not at all, which leaves the node on ubuntu-drivers.
+        # An AMD NV size (V710, V620) never gets here: its vendor is 1002.
         - name: Read the Azure VM size
           ansible.builtin.shell: |
             curl -fsS -m 3 -H Metadata:true \
@@ -336,7 +339,7 @@
 
         - name: Work out whether the node needs the Azure GRID driver
           ansible.builtin.set_fact:
-            nvidia_grid: "{{ azure_vm_size.stdout | trim is match('(?i)^Standard_NV[0-9]+adm?s_A10_v5$') }}"
+            nvidia_grid: "{{ azure_vm_size.stdout | trim is match('(?i)^Standard_NV') }}"
 
         - name: Install the Azure GRID driver
           when: nvidia_ready.rc != 0 and nvidia_grid

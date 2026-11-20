@@ -188,7 +188,7 @@ Compose의 Semaphore는 `ANSIBLE_STDOUT_CALLBACK=ansible.builtin.default`와 `AN
 
   | playbook | 하는 일 |
   |---|---|
-  | `install-gpu-driver.yml` | GPU 노드에만 먼저 돎. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깜. Azure NVads A10 v5 노드는 Microsoft 가 배포하는 GRID 드라이버(`.run`, DKMS)를 깔고, 서명 안 된 모듈이라 Secure Boot 가 켜져 있으면 끄는 방법을 적어 실패함. 다른 배포판은 메시지만 내고 건너뜀 ([시험 기록](../test/gpu-driver-test-2026-11-09.md)) |
+  | `install-gpu-driver.yml` | GPU 노드에만 먼저 돎. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깜. NVIDIA GPU 가 붙은 Azure NV 계열 노드(M60, NVads A10 v5)는 Microsoft 가 배포하는 GRID 드라이버(`.run`, DKMS)를 깔고, 서명 안 된 모듈이라 Secure Boot 가 켜져 있으면 끄는 방법을 적어 실패함. 다른 배포판은 메시지만 내고 건너뜀 ([시험 기록](../test/gpu-driver-test-2026-11-09.md)) |
   | `install-docker.yml` | 노드에 docker 와 compose 플러그인을 깔고 docker 서비스를 켬. GPU 노드면 NVIDIA Container Toolkit 도 깜. 이미 있으면 그대로 둠. `/etc/os-release` 를 보고 Ubuntu·Debian 은 apt, RHEL 계열·Fedora·Amazon Linux 2023 은 dnf 로 깖 |
   | `compose-up.yml` | 추론 서비스. stage 의 compose 파일을 노드로 복사하고 `docker compose up`, 노드 안에서 런타임 헬스 경로가 응답할 때까지 기다림. GPU 를 쓰면 런타임이 GPU 위에 있는지도 봄 |
   | `copy-and-run.yml` | 응용. 업로드 파일을 노드로 복사하고 이전 컨테이너를 내린 뒤 `deploy.sh` 를 실행. 이어서 응용 포트가 응답하고 컨테이너가 재시작 없이 도는지 확인 |

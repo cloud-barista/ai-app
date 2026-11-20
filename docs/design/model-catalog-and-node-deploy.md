@@ -206,7 +206,7 @@ AI-App 컨테이너와 Semaphore 컨테이너가 같은 볼륨을 같은 경로�
 | 1 | Tumblebug 에서 노드 정보와 SSH 키(`GET /ns/{nsId}/resources/sshKey/{sshKeyId}` 의 `privateKey`) 조회 | 공인 IP 가 없으면 사설 IP |
 | 2 | 공유 저장소에 파일 배치 | 추론 서비스는 compose 를 만들어 넣는다 |
 | 3 | Semaphore 에 그 노드의 key(ssh)와 inventory 등록 | 배포마다 만들고 끝나면 지운다. template 은 playbook 마다 하나씩 고정으로 둔다 |
-| 4 | 태스크 실행: (GPU 노드면 `install-gpu-driver` →) `install-docker` → `compose-up`(추론 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드는 노드 스펙으로 가린다. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깐다. Azure NVads A10 v5 는 Microsoft 의 GRID 드라이버를 깔며 Secure Boot 가 꺼져 있어야 한다. 그다음 docker 와 nvidia-container-toolkit. 시험 결과는 [gpu-driver-test](../test/gpu-driver-test-2026-11-09.md) |
+| 4 | 태스크 실행: (GPU 노드면 `install-gpu-driver` →) `install-docker` → `compose-up`(추론 서비스) 또는 `copy-and-run`(응용). 태스크 요청에 3의 `inventory_id` 를 넣어 template 의 inventory 를 덮어쓴다 | GPU 노드는 노드 스펙으로 가린다. 드라이버가 이미 응답하면 그대로 두고, Ubuntu 면 MOK 등록이 필요 없는 드라이버(NVIDIA `ubuntu-drivers --gpgpu`, AMD 커널 `amdgpu` + AMD 펌웨어)를 깐다. NVIDIA GPU 가 붙은 Azure NV 계열(M60, NVads A10 v5)은 Microsoft 의 GRID 드라이버를 깔며 Secure Boot 가 꺼져 있어야 한다. 그다음 docker 와 nvidia-container-toolkit. 시험 결과는 [gpu-driver-test](../test/gpu-driver-test-2026-11-09.md) |
 | 5 | 상태 폴링, 끝나면 `GET /api/project/{p}/tasks/{id}/output` 로그를 배포 기록에 남김 | 참고한 두 repo 는 로그를 가져오지 않는다 |
 | 6 | 3에서 등록한 key·inventory 삭제 | 성공·실패와 무관하게 |
 
