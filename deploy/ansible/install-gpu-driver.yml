@@ -11,6 +11,14 @@
 #                 package Canonical builds and signs (linux-modules-nvidia-*).
 #                 A node left with a DKMS module while Secure Boot is on fails
 #                 with a message, because that module would need MOK.
+#                 An Azure NVads A10 v5 node (its vmSize from the Azure
+#                 instance metadata) gets the GRID driver instead: its A10 is
+#                 a vGPU that the server driver does not drive, and Microsoft
+#                 ships that driver only as a .run installer
+#                 (go.microsoft.com/fwlink/?linkid=874272), installed here
+#                 with DKMS and gridd.conf set for Azure licensing. Its module
+#                 is unsigned, so such a node with Secure Boot on fails with a
+#                 message saying how to turn it off.
 #   1002  AMD     the amdgpu module of the Ubuntu kernel (signed by the kernel
 #                 build) with the firmware package of AMD's GPU repository
 #                 (amdgpu-dkms-firmware, files only, no DKMS build), kept at
@@ -29,8 +37,7 @@
 #
 # Only Ubuntu is handled. Other distributions end the play with a message and
 # no change, and keep relying on a driver that comes with the image.
-# TODO: RHEL family, Debian, Amazon Linux; the Azure NV A10 GRID driver, which
-# has no apt package and needs Secure Boot off.
+# TODO: RHEL family, Debian, Amazon Linux.
 #
 # The last task prints "aiapp-gpu-driver: <vendor>: <evidence>".
 - name: Install the GPU driver
@@ -45,6 +52,10 @@
     amd_rocm_keyring: /etc/apt/keyrings/amdrocm.gpg
     amd_rocm_release: "10.0"
     amd_smi_package: amdrocm-amdsmi{{ amd_rocm_release }}
+    # The GRID driver Microsoft publishes for its NV-series vGPUs; the link
+    # follows the release Azure supports now.
+    nvidia_grid_url: https://go.microsoft.com/fwlink/?linkid=874272
+    nvidia_grid_installer: /var/tmp/aiapp-nvidia-grid.run
   tasks:
     - name: Wait for the node to accept the connection
       ansible.builtin.wait_for_connection:
@@ -314,8 +325,118 @@
           changed_when: false
           failed_when: false
 
+        # Only Azure answers this path with a bare value; other clouds answer
+        # with an error or not at all, which leaves the node on ubuntu-drivers.
+        - name: Read the Azure VM size
+          ansible.builtin.shell: |
+            curl -fsS -m 3 -H Metadata:true \
+              'http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text' || true
+          register: azure_vm_size
+          changed_when: false
+
+        - name: Work out whether the node needs the Azure GRID driver
+          ansible.builtin.set_fact:
+            nvidia_grid: "{{ azure_vm_size.stdout | trim is match('(?i)^Standard_NV[0-9]+adm?s_A10_v5$') }}"
+
+        - name: Install the Azure GRID driver
+          when: nvidia_ready.rc != 0 and nvidia_grid
+          block:
+            - name: Fail when Secure Boot would block the GRID module
+              ansible.builtin.fail:
+                msg: >-
+                  {{ azure_vm_size.stdout | trim }} needs the NVIDIA GRID driver, which Microsoft
+                  ships only as a .run installer whose kernel module is unsigned, and Secure Boot
+                  is on ({{ secure_boot.stdout | trim }}), so the module would not load. Create
+                  the VM from a Generation 1 image (no Trusted Launch) or turn Secure Boot off
+                  (az vm deallocate, az vm update --enable-secure-boot false, az vm start) and
+                  deploy again.
+              when: secure_boot_on
+
+            - name: Read the running kernel
+              ansible.builtin.command: uname -r
+              register: grid_kernel
+              changed_when: false
+
+            - name: Install the build tools and the headers of the running kernel
+              ansible.builtin.apt:
+                name:
+                  - build-essential
+                  - dkms
+                  - "linux-headers-{{ grid_kernel.stdout | trim }}"
+                update_cache: true
+
+            # The installer refuses to run while nouveau drives the GPU.
+            - name: Block nouveau
+              ansible.builtin.copy:
+                dest: /etc/modprobe.d/aiapp-blacklist-nouveau.conf
+                content: |
+                  blacklist nouveau
+                  blacklist lbm-nouveau
+                  options nouveau modeset=0
+                mode: "0644"
+
+            - name: Check whether nouveau is loaded
+              ansible.builtin.shell: lsmod | grep -q '^nouveau '
+              register: nouveau_loaded
+              changed_when: false
+              failed_when: false
+
+            - name: Unload nouveau with a reboot
+              when: nouveau_loaded.rc == 0
+              block:
+                - name: Rebuild the initramfs without nouveau
+                  ansible.builtin.command: update-initramfs -u
+                  changed_when: true
+
+                - name: Reboot the node
+                  ansible.builtin.reboot:
+                    reboot_timeout: 900
+
+            - name: Download the GRID driver
+              ansible.builtin.get_url:
+                url: "{{ nvidia_grid_url }}"
+                dest: "{{ nvidia_grid_installer }}"
+                mode: "0755"
+                force: true
+                timeout: 120
+
+            - name: Run the GRID installer
+              ansible.builtin.command: "{{ nvidia_grid_installer }} --silent --dkms"
+              register: grid_install
+              changed_when: true
+              failed_when: false
+
+            - name: Read the installer log
+              ansible.builtin.command: tail -n 30 /var/log/nvidia-installer.log
+              register: grid_install_log
+              changed_when: false
+              failed_when: false
+              when: grid_install.rc != 0
+
+            - name: Fail when the GRID installer failed
+              ansible.builtin.fail:
+                msg: >-
+                  the GRID installer ended with {{ grid_install.rc }} on kernel
+                  {{ grid_kernel.stdout | trim }}; /var/log/nvidia-installer.log:
+                  {{ grid_install_log.stdout_lines | default([]) | join(' | ') }}
+              when: grid_install.rc != 0
+
+            # Microsoft's settings for its NV series: license through Azure,
+            # no license UI, and no FeatureType=0 (which turns licensing off).
+            - name: Write gridd.conf from its template
+              ansible.builtin.shell: |
+                set -e
+                cp /etc/nvidia/gridd.conf.template /etc/nvidia/gridd.conf
+                sed -i -E '/^[[:space:]]*(FeatureType=0|IgnoreSP=|EnableUI=)/d' /etc/nvidia/gridd.conf
+                printf 'IgnoreSP=FALSE\nEnableUI=FALSE\n' >> /etc/nvidia/gridd.conf
+              changed_when: true
+
+            - name: Reboot the node
+              ansible.builtin.reboot:
+                reboot_timeout: 900
+
         - name: Install the driver with ubuntu-drivers
-          when: nvidia_ready.rc != 0
+          when: nvidia_ready.rc != 0 and not nvidia_grid
           block:
             - name: Install ubuntu-drivers
               ansible.builtin.apt:
@@ -357,4 +478,4 @@
           ansible.builtin.debug:
             msg: >-
               aiapp-gpu-driver: nvidia: {{ nvidia_evidence.stdout_lines[0] | default('') }},
-              Secure Boot: {{ secure_boot.stdout | trim }}
+              {{ 'Azure GRID driver on ' ~ (azure_vm_size.stdout | trim) ~ ', ' if nvidia_grid else '' }}Secure Boot: {{ secure_boot.stdout | trim }}
