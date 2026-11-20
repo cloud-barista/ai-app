@@ -329,8 +329,6 @@ services:
       SEMAPHORE_DB_DIALECT: bolt
       ANSIBLE_STDOUT_CALLBACK: ansible.builtin.default
       ANSIBLE_CALLBACK_RESULT_FORMAT: yaml
-      # Keeps SSH sessions to the nodes alive during long silent steps.
-      ANSIBLE_SSH_ARGS: "-C -o ControlMaster=auto -o ControlPersist=60s -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
       SEMAPHORE_ADMIN: "${AIAPP_SEMAPHORE_USERNAME:-admin}"
       SEMAPHORE_ADMIN_PASSWORD: "${AIAPP_SEMAPHORE_PASSWORD:-default}"  # hook:allow
       SEMAPHORE_ADMIN_NAME: "AI-App"
